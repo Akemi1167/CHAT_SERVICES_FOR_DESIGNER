@@ -74,9 +74,21 @@ variables:
   assignment_id: ""
   revision_id: ""
   reply_message_id: ""
+  attachment_id: ""
 scripts:
   - type: http:beforeRequest
     code: |-
+      // chat_id = id nhóm: chế độ CMS là wg_<hex>, chế độ fake là UUID nhóm.
+      // Lưu ý: nếu environment có biến chat_id thì giá trị đó LẤN ÁT biến collection,
+      // nên khi dùng CMS hãy điền chat_id ở environment, còn fake thì để trống.
+      // Chưa có thì lấy luôn conversation_id (folder 01 đã lưu) để khỏi điền tay.
+      if (!pm.variables.get('chat_id') && pm.variables.get('conversation_id')) {
+        pm.collectionVariables.set('chat_id', pm.variables.get('conversation_id'));
+      }
+      // Chưa chạy folder CMS thì dùng tạm tin nhắn thường để các request không vỡ.
+      if (!pm.variables.get('card_message_id') && pm.variables.get('message_id')) {
+        pm.collectionVariables.set('card_message_id', pm.variables.get('message_id'));
+      }
       // Bot API dùng service key thay vì JWT -> tự gắn header.
       if (pm.request.url.getPath().startsWith('/bot/v1')) {
         if (!pm.request.headers.has('X-Chat-Service-Key')) {
@@ -93,7 +105,7 @@ scripts:
       });
     language: text/javascript
 auth:
-  - id: 83aafe25-da19-412f-a72c-d4d0f9a75f15
+  - id: 1b0a099c-5b87-4978-b446-1927781e9107
     type: bearer
     name: bearer auth
     credentials:

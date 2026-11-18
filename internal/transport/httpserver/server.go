@@ -21,6 +21,7 @@ import (
 	"github.com/abc-workspace/chat-service/internal/service/conversation"
 	"github.com/abc-workspace/chat-service/internal/service/message"
 	"github.com/abc-workspace/chat-service/internal/service/notification"
+	"github.com/abc-workspace/chat-service/internal/service/presence"
 	"github.com/abc-workspace/chat-service/internal/service/task"
 )
 
@@ -34,6 +35,7 @@ type Deps struct {
 	Store         repository.Store
 	Cards         *card.Service
 	Notifications *notification.Service
+	Presence      *presence.Service
 	CMSSync       *cmssync.Service
 	Ready         func(ctx context.Context) error
 }

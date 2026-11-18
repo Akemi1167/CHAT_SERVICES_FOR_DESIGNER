@@ -45,6 +45,10 @@ func New(client *cms.Client, store repository.Store, hub *realtime.Hub, interval
 	}
 }
 
+// Enabled cho biet co bat tich hop CMS khong (de transport tra loi ro rang
+// thay vi goi CMS roi bao loi 500).
+func (s *Service) Enabled() bool { return s.client != nil && s.client.Enabled() }
+
 // Run dong bo luc khoi dong roi lap lai theo chu ky.
 func (s *Service) Run(ctx context.Context) error {
 	if n, err := s.SyncAll(ctx); err != nil {

@@ -81,6 +81,7 @@ Lần đầu gặp `cmsUserId`: Chat tạo user local, sinh `actor_id = u_<cmsUs
 | Event | Kiểu | Cài đặt |
 |---|---|---|
 | `form.submit` | đồng bộ, timeout `CMS_WEBHOOK_TIMEOUT`, không retry | `card.Service.SubmitForm` |
+| *(khung chung)* | `schema`, `eventId` (UUID), `type`, `createdAt`, `botId` (`b_<botId của nhóm>`), `actor{id,openId,cmsUserId,name}` | `cms.BuildEvent` |
 | `card.action` | đồng bộ; áp card mới nếu `cardVersion` lớn hơn rồi phát realtime | `card.Service.RunAction` |
 | `message.created` | **bất đồng bộ**, ghi `webhook_outbox`, worker retry backoff 2^n (tối đa 10 phút) | `internal/service/outbox` |
 | `user.updated` | bất đồng bộ (dùng chung outbox) | — |
@@ -91,8 +92,22 @@ Chữ ký: `hex(HMAC_SHA256(CHAT_SERVICE_KEY, "<timestamp>.<rawBody>"))` tính t
 ## 8. Bot API (CMS gọi Chat)
 
 `POST /bot/v1/users/resolve` · `POST /bot/v1/messages` · `PATCH /bot/v1/messages/:id` ·
-`POST /bot/v1/messages/:id/thread` · `POST /bot/v1/notifications` · `PUT /bot/v1/groups/:id` ·
-`GET /bot/v1/groups/:id/members`
+`POST /bot/v1/messages/:id/thread` · `POST /bot/v1/messages/:id/pin` · `POST /bot/v1/notifications` ·
+`PUT /bot/v1/presence` · `PUT /bot/v1/groups/:id` · `GET /bot/v1/groups/:id/members` ·
+`GET /bot/v1/attachments/:id` · `GET /bot/v1/groups` · `GET /bot/v1/groups/:id` ·
+`GET /bot/v1/users/:id` · `POST /bot/v1/users/batch`
+
+→ **Đủ toàn bộ mục 7 của `CHAT_SERVICE_INTEGRATION.md`, kể cả 7.7 (phần CMS "chưa dùng").**
+`GET /users/:id` nhận cả `actorId` (`u_6`), `openId` hay UUID nội bộ; `POST /users/batch` nhận
+`{actorIds[], openIds[], cmsUserIds[]}`.
+
+Ba endpoint tài liệu ghi "chưa dùng / tuỳ chọn" nay đã có:
+
+| Endpoint | Hành vi |
+|---|---|
+| `POST /messages/:id/pin` | `{}` → `{ok, messageId, pinned}`; `{"pinned":false}` để bỏ ghim; ghim lại tin đã ghim không đổi gì. Cả nhóm nhận event `message` để cập nhật. Danh sách ghim: `GET /api/v1/conversations/:id/pinned`. |
+| `PUT /presence` | `{items:[{actorId,status,reason}]}` → `{updated:n}`. `on` → online; `off` **kèm `reason`** → `off_duty` (chữ OFF cạnh tên); `off` không reason → offline. Actor lạ bị bỏ qua, không lỗi. Chat phát event `presence` cho **những người chung hội thoại**. |
+| `GET /attachments/:id` | Chat **không lưu file**, chỉ lưu URL do service upload/CDN cấp → trả metadata (`url`, `name`, `mimeType`, `sizeBytes`, kích thước, `messageId`, `groupId`); thêm `?redirect=true` để 302 thẳng tới URL. |
 
 - Kiểm `X-Chat-Service-Key` **constant-time**; sai → `401 {"code":"invalid_service_key",...,"retryable":false}`.
 - Mọi request ghi nhận `Idempotency-Key`: gặp lại key trả **nguyên kết quả cũ** (bảng `idempotency_keys`).
@@ -145,6 +160,4 @@ Bộ API `/api/v1/*` (envelope `{data, meta}`) vẫn giữ cho Postman/CLI/dịc
 - Chưa test với CMS dev thật (đang chờ URL + `CHAT_SERVICE_KEY`); CMS giả lập dựng theo đúng payload
   trong tài liệu.
 - `user.updated` đã có đường outbox nhưng chưa có chỗ phát (cần chốt khi nào Chat coi là hồ sơ đổi).
-- `POST /bot/v1/messages/:id/pin`, `PUT /bot/v1/presence`, `GET /attachments/:id` chưa làm (tài liệu ghi
-  "chưa dùng / tuỳ chọn").
 - SSE `GET /chat/stream`: đang dùng WebSocket (tài liệu cho phép chọn một trong hai).

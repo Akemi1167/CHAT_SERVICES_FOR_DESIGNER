@@ -30,6 +30,7 @@ import (
 	"github.com/abc-workspace/chat-service/internal/service/message"
 	"github.com/abc-workspace/chat-service/internal/service/notification"
 	"github.com/abc-workspace/chat-service/internal/service/outbox"
+	"github.com/abc-workspace/chat-service/internal/service/presence"
 	"github.com/abc-workspace/chat-service/internal/service/task"
 	"github.com/abc-workspace/chat-service/internal/transport/grpcserver"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver"
@@ -135,6 +136,7 @@ func New(cfg *config.Config) (*App, error) {
 
 	// 3b) Tich hop CMS: dong bo nhom/user, card, thong bao, outbox.
 	notifSvc := notification.New(store, hub)
+	presenceSvc := presence.New(store, hub)
 	cardSvc := card.New(store, convSvc, cmsClient, hub, cfg.CMS.WebhookTimeout)
 	syncSvc := cmssync.New(cmsClient, store, hub, cfg.CMS.SyncInterval)
 	outboxSvc := outbox.New(store, cmsClient, cfg.CMS.OutboxInterval, cfg.CMS.OutboxMaxRetry)
@@ -143,11 +145,11 @@ func New(cfg *config.Config) (*App, error) {
 		msgSvc.AddMessageHook(outboxSvc.EnqueueMessageCreated)
 	}
 
-	// Khi user online/offline -> cap nhat DB (phuc vu hien trang thai OFF canh ten).
+	// Khi user mo/dong WebSocket: cap nhat DB va bao cho nhung nguoi chung nhom.
 	hub.SetPresenceHook(func(ctx context.Context, userID uuid.UUID, online bool) {
 		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
-		if err := authSvc.SetPresence(c, userID, online); err != nil {
+		if err := presenceSvc.SetOnline(c, userID, online); err != nil {
 			slog.Warn("cap nhat presence that bai", "user_id", userID, "err", err)
 		}
 	})
@@ -163,6 +165,7 @@ func New(cfg *config.Config) (*App, error) {
 		Store:         store,
 		Cards:         cardSvc,
 		Notifications: notifSvc,
+		Presence:      presenceSvc,
 		CMSSync:       syncSvc,
 		Ready: func(ctx context.Context) error {
 			sqlDB, err := db.DB()

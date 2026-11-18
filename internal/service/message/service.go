@@ -471,6 +471,69 @@ func (s *Service) Readers(ctx context.Context, actorID, messageID uuid.UUID) ([]
 	return s.store.Messages().ListReceipts(ctx, messageID)
 }
 
+// ---------------- ghim tin nhan ----------------
+
+// SetPinned ghim / bo ghim. Ai la thanh vien nhom deu ghim duoc (CMS goi qua Bot API
+// thi truyen actor = nil).
+func (s *Service) SetPinned(ctx context.Context, actorID *uuid.UUID, messageID uuid.UUID, pinned bool) (*domain.Message, error) {
+	msg, err := s.store.Messages().GetByID(ctx, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if actorID != nil {
+		if _, err := s.convs.EnsureMember(ctx, msg.ConversationID, *actorID); err != nil {
+			return nil, err
+		}
+	}
+	if msg.Pinned == pinned {
+		return msg, nil // idempotent: ghim lai tin da ghim khong doi gi
+	}
+	if err := s.store.Messages().SetPinned(ctx, messageID, pinned, actorID); err != nil {
+		return nil, err
+	}
+
+	updated, err := s.store.Messages().GetByID(ctx, messageID)
+	if err != nil {
+		return nil, err
+	}
+	recipients, err := s.convs.MemberUserIDs(ctx, msg.ConversationID)
+	if err == nil {
+		s.hub.Publish(ctx, realtime.NewEvent(
+			realtime.EventMessageUpdated, msg.ConversationID.String(), recipients, updated))
+	}
+	return updated, nil
+}
+
+// ListPinned tra cac tin da ghim cua hoi thoai.
+func (s *Service) ListPinned(ctx context.Context, actorID, convID uuid.UUID, limit int) ([]domain.Message, error) {
+	if _, err := s.convs.EnsureMember(ctx, convID, actorID); err != nil {
+		return nil, err
+	}
+	items, err := s.store.Messages().ListPinned(ctx, convID, limit)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachReplyCounts(ctx, items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// Attachment tra thong tin tep dinh kem (Chat chi luu URL, khong luu file).
+// actorID != nil thi kiem tra nguoi do co trong hoi thoai chua tep khong.
+func (s *Service) Attachment(ctx context.Context, actorID *uuid.UUID, id uuid.UUID) (*domain.Attachment, *domain.Message, error) {
+	att, msg, err := s.store.Messages().GetAttachment(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if actorID != nil {
+		if _, err := s.convs.EnsureMember(ctx, msg.ConversationID, *actorID); err != nil {
+			return nil, nil, err
+		}
+	}
+	return att, msg, nil
+}
+
 // Typing phat su kien "dang nhap..." (khong luu DB).
 func (s *Service) Typing(ctx context.Context, actorID, convID uuid.UUID, typing bool) error {
 	if _, err := s.convs.EnsureMember(ctx, convID, actorID); err != nil {

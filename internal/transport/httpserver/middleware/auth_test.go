@@ -65,6 +65,10 @@ func (usersRepo) ListByActorIDs(_ context.Context, _ []string) ([]domain.User, e
 	return nil, nil
 }
 
+func (usersRepo) UpdatePresenceWithReason(_ context.Context, _ uuid.UUID, _ domain.Presence, _ string, _ time.Time) error {
+	return nil
+}
+
 var errNotImplemented = errors.New("khong dung trong test nay")
 
 func sign(t *testing.T, sub string) string {

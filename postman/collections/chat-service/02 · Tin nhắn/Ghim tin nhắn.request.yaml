@@ -1,0 +1,14 @@
+$kind: http-request
+description: 'Ghim tin trong nhóm. Gửi `{"pinned": false}` để bỏ ghim. Ghim lại tin đã ghim không đổi gì (idempotent). Cả nhóm nhận event `message` để cập nhật.'
+url: "{{base_url}}/api/v1/messages/{{message_id}}/pin"
+method: POST
+body:
+  type: json
+  content: "{}"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("da ghim", () => pm.expect(pm.response.json().data.pinned).to.be.true);
+    language: text/javascript
+order: 12000

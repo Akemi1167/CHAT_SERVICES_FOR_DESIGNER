@@ -214,3 +214,45 @@ func (r *MessageRepo) CountReplies(ctx context.Context, messageIDs []uuid.UUID, 
 	}
 	return out, nil
 }
+
+// ---------------- ghim tin nhan ----------------
+
+func (r *MessageRepo) SetPinned(ctx context.Context, messageID uuid.UUID, pinned bool, by *uuid.UUID) error {
+	fields := map[string]any{"pinned": pinned, "updated_at": time.Now().UTC()}
+	if pinned {
+		fields["pinned_at"] = time.Now().UTC()
+		fields["pinned_by"] = by
+	} else {
+		fields["pinned_at"] = nil
+		fields["pinned_by"] = nil
+	}
+	err := r.db(ctx).Model(&domain.Message{}).Where("id = ?", messageID).Updates(fields).Error
+	return wrap(err, "message.setPinned")
+}
+
+func (r *MessageRepo) ListPinned(ctx context.Context, conversationID uuid.UUID, limit int) ([]domain.Message, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var out []domain.Message
+	err := r.db(ctx).Preload("Attachments").Preload("Sender").
+		Where("conversation_id = ? AND pinned", conversationID).
+		Order("pinned_at DESC").Limit(limit).Find(&out).Error
+	if err != nil {
+		return nil, wrap(err, "message.listPinned")
+	}
+	return out, nil
+}
+
+// GetAttachment tra tep + tin nhan chua no (de kiem quyen theo hoi thoai).
+func (r *MessageRepo) GetAttachment(ctx context.Context, id uuid.UUID) (*domain.Attachment, *domain.Message, error) {
+	var a domain.Attachment
+	if err := r.db(ctx).First(&a, "id = ?", id).Error; err != nil {
+		return nil, nil, mapErr(err, apperr.NotFound("attachment_not_found", "Khong tim thay tep dinh kem"))
+	}
+	msg, err := r.GetByID(ctx, a.MessageID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &a, msg, nil
+}

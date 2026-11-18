@@ -27,6 +27,11 @@ type Message struct {
 	// BotSender = {"id":1,"name":"Demo Designer Bot"} khi tin do bot CMS gui.
 	BotSender JSONMap `gorm:"type:jsonb" json:"bot_sender,omitempty"`
 
+	// Ghim tin nhan trong nhom (CMS goi POST /bot/v1/messages/:id/pin).
+	Pinned   bool       `gorm:"default:false;index" json:"pinned"`
+	PinnedAt *time.Time `json:"pinned_at,omitempty"`
+	PinnedBy *uuid.UUID `gorm:"type:uuid" json:"pinned_by,omitempty"`
+
 	// ClientMsgID: idempotency key do FE sinh, chong gui trung khi retry WS.
 	ClientMsgID string `gorm:"size:64;index" json:"client_msg_id,omitempty"` // unique (conversation_id, client_msg_id) qua migration
 

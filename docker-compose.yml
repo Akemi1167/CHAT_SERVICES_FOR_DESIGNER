@@ -1,3 +1,6 @@
+# Project rieng de 3 stack khong ghi de image/volume cua nhau.
+name: chat-service-demo
+
 services:
   postgres:
     image: postgres:16-alpine

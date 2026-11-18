@@ -19,7 +19,7 @@ func registerRoutes(app *fiber.App, cfg *config.Config, d Deps) {
 	botH := handler.NewBotHandler(d.Bots, d.Messages)
 	taskH := handler.NewTaskHandler(d.Tasks)
 	clientH := clientapi.NewHandler(d.Store, d.Conversations, d.Messages, d.Cards, d.Notifications, d.CMSSync)
-	cmsBotH := botapi.NewHandler(d.Store, d.CMSSync, d.Messages, d.Cards, d.Notifications)
+	cmsBotH := botapi.NewHandler(d.Store, d.CMSSync, d.Messages, d.Cards, d.Notifications, d.Presence)
 	wsH := ws.NewHandler(cfg.HTTP, d.Hub, d.Messages)
 
 	// --- public: health check cho k8s/docker ---
@@ -73,10 +73,13 @@ func registerRoutes(app *fiber.App, cfg *config.Config, d Deps) {
 	conv.Get("/:id/messages", msgH.List)
 	conv.Post("/:id/messages", msgH.Send)
 	conv.Post("/:id/read", msgH.MarkRead)
+	conv.Get("/:id/pinned", msgH.ListPinned)
 
 	msg := api.Group("/messages")
 	msg.Get("/search", msgH.Search)
 	msg.Get("/:message_id/replies", msgH.Replies)
+	msg.Post("/:message_id/pin", msgH.Pin)
+	msg.Get("/:message_id/attachments/:attachment_id", msgH.Attachment)
 	msg.Get("/:message_id/readers", msgH.Readers)
 	msg.Delete("/:message_id", msgH.Delete)
 

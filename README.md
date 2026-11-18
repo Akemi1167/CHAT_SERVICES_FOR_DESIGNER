@@ -168,7 +168,12 @@ transport (http/grpc/ws)  ->  service  ->  repository (interface)  ->  postgres/
 | [docs/07-task.md](docs/07-task.md) | Task: mô hình dữ liệu, state machine, tạo yêu cầu / nhận task / phiếu sửa, chia task |
 | [docs/08-docker.md](docs/08-docker.md) | Hai stack Docker (dev hot-reload và prod-like), lệnh, biến môi trường, sự cố hay gặp |
 | [docs/09-postman.md](docs/09-postman.md) | Postman: file import, cách chạy cả collection, WebSocket & gRPC |
+| [docs/14-code-map.md](docs/14-code-map.md) | **Từ URL tới code**: route nằm đâu, handler nào, service nào — kèm `make route` |
+| [docs/13-test-guide.md](docs/13-test-guide.md) | **Cách test**: `make seed`, chat trên terminal, Postman, curl, xem log khi lỗi |
+| [docs/12-deploy.md](docs/12-deploy.md) | **Deploy VPS**: stack prod, TLS/WebSocket qua nginx, bảo mật, backup, checklist |
+| [docs/16-api-flow.md](docs/16-api-flow.md) | **Luồng gọi API theo thứ tự** (từ FE): mở app, mở nhóm, gửi tin, thread, tạo yêu cầu, bấm nút card |
 | [docs/11-frontend.md](docs/11-frontend.md) | **Dành cho FE**: 2 chế độ, auth, REST + WebSocket, reply/thread, card, luồng chuẩn, checklist |
+| [docs/15-cms-cutover.md](docs/15-cms-cutover.md) | **Nối vào CMS**: xin gì, đưa gì, điền env, `make cms-check`, cách quay lui |
 | [docs/10-cms-integration.md](docs/10-cms-integration.md) | **Tích hợp CMS**: JWKS, đồng bộ nhóm, card/visibleTo, webhook HMAC, Bot API, API cho FE |
 
 ---
@@ -183,6 +188,7 @@ make migrate-create name=add_pinned_to_messages
 make migrate-up / migrate-down / migrate-status
 make test / lint / fmt
 make up / down / logs / psql
+make seed            # dựng dữ liệu demo + in token/ID để test ngay
 make token SUB=user-002 ROLE=order
 make postman         # sinh lại collection Postman sau khi đổi API
 make postman-run TOKEN=$(make -s token)   # chạy cả collection bằng Postman CLI

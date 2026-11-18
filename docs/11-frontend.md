@@ -57,11 +57,23 @@ server quyết định** — đừng ẩn/hiện nút dựa trên role, hãy d�
 **Phân trang bằng cursor, không dùng offset.** Mọi API list nhận `?limit=30&cursor=…` và trả con trỏ
 trang kế tiếp:
 
+Hai bề mặt API có **tên khoá khác nhau** — dùng đúng bề mặt bạn đang gọi:
+
+| Bề mặt | Vỏ response | Con trỏ trang |
+|---|---|---|
+| `/api/v1/*` (nội bộ, snake_case) | `{data, meta}` | `meta.next_cursor`, `meta.has_more` |
+| `/api/client/v1/chat/*` (**hợp đồng CMS, FE dùng cái này**) | `{statusCode, code, message, element}` | `element.pageInfo.nextCursor`, `element.pageInfo.hasMore` |
+
 ```json
+// /api/v1
 { "data": [ … ], "meta": { "next_cursor": "MTc5NDY1…", "has_more": true } }
+
+// /api/client/v1/chat
+{ "statusCode": 200, "code": "SUCCESS", "element": {
+    "messages": [ … ], "pageInfo": { "nextCursor": "MTc5NDY1…", "hasMore": true } } }
 ```
 
-Hết trang khi `has_more = false`. Timeline tin nhắn trả **mới nhất trước**; riêng danh sách phản hồi
+Hết trang khi `hasMore` / `has_more` = `false`. Timeline tin nhắn trả **mới nhất trước**; riêng danh sách phản hồi
 (mục 5) trả **cũ → mới** để render thread từ trên xuống.
 
 **Lỗi** luôn có `code` ổn định — bắt theo `code`, đừng so sánh `message`:
@@ -83,7 +95,8 @@ Hết trang khi `has_more = false`. Timeline tin nhắn trả **mới nhất tr�
 | `route_not_found` | gọi sai đường dẫn (thường do biến rỗng ghép vào URL) |
 
 **ID**: tất cả là UUID. Riêng nhóm ở chế độ CMS có thêm `chatId` dạng `wg_<hex>` — API nhận **cả hai**,
-truyền cái nào cũng được.
+truyền cái nào cũng được. Nghĩa là `…/chat/groups/:id/messages` thì `:id` =
+`wg_95f6fdbfaa17593e` (CMS) **hoặc** `0a142c1f-82c5-…` (UUID nhóm, chế độ fake).
 
 ---
 
@@ -170,6 +183,33 @@ Một tin nhắn (A):
 
 `replies` sắp **cũ → mới**; phân trang tiếp bằng `cursor` như bình thường.
 
+### Gọi thử nhanh bộ (B)
+
+```bash
+TOKEN=<token>                     # make seed in ra
+GROUP=<chatId hoặc UUID nhóm>
+
+# Lịch sử tin nhắn
+curl -s "http://localhost:8080/api/client/v1/chat/groups/$GROUP/messages?limit=20" \
+  -H "Authorization: Bearer $TOKEN" | jq
+
+# Gửi tin (kèm trả lời)
+curl -s -X POST "http://localhost:8080/api/client/v1/chat/groups/$GROUP/messages" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"text":"Gọi API FE thử","replyToId":"<message id>","clientMsgId":"'$(uuidgen)'"}' | jq
+```
+
+Response bộ (B) luôn bọc envelope:
+
+```json
+{ "statusCode": 200, "code": "SUCCESS", "message": "Success",
+  "element": { "duplicated": false,
+               "message": { "id": "a0db773b-…", "conversationId": "0a142c1f-…",
+                            "text": "Gọi API FE thử", "replyToId": "302804f0-…",
+                            "senderType": "user", "createdAt": "2026-11-18T15:01:56Z",
+                            "sender": { "name": "An (Order)", "role": "order" } } } }
+```
+
 ### Gửi tin nhắn
 
 Khuyên dùng WebSocket khi socket đang mở (mục 7), REST làm fallback:
@@ -203,6 +243,9 @@ Upload tệp là service khác: FE upload xong lấy URL rồi gửi URL trong `
 | Ai đã xem một tin | `GET /api/v1/messages/:message_id/readers` | — |
 | Tìm tin nhắn | `GET /api/v1/messages/search?q=&conversation_id=&sender_id=&from_date=&to_date=` | — |
 | Xoá tin (mềm) | `DELETE /api/v1/messages/:message_id` | — |
+| Ghim / bỏ ghim | `POST /api/v1/messages/:message_id/pin` (`{"pinned":false}` để bỏ) | — |
+| Danh sách ghim | `GET /api/v1/conversations/:id/pinned` | — |
+| Thông tin tệp đính kèm | `GET /api/v1/messages/:message_id/attachments/:attachment_id` (`?redirect=true` → 302) | — |
 | Thông báo | — | `GET …/chat/notifications`, `POST …/chat/notifications/read` |
 
 ---
@@ -290,7 +333,7 @@ Nhận `ready` là kết nối thành công — **frame này nói rõ tab đang 
 | `message.deleted` | `{conversation_id, message_id}` |
 | `read` | ai đó đã đọc tới tin nào |
 | `typing` | người khác đang nhập (không gửi lại cho chính mình) |
-| `presence` | online/offline |
+| `presence` | `{user_id, actor_id, presence: "online"\|"offline"\|"off_duty", reason, online}` — `off_duty` là nghỉ theo lịch (hiện chữ OFF cạnh tên), kèm `reason` |
 | `notification` | thông báo riêng cho mình |
 | `reload` | cần gọi lại `bootstrap`/danh sách nhóm (được thêm/gỡ khỏi nhóm) |
 

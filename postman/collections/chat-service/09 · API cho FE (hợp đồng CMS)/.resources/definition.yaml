@@ -2,5 +2,9 @@ $kind: collection
 description: |-
   Bộ API `/api/client/v1/chat/*` với envelope `{statusCode, code, message, element}`.
 
-  Auth: **access token do CMS phát** — đặt vào biến `cms_token` (lấy từ `POST /api/client/v1/workspace/auth/login` của CMS). Token dev `make token` cũng dùng được khi `AUTH_ALLOW_DEV_TOKEN=true`, nhưng sẽ không có `cmsUserId`/nhóm CMS.
+  Auth: **access token do CMS phát** — đặt vào biến `cms_token` (lấy từ `POST /api/client/v1/workspace/auth/login` của CMS). Token dev `make token` cũng dùng được khi `AUTH_ALLOW_DEV_TOKEN=true`.
+
+  **`{{chat_id}}` là gì**: id nhóm trong URL. Chế độ CMS là `wg_<hex>`; chế độ fake (chưa có CMS) thì dùng **UUID nhóm** — endpoint nhận cả hai. Collection tự gán `chat_id = conversation_id` nếu bạn chưa điền, nên chỉ cần chạy folder `01 · Hội thoại` trước là dùng được ngay.
+
+  Khác với `/api/v1`: envelope `{statusCode, code, message, element}` và field dạng camelCase (`text`, `replyToId`, `threadRootId`, `clientMsgId`).
 order: 10000

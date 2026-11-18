@@ -161,7 +161,11 @@ messages = folder(
                                    "name": "banner-v1.png", "mime_type": "image/png",
                                    "size_bytes": 102400, "width": 800, "height": 600}],
                   "client_msg_id": "{{$guid}}"},
-            desc="Service chỉ lưu URL — việc upload do service file/CDN khác làm."),
+            desc="Service chỉ lưu URL — việc upload do service file/CDN khác làm.",
+            tests=(OK,
+                   'const m = pm.response.json().data.message;',
+                   'if (m.attachments && m.attachments[0]) pm.collectionVariables.set("attachment_id", m.attachments[0].id);',
+                   'pm.test("co attachment", () => pm.expect(m.attachments).to.have.lengthOf(1));')),
         req("Trả lời trong thread", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
             body={"content": "Phản hồi trong thread của nhiệm vụ", "thread_id": "{{thread_id}}",
                   "client_msg_id": "{{$guid}}"},
@@ -210,8 +214,21 @@ messages = folder(
             tests=(OK, 'pm.test("co unread_count", () => pm.expect(pm.response.json().data).to.have.property("unread_count"));')),
         req("Ai đã xem tin này", "GET", "/api/v1/messages/{{message_id}}/readers",
             desc="Danh sách người đã đọc (bảng `message_receipts`)."),
-        req("Xoá tin nhắn (mềm)", "DELETE", "/api/v1/messages/{{message_id}}",
-            desc="Người gửi hoặc owner/admin nhóm. ⚠️ Chạy cuối vì các request trên dùng `message_id`.",
+        req("Ghim tin nhắn", "POST", "/api/v1/messages/{{message_id}}/pin",
+            body={},
+            desc="Ghim tin trong nhóm. Gửi `{\"pinned\": false}` để bỏ ghim. Ghim lại tin đã ghim "
+                 "không đổi gì (idempotent). Cả nhóm nhận event `message` để cập nhật.",
+            tests=(OK, 'pm.test("da ghim", () => pm.expect(pm.response.json().data.pinned).to.be.true);')),
+        req("Danh sách tin đã ghim", "GET", "/api/v1/conversations/{{conversation_id}}/pinned",
+            query=[("limit", "50")],
+            desc="Mới ghim trước.",
+            tests=(OK, 'pm.test("la mang", () => pm.expect(pm.response.json().data).to.be.an("array"));')),
+        req("Bỏ ghim", "POST", "/api/v1/messages/{{message_id}}/pin",
+            body={"pinned": False},
+            tests=(OK, 'pm.test("da bo ghim", () => pm.expect(pm.response.json().data.pinned).to.be.false);')),
+        req("Xoá tin nhắn (mềm)", "DELETE", "/api/v1/messages/{{reply_message_id}}",
+            desc="Người gửi hoặc owner/admin nhóm. Xoá **tin trả lời** vừa tạo ở trên, không xoá "
+                 "`message_id` để các folder sau còn dùng được.",
             tests=('pm.test("200 hoặc 403", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));',)),
     ],
 )
@@ -219,7 +236,7 @@ messages = folder(
 teams = folder(
     "03 · Tổ & gợi ý người phụ trách",
     "Tổ (bộ phận) dùng cho `chọn tổ` khi tạo yêu cầu. **Tổ phải có thành viên** thì bot/`/tasks` mới "
-    "gợi ý được người phụ trách.",
+    "gợi ý được người phụ trách.\n\n⚠️ Cần `TASK_ENGINE_ENABLED=true` (cùng nhóm với folder 05/06).",
     [
         req("Danh sách tổ", "GET", "/api/v1/teams",
             desc="Seed sẵn: `design`, `edit`, `order`. Lưu `team_id` của tổ design.",
@@ -234,6 +251,9 @@ teams = folder(
         req("Gợi ý người phụ trách", "GET", "/api/v1/teams/{{team_id}}/suggest",
             desc="Xếp hạng: người **không OFF** trước, rồi **ít việc đang mở nhất** (`open_tasks`), "
                  "rồi theo tên. FE hiển thị gợi ý nhưng vẫn cho đổi người."),
+        req("Bỏ thành viên khỏi tổ", "DELETE", "/api/v1/teams/{{team_id}}/members/{{user_id}}",
+            desc="Chạy sau phần gợi ý vì bỏ thành viên sẽ làm tổ trống.",
+            tests=('pm.test("200", () => pm.response.to.have.status(200));',)),
         req("Tạo tổ mới", "POST", "/api/v1/teams",
             body={"code": "design-2", "name": "Tổ Design 2", "kind": "design"},
             desc="`kind`: design | edit | order | other.",
@@ -285,7 +305,9 @@ bots = folder(
 tasks = folder(
     "05 · Task (yêu cầu / nhận việc)",
     "Vòng đời card của từng người. Trạng thái task tổng được **suy ra** từ các card.\n\n"
-    "Chạy theo thứ tự: Tạo → Danh sách (lưu `task_id`) → Nhận → Tạm dừng → Tiếp tục → Hoàn thành.",
+    "Chạy theo thứ tự: Tạo → Danh sách (lưu `task_id`) → Nhận → Tạm dừng → Tiếp tục → Hoàn thành.\n\n"
+    "⚠️ Cần `TASK_ENGINE_ENABLED=true`. Khi tích hợp CMS thì tắt module này (CMS sở hữu đơn/task) "
+    "và folder này sẽ trả 404 — dùng `make postman-run-task` để chạy riêng.",
     [
         req("Tạo yêu cầu (giao cho mình)", "POST", "/api/v1/tasks",
             body={"conversation_id": "{{conversation_id}}", "title": "Video quảng cáo Tết",
@@ -351,6 +373,15 @@ tasks = folder(
                  "Designer thường sửa → 403 `require_task_manager`."),
         req("Lịch sử task", "GET", "/api/v1/tasks/{{task_id}}/events", query=[("limit", "50")],
             desc="Ai làm gì, lúc nào, từ trạng thái nào sang trạng thái nào."),
+        req("Nhận task thiếu số lượng → 400", "POST", "/api/v1/tasks/{{task_id}}/accept",
+            body={"quota": "HD"},
+            desc="Thiếu `quantity` → `400 accept_requires_quantity`; task đã nhận rồi → `409`.",
+            tests=('pm.test("400 hoặc 409", () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));',)),
+        req("Huỷ task (chạy cuối folder này)", "POST", "/api/v1/tasks/{{task_id}}/cancel",
+            body={"reason": "Khách đổi yêu cầu"},
+            desc="Huỷ sẽ thu hồi các card chưa hoàn thành → mọi thao tác sau đó trên task trả "
+                 "409 `task_cancelled`.",
+            tests=('pm.test("200 hoac 403", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));',)),
     ],
 )
 
@@ -394,7 +425,7 @@ errors = folder(
             desc="Code: `unauthenticated`.",
             tests=('pm.test("401", () => pm.response.to.have.status(401));',
                    'pm.test("code unauthenticated", () => pm.expect(pm.response.json().error.code).to.eql("unauthenticated"));')),
-        req("UUID sai → 400", "GET", "/api/v1/tasks/khong-phai-uuid",
+        req("UUID sai → 400", "GET", "/api/v1/conversations/khong-phai-uuid",
             tests=('pm.test("400", () => pm.response.to.have.status(400));',
                    'pm.test("code invalid_uuid", () => pm.expect(pm.response.json().error.code).to.eql("invalid_uuid"));')),
         req("Hội thoại không tồn tại → 403/404", "GET",
@@ -410,9 +441,6 @@ errors = folder(
             body={"content": "   "},
             tests=('pm.test("400", () => pm.response.to.have.status(400));',
                    'pm.test("code empty_message", () => pm.expect(pm.response.json().error.code).to.eql("empty_message"));')),
-        req("Nhận task thiếu số lượng → 400", "POST", "/api/v1/tasks/{{task_id}}/accept",
-            body={"quota": "HD"},
-            tests=('pm.test("400 hoặc 409", () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));',)),
     ],
 )
 
@@ -468,6 +496,26 @@ cms_bot = folder(
             desc="**Thay thế toàn bộ** danh sách thành viên: ai không còn trong danh sách mất quyền xem nhóm ngay.",
             auth={"type": "noauth"},
             tests=(OK, 'pm.test("co memberCount", () => pm.expect(pm.response.json()).to.have.property("memberCount"));')),
+        req("Ghim tin nhắn", "POST", "/bot/v1/messages/{{card_message_id}}/pin",
+            body={},
+            desc="CMS ghim card/tin quan trọng. `{\"pinned\": false}` để bỏ ghim.",
+            auth={"type": "noauth"},
+            tests=(OK, 'pm.test("ok", () => pm.expect(pm.response.json().ok).to.be.true);')),
+        req("Cập nhật presence (lịch OFF)", "PUT", "/bot/v1/presence",
+            body={"items": [
+                {"actorId": "{{actor_id}}", "status": "off", "reason": "Lịch OFF ca chiều"},
+            ]},
+            desc="`status`: `on` → online; `off` **kèm `reason`** → `off_duty` (hiện chữ OFF cạnh tên); "
+                 "`off` không reason → offline. Actor không tồn tại thì bị bỏ qua, không lỗi.\n\n"
+                 "Chat phát event realtime `presence` cho những người **chung hội thoại** với người đó.",
+            auth={"type": "noauth"},
+            tests=(OK, 'pm.test("co so dong cap nhat", () => pm.expect(pm.response.json().updated).to.be.a("number"));')),
+        req("Thông tin tệp đính kèm", "GET", "/bot/v1/attachments/{{attachment_id}}",
+            desc="Chat **không lưu file**, chỉ lưu URL do service upload/CDN cung cấp. "
+                 "Thêm `?redirect=true` để nhảy thẳng tới URL đó (302).",
+            auth={"type": "noauth"},
+            tests=('pm.test("200 hoac 404 neu chua co attachment_id",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));',)),
         req("Sai service key → 401", "POST", "/bot/v1/users/resolve",
             body={"items": []},
             headers={"X-Chat-Service-Key": "khoa-sai-co-y"},
@@ -484,7 +532,12 @@ cms_client = folder(
     "Bộ API `/api/client/v1/chat/*` với envelope `{statusCode, code, message, element}`.\n\n"
     "Auth: **access token do CMS phát** — đặt vào biến `cms_token` (lấy từ "
     "`POST /api/client/v1/workspace/auth/login` của CMS). Token dev `make token` cũng dùng được "
-    "khi `AUTH_ALLOW_DEV_TOKEN=true`, nhưng sẽ không có `cmsUserId`/nhóm CMS.",
+    "khi `AUTH_ALLOW_DEV_TOKEN=true`.\n\n"
+    "**`{{chat_id}}` là gì**: id nhóm trong URL. Chế độ CMS là `wg_<hex>`; chế độ fake (chưa có CMS) "
+    "thì dùng **UUID nhóm** — endpoint nhận cả hai. Collection tự gán `chat_id = conversation_id` "
+    "nếu bạn chưa điền, nên chỉ cần chạy folder `01 · Hội thoại` trước là dùng được ngay.\n\n"
+    "Khác với `/api/v1`: envelope `{statusCode, code, message, element}` và field dạng camelCase "
+    "(`text`, `replyToId`, `threadRootId`, `clientMsgId`).",
     [
         req("Bootstrap", "GET", "/api/client/v1/chat/bootstrap",
             desc="Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, "
@@ -499,39 +552,46 @@ cms_client = folder(
         req("Đồng bộ lại nhóm từ CMS", "POST", "/api/client/v1/chat/groups/refresh",
             desc="Gọi sau khi user vào nhóm bằng link mời.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
-            tests=('pm.test("200 hoac 400 neu chua bat CMS",'
-                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));',)),
+            tests=('pm.test("200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
         req("Lịch sử tin nhắn (card đã lọc)", "GET", "/api/client/v1/chat/groups/{{chat_id}}/messages",
             query=[("limit", "30")],
             desc="Card trả về đã **lọc nút theo `visibleTo`** của chính người gọi; `actions` liệt kê "
-                 "action người đó được bấm.",
+                 "action người đó được bấm.\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `chat_id`, "
+                 "không thì `403 not_conversation_member`.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
-            tests=(OK,)),
+            tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
         req("Gửi tin nhắn", "POST", "/api/client/v1/chat/groups/{{chat_id}}/messages",
             body={"text": "Nhờ team làm gấp giúp mình nhé", "clientMsgId": "{{$guid}}"},
             desc="Chat lưu + phát realtime + gửi `message.created` sang CMS (bất đồng bộ qua outbox).",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
-            tests=(OK,)),
+            tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
         req("Phản hồi của 1 tin nhắn", "GET", "/api/client/v1/chat/messages/{{card_message_id}}/replies",
             query=[("mode", "thread"), ("limit", "50")],
             desc="Trả `root`, `replies` (card đã lọc `visibleTo`), `replyCount`, `threadCount`. "
                  "`mode=direct` cho trích dẫn, `mode=thread` cho panel thread của card.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
-            tests=(OK,)),
+            tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
         req("Bấm nút trên card", "POST", "/api/client/v1/chat/messages/{{card_message_id}}/actions",
             body={"action": "accept_task", "values": {"normItemId": "996802", "quantity": 2}},
             desc="Chat kiểm `visibleTo` trước (không được phép → `403 ACTION_NOT_ALLOWED`), rồi gửi "
-                 "`card.action` sang CMS và áp card mới nếu `cardVersion` lớn hơn.",
+                 "`card.action` sang CMS và áp card mới nếu `cardVersion` lớn hơn.\n\n"
+                 "Chế độ fake (chưa bật CMS) hoặc tin nhắn không phải card → `400 cms_disabled` / "
+                 "`400 message_has_no_card`.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
-            tests=('pm.test("200 hoac 403", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));',)),
+            tests=('pm.test("200 (CMS) hoac 400/403 (fake / khong co quyen)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
         req("Gửi form tạo yêu cầu", "POST", "/api/client/v1/chat/forms/create_task/submit",
             body={"values": {"kind": "task", "title": "Banner Tết 2027", "teamId": "27", "useAI": False},
                   "context": {"groupId": "{{chat_id}}"}},
             desc="FE gửi `teamId` trong `values`; Chat **không diễn giải**, chuyển nguyên sang CMS "
                  "trong event `form.submit` rồi trả `toast`/`closeForm` cho UI.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
-            tests=('pm.test("200 hoac 400 neu chua bat CMS",'
-                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));',)),
+            tests=('pm.test("200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
         req("Thông báo của tôi", "GET", "/api/client/v1/chat/notifications",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=(OK,)),
@@ -544,19 +604,13 @@ cms_client = folder(
 
 cleanup = folder(
     "99 · Dọn dẹp (chạy cuối, tuỳ ý)",
-    "Các request làm thay đổi/rút quyền — tách riêng để không phá flow ở trên.",
+    "Các request làm thay đổi/rút quyền — tách riêng để không phá flow ở trên. "
+    "Chạy được ở mọi cấu hình.",
     [
-        req("Huỷ task", "POST", "/api/v1/tasks/{{task_id}}/cancel",
-            body={"reason": "Khách đổi yêu cầu"},
-            desc="Huỷ sẽ thu hồi các card chưa hoàn thành → mọi thao tác sau đó trên task trả "
-                 "409 `task_cancelled`. Vì vậy request này nằm ở folder dọn dẹp, chạy sau cùng.",
-            tests=(OK, 'pm.test("da huy", () => pm.expect(pm.response.json().data.status).to.eql("cancelled"));')),
         req("Rời nhóm / xoá thành viên", "DELETE",
             "/api/v1/conversations/{{conversation_id}}/members/{{user_id_2}}",
             desc="Tự rời nhóm được; xoá người khác cần owner/admin.",
             tests=('pm.test("200 hoặc 400/403", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
-        req("Bỏ thành viên khỏi tổ", "DELETE", "/api/v1/teams/{{team_id}}/members/{{user_id}}",
-            tests=('pm.test("200", () => pm.response.to.have.status(200));',)),
     ],
 )
 
@@ -628,6 +682,17 @@ collection = {
             "script": {
                 "type": "text/javascript",
                 "exec": [
+                    "// chat_id = id nhóm: chế độ CMS là wg_<hex>, chế độ fake là UUID nhóm.",
+                    "// Lưu ý: nếu environment có biến chat_id thì giá trị đó LẤN ÁT biến collection,",
+                    "// nên khi dùng CMS hãy điền chat_id ở environment, còn fake thì để trống.",
+                    "// Chưa có thì lấy luôn conversation_id (folder 01 đã lưu) để khỏi điền tay.",
+                    "if (!pm.variables.get('chat_id') && pm.variables.get('conversation_id')) {",
+                    "  pm.collectionVariables.set('chat_id', pm.variables.get('conversation_id'));",
+                    "}",
+                    "// Chưa chạy folder CMS thì dùng tạm tin nhắn thường để các request không vỡ.",
+                    "if (!pm.variables.get('card_message_id') && pm.variables.get('message_id')) {",
+                    "  pm.collectionVariables.set('card_message_id', pm.variables.get('message_id'));",
+                    "}",
                     "// Bot API dùng service key thay vì JWT -> tự gắn header.",
                     "if (pm.request.url.getPath().startsWith('/bot/v1')) {",
                     "  if (!pm.request.headers.has('X-Chat-Service-Key')) {",
@@ -667,6 +732,7 @@ collection = {
         {"key": "assignment_id", "value": "", "type": "string"},
         {"key": "revision_id", "value": "", "type": "string"},
         {"key": "reply_message_id", "value": "", "type": "string"},
+        {"key": "attachment_id", "value": "", "type": "string"},
     ],
     "item": [start, conversations, messages, teams, bots, tasks, revisions, errors,
              cms_bot, cms_client, cleanup],
@@ -683,7 +749,6 @@ environment = {
         {"key": "token_2", "value": "", "type": "secret", "enabled": True},
         {"key": "cms_token", "value": "", "type": "secret", "enabled": True},
         {"key": "service_key", "value": "", "type": "secret", "enabled": True},
-        {"key": "chat_id", "value": "", "type": "default", "enabled": True},
         {"key": "user_id_2", "value": "", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",

@@ -74,5 +74,6 @@ docker compose -f docker-compose.dev.yml up -d --scale app=2   # cần bỏ cont
 | `bind: address already in use` | cổng 5432/6379/8080/9090 đã bị tiến trình khác giữ — đổi port map trong compose |
 | app restart liên tục, log `config: thieu bien moi truong bat buoc` | thiếu `POSTGRES_DSN` hoặc `JWT_SECRET` trong env của service `app` |
 | `Dirty database version` khi migrate | migration lỗi giữa chừng: `make migrate-force version=<n>` rồi chạy lại |
+| Sửa `.env` nhưng container vẫn dùng giá trị cũ | `docker compose restart` **không nạp lại** `env_file`. Phải `docker compose -f docker-compose.dev.yml up -d app` (tạo lại container). Kiểm tra: `docker compose -f docker-compose.dev.yml exec app sh -c 'echo $CMS_WEBHOOK_URL'` |
 | air không build lại | file sửa nằm trong `exclude_dir` của `.air.toml`; hoặc thư mục `tmp/` bị xoá — **`tmp/` là chỗ air build binary vào, đừng dùng nó làm chỗ chứa file tạm**. Script/probe tạm thì để trong `scratch/` (đã được air bỏ qua). Khắc phục: `docker compose -f docker-compose.dev.yml restart app` |
 | đổi `.proto` xong container không thấy | chạy `make dev-sh` → `make proto` (image dev đã có `protoc`) |

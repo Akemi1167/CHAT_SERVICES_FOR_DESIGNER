@@ -110,7 +110,7 @@ Server → Client:
 | `message.deleted` | tin nhắn bị xoá | `{conversation_id, message_id}` |
 | `message.read` | có người đọc tin | `{conversation_id, message_id, user_id, seen_at}` |
 | `typing` | người khác đang nhập (không gửi lại cho chính người đó) | `{conversation_id, user_id, typing}` |
-| `presence.update` | user online/offline | `{user_id, online}` |
+| `presence` | user đổi trạng thái (mở/đóng WebSocket, hoặc CMS báo lịch OFF) | `{user_id, actor_id, presence: "online"\|"offline"\|"off_duty", reason, online}` — chỉ gửi cho người **chung hội thoại** |
 | `conversation.created` / `conversation.updated` | được thêm vào nhóm, nhóm đổi thành viên | object conversation |
 | `bot.submission.stored` | bot đã lưu 1 mẫu | object submission |
 | `task.created` | có yêu cầu/task mới trong hội thoại | `{task}` |

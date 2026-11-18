@@ -1,4 +1,5 @@
 $kind: http-request
+description: Thiếu `quantity` → `400 accept_requires_quantity`; task đã nhận rồi → `409`.
 url: "{{base_url}}/api/v1/tasks/{{task_id}}/accept"
 method: POST
 headers:
@@ -13,4 +14,4 @@ scripts:
   - type: afterResponse
     code: pm.test("400 hoặc 409", () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));
     language: text/javascript
-order: 6000
+order: 16000

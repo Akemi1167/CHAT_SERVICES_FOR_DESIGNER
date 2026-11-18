@@ -74,6 +74,27 @@ run: ## Chay server (doc .env)
 token: ## Sinh JWT de test: make token SUB=user-001 NAME="Nguyen A" ROLE=designer
 	go run ./cmd/token -sub "$(or $(SUB),user-001)" -name "$(or $(NAME),Dev User)" -role "$(or $(ROLE),designer)"
 
+.PHONY: cms-check
+cms-check: ## Kiem tra ket noi CMS (JWKS, Workspace API, webhook HMAC, Bot API)
+	@./scripts/check-cms.sh
+
+.PHONY: route
+route: ## Tra URL -> route -> handler -> service: make route PATH=/api/client/v1/chat/auth/me
+	@test -n "$(PATH_)" -o -n "$(path)" -o -n "$(URL)" || true
+	@./scripts/find-route.sh "$(or $(URL),$(or $(path),$(PATH)))"
+
+.PHONY: token-cms
+token-cms: ## Token dev dong vai 1 user CMS da dong bo (chi dung o local): make token-cms CMS_USER=6
+	@test -n "$(CMS_USER)" || (echo "Thieu CMS_USER (vd: make token-cms CMS_USER=6)"; exit 1)
+	@info=$$(docker compose -f docker-compose.dev.yml exec -T postgres psql -U chat -d chat -tA \
+	  -c "SELECT open_id || '|' || display_name FROM users WHERE cms_user_id=$(CMS_USER);" | tr -d '\r'); \
+	test -n "$$info" || (echo "Khong thay user cms_user_id=$(CMS_USER) trong Chat (chay dong bo truoc)"; exit 1); \
+	go run ./cmd/token -sub "$${info%%|*}" -name "$${info##*|}" -role designer -ttl 24h
+
+.PHONY: seed
+seed: ## Dung du lieu demo de test (3 user, 1 nhom, reply/thread, 1 yeu cau) + in token
+	go run ./cmd/seeddemo -base "$(or $(BASE),http://localhost:8080)"
+
 .PHONY: ws
 ws: ## WS client dong lenh de test chat: make ws SUB=an NAME=An CONV=<conversation_id>
 	@test -n "$(CONV)" || echo "(chua co CONV -> chi lang nghe, khong gui duoc tin nhan)"
@@ -128,14 +149,22 @@ postman: ## Sinh lai Postman collection (file v2.1 de import + ban v3 cho CLI)
 	python3 scripts/gen_postman.py
 
 .PHONY: postman-run
-postman-run: ## Chay collection (tru folder CMS): make postman-run TOKEN=<jwt> [USER2=<uuid>]
+postman-run: ## Chay cac folder luon dung duoc (chat, tin nhan, loi): make postman-run TOKEN=<jwt> [USER2=<uuid>]
 	@test -n "$(TOKEN)" || (echo "Thieu TOKEN. Vi du: make postman-run TOKEN=$$(make -s token)"; exit 1)
 	postman collection run postman/chat-service.postman_collection.json \
 	  -e postman/chat-service.local.postman_environment.json \
 	  --env-var "token=$(TOKEN)" --env-var "user_id_2=$(or $(USER2),)" \
-	  -i "00 · Bắt đầu" -i "01 · Hội thoại" -i "02 · Tin nhắn" -i "03 · Tổ & gợi ý người phụ trách" \
-	  -i "04 · Bot @bot & gửi mẫu" -i "05 · Task (yêu cầu / nhận việc)" -i "06 · Phiếu sửa" \
+	  -i "00 · Bắt đầu" -i "01 · Hội thoại" -i "02 · Tin nhắn" \
 	  -i "07 · Lỗi & quyền (xem cách API phản hồi)" -i "99 · Dọn dẹp (chạy cuối, tuỳ ý)"
+
+.PHONY: postman-run-task
+postman-run-task: ## Chay folder task noi bo (can TASK_ENGINE_ENABLED=true): make postman-run-task TOKEN=<jwt>
+	@test -n "$(TOKEN)" || (echo "Thieu TOKEN"; exit 1)
+	postman collection run postman/chat-service.postman_collection.json \
+	  -e postman/chat-service.local.postman_environment.json \
+	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" --env-var "token=$(TOKEN)" \
+	  -i "00 · Bắt đầu" -i "01 · Hội thoại" -i "03 · Tổ & gợi ý người phụ trách" \
+	  -i "04 · Bot @bot & gửi mẫu" -i "05 · Task (yêu cầu / nhận việc)" -i "06 · Phiếu sửa"
 
 .PHONY: postman-run-cms
 postman-run-cms: ## Chay 2 folder CMS (can CMS_ENABLED=true): make postman-run-cms TOKEN=<cms jwt> KEY=<service key> CHAT_ID=wg_...

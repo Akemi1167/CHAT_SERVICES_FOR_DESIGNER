@@ -1,8 +1,9 @@
 $kind: http-request
+description: Chạy sau phần gợi ý vì bỏ thành viên sẽ làm tổ trống.
 url: "{{base_url}}/api/v1/teams/{{team_id}}/members/{{user_id}}"
 method: DELETE
 scripts:
   - type: afterResponse
     code: pm.test("200", () => pm.response.to.have.status(200));
     language: text/javascript
-order: 3000
+order: 5000

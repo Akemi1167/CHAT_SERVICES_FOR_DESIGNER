@@ -68,6 +68,8 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	ListByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.User, error)
 	UpdatePresence(ctx context.Context, id uuid.UUID, p domain.Presence, seenAt time.Time) error
+	// UpdatePresenceWithReason dung cho PUT /bot/v1/presence (CMS bao OFF kem ly do).
+	UpdatePresenceWithReason(ctx context.Context, id uuid.UUID, p domain.Presence, reason string, seenAt time.Time) error
 
 	// ---- dinh danh phia CMS ----
 	// UpsertFromCMS khop theo cms_user_id -> open_id -> external_id, roi cap nhat ho so.
@@ -95,7 +97,13 @@ type ConversationRepository interface {
 	MarkRead(ctx context.Context, convID, userID, msgID uuid.UUID, at time.Time) error
 	UnreadCounts(ctx context.Context, userID uuid.UUID, convIDs []uuid.UUID) (map[uuid.UUID]int64, error)
 
+	// ListPeerUserIDs: nhung nguoi dung chung it nhat 1 hoi thoai voi user nay
+	// (dung de phat su kien presence dung pham vi).
+	ListPeerUserIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+
 	// ---- nhom do CMS quan ly ----
+	// ListAll liet ke moi hoi thoai (dung cho Bot API tra cuu / doi chieu dong bo).
+	ListAll(ctx context.Context, p paging.Page) ([]domain.Conversation, error)
 	GetByExternalID(ctx context.Context, externalID string) (*domain.Conversation, error)
 	// UpsertFromCMS tao/cap nhat nhom theo chatId cua CMS (khong doi id noi bo neu da co).
 	UpsertFromCMS(ctx context.Context, c *domain.Conversation) (*domain.Conversation, error)
@@ -114,6 +122,13 @@ type MessageRepository interface {
 
 	UpsertReceipts(ctx context.Context, receipts []domain.MessageReceipt) error
 	ListReceipts(ctx context.Context, messageID uuid.UUID) ([]domain.MessageReceipt, error)
+
+	// SetPinned ghim / bo ghim tin nhan.
+	SetPinned(ctx context.Context, messageID uuid.UUID, pinned bool, by *uuid.UUID) error
+	// ListPinned liet ke tin da ghim cua mot hoi thoai (moi ghim truoc).
+	ListPinned(ctx context.Context, conversationID uuid.UUID, limit int) ([]domain.Message, error)
+	// GetAttachment tra 1 tep dinh kem kem tin nhan chua no.
+	GetAttachment(ctx context.Context, id uuid.UUID) (*domain.Attachment, *domain.Message, error)
 
 	// ListReplies liet ke phan hoi cua mot tin nhan theo thu tu CU -> MOI
 	// (doc thread tu tren xuong, nguoc voi timeline chat).

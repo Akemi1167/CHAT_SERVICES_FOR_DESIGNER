@@ -105,8 +105,9 @@ func (h *Handler) RefreshGroups(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	if h.sync == nil {
-		return fail(c, apperr.Invalid("cms_disabled", "Chua bat tich hop CMS"))
+	if h.sync == nil || !h.sync.Enabled() {
+		return fail(c, apperr.Invalid("cms_disabled",
+			"Chua bat tich hop CMS (CMS_ENABLED=false) nen khong co gi de dong bo"))
 	}
 	n, err := h.sync.SyncAll(c.UserContext())
 	if err != nil {
@@ -148,7 +149,7 @@ func (h *Handler) ListMessages(c *fiber.Ctx) error {
 
 	return ok(c, fiber.Map{
 		"messages": h.messageViews(items, me.ActorID),
-		"pageInfo": info,
+		"pageInfo": pageView(info),
 	})
 }
 
@@ -291,7 +292,7 @@ func (h *Handler) Replies(c *fiber.Ctx) error {
 		"replies":     h.messageViews(res.Replies, me.ActorID),
 		"replyCount":  res.DirectCount,
 		"threadCount": res.ThreadCount,
-		"pageInfo":    res.PageInfo,
+		"pageInfo":    pageView(res.PageInfo),
 	})
 }
 
@@ -381,7 +382,7 @@ func (h *Handler) ListNotifications(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return ok(c, fiber.Map{"notifications": items, "unread": unread, "pageInfo": info})
+	return ok(c, fiber.Map{"notifications": items, "unread": unread, "pageInfo": pageView(info)})
 }
 
 type readNotificationsReq struct {
@@ -475,6 +476,11 @@ func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.
 		"cms":         map[string]any(conv.CMSInfo),
 		"members":     members,
 	}
+}
+
+// pageView doi pageInfo sang camelCase cho be mat /api/client/v1 (hop dong voi CMS/FE).
+func pageView(info paging.PageInfo) fiber.Map {
+	return fiber.Map{"nextCursor": info.NextCursor, "hasMore": info.HasMore}
 }
 
 func (h *Handler) messageViews(items []domain.Message, actorID string) []fiber.Map {

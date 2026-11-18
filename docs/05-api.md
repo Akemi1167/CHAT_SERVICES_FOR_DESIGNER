@@ -22,6 +22,9 @@ Response có dạng `{"data": ..., "meta": {...}}` hoặc `{"error":{"code","mes
 | GET | `/api/v1/messages/search?q=&conversation_id=&sender_id=&from_date=&to_date=` | tìm theo nội dung / mã task / người gửi / ngày |
 | GET | `/api/v1/messages/:message_id/replies?mode=direct\|thread&cursor=&limit=` | **phản hồi của 1 tin nhắn**: `direct` = trả lời trực tiếp (`reply_to_id`), `thread` = cả thread tin đó mở (`thread_id`); trả `root`, `replies` (cũ→mới), `reply_count`, `thread_count` |
 | GET | `/api/v1/messages/:message_id/readers` | danh sách người đã xem |
+| POST | `/api/v1/messages/:message_id/pin` | ghim / bỏ ghim (`{"pinned":false}`) |
+| GET | `/api/v1/conversations/:id/pinned?limit=50` | danh sách tin đã ghim (mới ghim trước) |
+| GET | `/api/v1/messages/:message_id/attachments/:attachment_id?redirect=` | metadata tệp đính kèm, `redirect=true` → 302 tới URL |
 | DELETE | `/api/v1/messages/:message_id` | xoá mềm |
 | GET | `/api/v1/bots` | danh sách bot |
 | GET | `/api/v1/bots/:slug/templates` | schema các mẫu (FE render form) |
@@ -72,6 +75,9 @@ Auth: metadata `authorization: Bearer <JWT>`. Lỗi trả về theo `codes` chu�
 
 `ChatService`: `CreateConversation`, `GetConversation`, `ListConversations`, `AddMembers`,
 `RemoveMember`, `SendMessage`, `ListMessages`, `SearchMessages`, `MarkRead`.
+
+Bot API (CMS gọi): thêm `POST /bot/v1/messages/:id/pin`, `PUT /bot/v1/presence`,
+`GET /bot/v1/attachments/:id` — xem [10-cms-integration.md](10-cms-integration.md) §8.
 
 `BotService`: `ListBots`, `ListBotTemplates`, `SubmitBotTemplate`, `ListBotSubmissions`.
 

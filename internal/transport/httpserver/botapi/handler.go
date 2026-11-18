@@ -10,20 +10,23 @@ import (
 	"github.com/abc-workspace/chat-service/internal/cms"
 	"github.com/abc-workspace/chat-service/internal/domain"
 	"github.com/abc-workspace/chat-service/internal/pkg/apperr"
+	"github.com/abc-workspace/chat-service/internal/pkg/paging"
 	"github.com/abc-workspace/chat-service/internal/realtime"
 	"github.com/abc-workspace/chat-service/internal/repository"
 	"github.com/abc-workspace/chat-service/internal/service/card"
 	"github.com/abc-workspace/chat-service/internal/service/cmssync"
 	"github.com/abc-workspace/chat-service/internal/service/message"
 	"github.com/abc-workspace/chat-service/internal/service/notification"
+	"github.com/abc-workspace/chat-service/internal/service/presence"
 )
 
 type Handler struct {
-	store  repository.Store
-	sync   *cmssync.Service
-	msgs   *message.Service
-	cards  *card.Service
-	notifs *notification.Service
+	store    repository.Store
+	sync     *cmssync.Service
+	msgs     *message.Service
+	cards    *card.Service
+	notifs   *notification.Service
+	presence *presence.Service
 }
 
 func NewHandler(
@@ -32,8 +35,9 @@ func NewHandler(
 	msgs *message.Service,
 	cards *card.Service,
 	notifs *notification.Service,
+	presenceSvc *presence.Service,
 ) *Handler {
-	return &Handler{store: store, sync: sync, msgs: msgs, cards: cards, notifs: notifs}
+	return &Handler{store: store, sync: sync, msgs: msgs, cards: cards, notifs: notifs, presence: presenceSvc}
 }
 
 // Register gan toan bo route Bot API.
@@ -42,9 +46,16 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/messages", h.PostMessage)
 	router.Patch("/messages/:id", h.PatchMessage)
 	router.Post("/messages/:id/thread", h.ThreadReply)
+	router.Post("/messages/:id/pin", h.PinMessage)
+	router.Put("/presence", h.SetPresence)
+	router.Get("/attachments/:id", h.GetAttachment)
 	router.Post("/notifications", h.CreateNotification)
 	router.Put("/groups/:id", h.PutGroup)
 	router.Get("/groups/:id/members", h.GroupMembers)
+	router.Get("/groups", h.ListGroups)
+	router.Get("/groups/:id", h.GetGroup)
+	router.Get("/users/:id", h.GetUser)
+	router.Post("/users/batch", h.BatchUsers)
 }
 
 // ---------------- users/resolve ----------------
@@ -229,6 +240,97 @@ func (h *Handler) ThreadReply(c *fiber.Ctx) error {
 	})
 }
 
+// ---------------- ghim tin nhan ----------------
+
+type pinReq struct {
+	// Mac dinh true. Gui {"pinned": false} de bo ghim.
+	Pinned *bool `json:"pinned"`
+}
+
+// PinMessage: CMS ghim / bo ghim mot tin nhan trong nhom.
+func (h *Handler) PinMessage(c *fiber.Ctx) error {
+	return h.idempotent(c, "messages.pin", func() (int, any, error) {
+		id, err := paramUUID(c, "id")
+		if err != nil {
+			return 0, nil, err
+		}
+		pinned := true
+		if len(c.Body()) > 0 {
+			var req pinReq
+			if err := c.BodyParser(&req); err != nil {
+				return 0, nil, apperr.Invalid("invalid_body", "Body khong hop le")
+			}
+			if req.Pinned != nil {
+				pinned = *req.Pinned
+			}
+		}
+
+		// CMS khong phai thanh vien nhom nen khong truyen actor.
+		msg, err := h.msgs.SetPinned(c.UserContext(), nil, id, pinned)
+		if err != nil {
+			return 0, nil, err
+		}
+		return fiber.StatusOK, fiber.Map{
+			"ok": true, "messageId": msg.ID.String(), "pinned": msg.Pinned,
+		}, nil
+	})
+}
+
+// ---------------- presence ----------------
+
+type presenceReq struct {
+	Items []struct {
+		ActorID string `json:"actorId"`
+		Status  string `json:"status"` // on | off | off_duty
+		Reason  string `json:"reason"`
+	} `json:"items"`
+}
+
+// SetPresence: CMS bao trang thai nhan su (vd lich OFF) cho nhieu nguoi cung luc.
+func (h *Handler) SetPresence(c *fiber.Ctx) error {
+	return h.idempotent(c, "presence.put", func() (int, any, error) {
+		var req presenceReq
+		if err := c.BodyParser(&req); err != nil {
+			return 0, nil, apperr.Invalid("invalid_body", "Body khong hop le")
+		}
+		items := make([]presence.Item, 0, len(req.Items))
+		for _, it := range req.Items {
+			items = append(items, presence.Item{ActorID: it.ActorID, Status: it.Status, Reason: it.Reason})
+		}
+
+		updated, err := h.presence.SetMany(c.UserContext(), items)
+		if err != nil {
+			return 0, nil, err
+		}
+		return fiber.StatusOK, fiber.Map{"updated": updated}, nil
+	})
+}
+
+// ---------------- tep dinh kem ----------------
+
+// GetAttachment tra metadata cua tep. Chat KHONG luu file, chi luu URL do
+// service upload/CDN cung cap; them ?redirect=true de chuyen thang toi URL do.
+func (h *Handler) GetAttachment(c *fiber.Ctx) error {
+	id, err := paramUUID(c, "id")
+	if err != nil {
+		return fail(c, err)
+	}
+	att, msg, err := h.msgs.Attachment(c.UserContext(), nil, id)
+	if err != nil {
+		return fail(c, err)
+	}
+	if c.QueryBool("redirect", false) && att.URL != "" {
+		return c.Redirect(att.URL, fiber.StatusFound)
+	}
+	return c.JSON(fiber.Map{
+		"id": att.ID.String(), "kind": att.Kind, "url": att.URL, "name": att.Name,
+		"mimeType": att.MimeType, "sizeBytes": att.SizeBytes,
+		"width": att.Width, "height": att.Height, "durationMs": att.DurationMs,
+		"messageId": msg.ID.String(), "groupId": groupIDOf(msg),
+		"createdAt": att.CreatedAt,
+	})
+}
+
 // ---------------- notifications ----------------
 
 type notificationReq struct {
@@ -347,6 +449,129 @@ func (h *Handler) GroupMembers(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"items": items})
 }
 
+// ---------------- tra cuu (spec 7.7: CMS chua dung, de san) ----------------
+
+// ListGroups liet ke nhom Chat dang giu (chu yeu de doi chieu khi debug dong bo).
+func (h *Handler) ListGroups(c *fiber.Ctx) error {
+	convs, err := h.store.Conversations().ListAll(c.UserContext(), paging.Normalize("", 200))
+	if err != nil {
+		return fail(c, err)
+	}
+	items := make([]fiber.Map, 0, len(convs))
+	for i := range convs {
+		items = append(items, groupView(&convs[i]))
+	}
+	return c.JSON(fiber.Map{"items": items})
+}
+
+func (h *Handler) GetGroup(c *fiber.Ctx) error {
+	conv, err := h.resolveGroup(c, c.Params("id"))
+	if err != nil {
+		return fail(c, err)
+	}
+	return c.JSON(groupView(conv))
+}
+
+func (h *Handler) GetUser(c *fiber.Ctx) error {
+	u, err := h.lookupUser(c, c.Params("id"))
+	if err != nil {
+		return fail(c, err)
+	}
+	return c.JSON(userView(u))
+}
+
+type batchUsersReq struct {
+	// Nhan bat ky loai dinh danh nao: actorId, openId hoac cmsUserId.
+	ActorIDs   []string `json:"actorIds"`
+	OpenIDs    []string `json:"openIds"`
+	CMSUserIDs []int64  `json:"cmsUserIds"`
+}
+
+func (h *Handler) BatchUsers(c *fiber.Ctx) error {
+	var req batchUsersReq
+	if err := c.BodyParser(&req); err != nil {
+		return fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+	}
+	ctx := c.UserContext()
+
+	seen := map[uuid.UUID]bool{}
+	items := make([]fiber.Map, 0)
+	add := func(users []domain.User) {
+		for i := range users {
+			if seen[users[i].ID] {
+				continue
+			}
+			seen[users[i].ID] = true
+			items = append(items, userView(&users[i]))
+		}
+	}
+
+	if len(req.ActorIDs) > 0 {
+		users, err := h.store.Users().ListByActorIDs(ctx, req.ActorIDs)
+		if err != nil {
+			return fail(c, err)
+		}
+		add(users)
+	}
+	if len(req.OpenIDs) > 0 {
+		users, err := h.store.Users().ListByOpenIDs(ctx, req.OpenIDs)
+		if err != nil {
+			return fail(c, err)
+		}
+		add(users)
+	}
+	for _, id := range req.CMSUserIDs {
+		if u, err := h.store.Users().GetByCMSUserID(ctx, id); err == nil {
+			add([]domain.User{*u})
+		}
+	}
+	return c.JSON(fiber.Map{"items": items})
+}
+
+// lookupUser nhan actorId (u_68), openId hoac UUID noi bo.
+func (h *Handler) lookupUser(c *fiber.Ctx, id string) (*domain.User, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, apperr.Invalid("invalid_request", "Thieu id")
+	}
+	ctx := c.UserContext()
+	if parsed, err := uuid.Parse(id); err == nil {
+		return h.store.Users().GetByID(ctx, parsed)
+	}
+	if u, err := h.store.Users().GetByActorID(ctx, id); err == nil {
+		return u, nil
+	}
+	return h.store.Users().GetByOpenID(ctx, id)
+}
+
+func groupView(c *domain.Conversation) fiber.Map {
+	id := c.ID.String()
+	if c.ExternalID != nil && *c.ExternalID != "" {
+		id = *c.ExternalID
+	}
+	return fiber.Map{
+		"id": id, "internalId": c.ID.String(), "name": c.Name,
+		"source": c.Source, "memberCount": len(c.Members),
+		"cms": map[string]any(c.CMSInfo),
+	}
+}
+
+func userView(u *domain.User) fiber.Map {
+	view := fiber.Map{
+		"id": u.ActorID, "internalId": u.ID.String(), "name": u.DisplayName,
+		"openId": u.OpenID, "avatarUrl": u.AvatarURL,
+		"presence": presenceLabel(u.Presence), "role": u.DisplayRole(),
+		"title": u.DisplayRole(),
+	}
+	if u.PresenceReason != "" {
+		view["presenceReason"] = u.PresenceReason
+	}
+	if u.CMSUserID != nil {
+		view["cmsUserId"] = *u.CMSUserID
+	}
+	return view
+}
+
 // ---------------- helper ----------------
 
 // resolveGroup nhan ca chatId cua CMS (wg_...) lan UUID noi bo.
@@ -359,6 +584,11 @@ func (h *Handler) resolveGroup(c *fiber.Ctx, id string) (*domain.Conversation, e
 		return h.store.Conversations().GetByID(c.UserContext(), parsed)
 	}
 	return h.store.Conversations().GetByExternalID(c.UserContext(), id)
+}
+
+// groupIDOf tra chatId cua CMS neu co, nguoc lai tra id noi bo.
+func groupIDOf(m *domain.Message) string {
+	return m.ConversationID.String()
 }
 
 func botSender(b *botInfo) domain.JSONMap {

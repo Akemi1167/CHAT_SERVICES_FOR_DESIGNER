@@ -7,6 +7,7 @@ package outbox
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"time"
@@ -66,11 +67,17 @@ func (s *Service) EnqueueMessageCreated(ctx context.Context, msg *domain.Message
 		message["threadRootId"] = msg.ThreadID.String()
 	}
 
-	payload := cms.BuildEvent(cms.EventMessageCreate, map[string]any{
+	fields := map[string]any{
 		"message": message,
 		"group":   map[string]any{"id": groupID},
 		"sender":  map[string]any{"id": senderActor},
-	})
+	}
+	if conv.CMSInfo != nil {
+		if id, ok := conv.CMSInfo["botId"].(float64); ok {
+			fields["botId"] = fmt.Sprintf("b_%d", int64(id))
+		}
+	}
+	payload := cms.BuildEvent(cms.EventMessageCreate, fields)
 
 	eventID, _ := payload["eventId"].(string)
 	err = s.store.Outbox().Enqueue(ctx, &domain.OutboxEvent{

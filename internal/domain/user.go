@@ -26,15 +26,17 @@ type User struct {
 	CMSProfile JSONMap    `gorm:"type:jsonb" json:"cms_profile,omitempty"`
 	SyncedAt   *time.Time `json:"synced_at,omitempty"`
 
-	DisplayName string     `gorm:"size:255;not null" json:"display_name"`
-	AvatarURL   string     `gorm:"size:1024" json:"avatar_url"`
-	Email       string     `gorm:"size:255;index" json:"email"`
-	Role        string     `gorm:"size:64;index" json:"role"` // admin | order | designer | ...
-	Presence    Presence   `gorm:"size:32;default:offline" json:"presence"`
-	LastSeenAt  *time.Time `json:"last_seen_at"`
-	Metadata    JSONMap    `gorm:"type:jsonb" json:"metadata,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	DisplayName string   `gorm:"size:255;not null" json:"display_name"`
+	AvatarURL   string   `gorm:"size:1024" json:"avatar_url"`
+	Email       string   `gorm:"size:255;index" json:"email"`
+	Role        string   `gorm:"size:64;index" json:"role"` // admin | order | designer | ...
+	Presence    Presence `gorm:"size:32;default:offline" json:"presence"`
+	// PresenceReason: ly do khi OFF (lich OFF, het ca...) do CMS gui qua Bot API.
+	PresenceReason string     `gorm:"size:128" json:"presence_reason,omitempty"`
+	LastSeenAt     *time.Time `json:"last_seen_at"`
+	Metadata       JSONMap    `gorm:"type:jsonb" json:"metadata,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 func (User) TableName() string { return "users" }

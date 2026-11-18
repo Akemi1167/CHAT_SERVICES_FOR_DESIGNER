@@ -24,6 +24,6 @@ auth:
     token: "{{cms_token}}"
 scripts:
   - type: afterResponse
-    code: pm.test("200 hoac 400 neu chua bat CMS", () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));
+    code: pm.test("200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));
     language: text/javascript
 order: 8000

@@ -1,0 +1,5 @@
+DROP INDEX IF EXISTS ix_messages_pinned;
+ALTER TABLE messages DROP COLUMN IF EXISTS pinned_by;
+ALTER TABLE messages DROP COLUMN IF EXISTS pinned_at;
+ALTER TABLE messages DROP COLUMN IF EXISTS pinned;
+ALTER TABLE users DROP COLUMN IF EXISTS presence_reason;

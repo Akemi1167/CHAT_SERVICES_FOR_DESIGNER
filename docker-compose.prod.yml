@@ -1,3 +1,6 @@
+# Project rieng de 3 stack khong ghi de image/volume cua nhau.
+name: chat-service-prod
+
 # Stack chay that tren VPS. Khac docker-compose.yml (prod-like de thu o may):
 #   - KHONG publish cong Postgres/Redis ra ngoai (chi noi bo trong network docker)
 #   - app chi lang nghe 127.0.0.1 -> dat sau nginx/Caddy co TLS
@@ -15,7 +18,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?dat POSTGRES_PASSWORD trong .env}
       POSTGRES_DB: ${POSTGRES_DB:?dat POSTGRES_DB trong .env}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Volume rieng cho prod: dung chung ten voi stack demo se dinh du lieu cu
+      # (Postgres chi tao user/mat khau o lan chay dau tien tren volume rong).
+      - pgdata-prod:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -46,7 +51,8 @@ services:
       - "-path=/migrations"
       - "-database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       - "up"
-    restart: on-failure
+    # Khong restart: migration loi thi phai thay ngay, khong de lap vo han.
+    restart: "no"
     logging: *logging
 
   app:
@@ -76,4 +82,4 @@ services:
     logging: *logging
 
 volumes:
-  pgdata:
+  pgdata-prod:

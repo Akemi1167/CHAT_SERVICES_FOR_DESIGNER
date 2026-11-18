@@ -17,6 +17,21 @@ import (
 
 // ---------------- nhom do CMS quan ly ----------------
 
+// ListAll: moi hoi thoai, moi nhat truoc (khong loc theo thanh vien).
+func (r *ConversationRepo) ListAll(ctx context.Context, p paging.Page) ([]domain.Conversation, error) {
+	q := r.db(ctx).Model(&domain.Conversation{})
+	if p.Cursor.Valid {
+		q = q.Where("(created_at, id) < (?, ?)", p.Cursor.CreatedAt, p.Cursor.ID)
+	}
+	var out []domain.Conversation
+	err := q.Preload("Members", func(db *gorm.DB) *gorm.DB { return db.Where("left_at IS NULL") }).
+		Order("created_at DESC, id DESC").Limit(p.FetchLimit()).Find(&out).Error
+	if err != nil {
+		return nil, wrap(err, "conversation.listAll")
+	}
+	return out, nil
+}
+
 func (r *ConversationRepo) GetByExternalID(ctx context.Context, externalID string) (*domain.Conversation, error) {
 	var c domain.Conversation
 	err := r.db(ctx).

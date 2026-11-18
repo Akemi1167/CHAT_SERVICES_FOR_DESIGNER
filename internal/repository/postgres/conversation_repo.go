@@ -203,3 +203,19 @@ func (r *ConversationRepo) UnreadCounts(ctx context.Context, userID uuid.UUID, c
 	}
 	return result, nil
 }
+
+// ListPeerUserIDs: nhung nguoi chung it nhat 1 hoi thoai dang hieu luc voi user nay
+// (ke ca chinh user). Dung de phat presence dung pham vi, khong broadcast toan he thong.
+func (r *ConversationRepo) ListPeerUserIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	err := r.db(ctx).Raw(`
+		SELECT DISTINCT peer.user_id
+		FROM conversation_members me
+		JOIN conversation_members peer
+		  ON peer.conversation_id = me.conversation_id AND peer.left_at IS NULL
+		WHERE me.user_id = ? AND me.left_at IS NULL`, userID).Scan(&ids).Error
+	if err != nil {
+		return nil, wrap(err, "conversation.listPeerUserIDs")
+	}
+	return ids, nil
+}

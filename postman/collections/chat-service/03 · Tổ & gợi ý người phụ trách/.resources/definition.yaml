@@ -1,3 +1,6 @@
 $kind: collection
-description: Tổ (bộ phận) dùng cho `chọn tổ` khi tạo yêu cầu. **Tổ phải có thành viên** thì bot/`/tasks` mới gợi ý được người phụ trách.
+description: |-
+  Tổ (bộ phận) dùng cho `chọn tổ` khi tạo yêu cầu. **Tổ phải có thành viên** thì bot/`/tasks` mới gợi ý được người phụ trách.
+
+  ⚠️ Cần `TASK_ENGINE_ENABLED=true` (cùng nhóm với folder 05/06).
 order: 4000

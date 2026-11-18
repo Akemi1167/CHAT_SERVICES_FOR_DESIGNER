@@ -16,4 +16,4 @@ scripts:
   - type: afterResponse
     code: pm.test("201 hoặc 409 nếu đã tồn tại", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]));
     language: text/javascript
-order: 5000
+order: 6000

@@ -26,6 +26,10 @@ body:
     }
 scripts:
   - type: afterResponse
-    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      const m = pm.response.json().data.message;
+      if (m.attachments && m.attachments[0]) pm.collectionVariables.set("attachment_id", m.attachments[0].id);
+      pm.test("co attachment", () => pm.expect(m.attachments).to.have.lengthOf(1));
     language: text/javascript
 order: 2000

@@ -7,4 +7,4 @@ scripts:
   - type: afterResponse
     code: pm.test("200 hoặc 400/403", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));
     language: text/javascript
-order: 2000
+order: 1000

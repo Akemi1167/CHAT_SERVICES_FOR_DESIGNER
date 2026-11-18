@@ -203,3 +203,16 @@ func (r *UserRepo) ListByActorIDs(ctx context.Context, actorIDs []string) ([]dom
 	}
 	return users, nil
 }
+
+// UpdatePresenceWithReason: CMS bao OFF kem ly do (lich OFF, het ca...).
+func (r *UserRepo) UpdatePresenceWithReason(ctx context.Context, id uuid.UUID, p domain.Presence, reason string, seenAt time.Time) error {
+	err := r.db(ctx).Model(&domain.User{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"presence":        p,
+			"presence_reason": reason,
+			"last_seen_at":    seenAt,
+			"updated_at":      time.Now().UTC(),
+		}).Error
+	return wrap(err, "user.updatePresenceWithReason")
+}

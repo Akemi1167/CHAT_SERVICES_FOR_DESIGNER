@@ -21,6 +21,17 @@
       "script": {
         "type": "text/javascript",
         "exec": [
+          "// chat_id = id nhóm: chế độ CMS là wg_<hex>, chế độ fake là UUID nhóm.",
+          "// Lưu ý: nếu environment có biến chat_id thì giá trị đó LẤN ÁT biến collection,",
+          "// nên khi dùng CMS hãy điền chat_id ở environment, còn fake thì để trống.",
+          "// Chưa có thì lấy luôn conversation_id (folder 01 đã lưu) để khỏi điền tay.",
+          "if (!pm.variables.get('chat_id') && pm.variables.get('conversation_id')) {",
+          "  pm.collectionVariables.set('chat_id', pm.variables.get('conversation_id'));",
+          "}",
+          "// Chưa chạy folder CMS thì dùng tạm tin nhắn thường để các request không vỡ.",
+          "if (!pm.variables.get('card_message_id') && pm.variables.get('message_id')) {",
+          "  pm.collectionVariables.set('card_message_id', pm.variables.get('message_id'));",
+          "}",
           "// Bot API dùng service key thay vì JWT -> tự gắn header.",
           "if (pm.request.url.getPath().startsWith('/bot/v1')) {",
           "  if (!pm.request.headers.has('X-Chat-Service-Key')) {",
@@ -137,6 +148,11 @@
     },
     {
       "key": "reply_message_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "attachment_id",
       "value": "",
       "type": "string"
     }
@@ -604,7 +620,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const m = pm.response.json().data.message;",
+                  "if (m.attachments && m.attachments[0]) pm.collectionVariables.set(\"attachment_id\", m.attachments[0].id);",
+                  "pm.test(\"co attachment\", () => pm.expect(m.attachments).to.have.lengthOf(1));"
                 ]
               }
             }
@@ -1008,12 +1027,12 @@
           ]
         },
         {
-          "name": "Xoá tin nhắn (mềm)",
+          "name": "Ghim tin nhắn",
           "request": {
-            "method": "DELETE",
+            "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/messages/{{message_id}}",
+              "raw": "{{base_url}}/api/v1/messages/{{message_id}}/pin",
               "host": [
                 "{{base_url}}"
               ],
@@ -1021,10 +1040,141 @@
                 "api",
                 "v1",
                 "messages",
-                "{{message_id}}"
+                "{{message_id}}",
+                "pin"
               ]
             },
-            "description": "Người gửi hoặc owner/admin nhóm. ⚠️ Chạy cuối vì các request trên dùng `message_id`."
+            "description": "Ghim tin trong nhóm. Gửi `{\"pinned\": false}` để bỏ ghim. Ghim lại tin đã ghim không đổi gì (idempotent). Cả nhóm nhận event `message` để cập nhật.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"da ghim\", () => pm.expect(pm.response.json().data.pinned).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Danh sách tin đã ghim",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/{{conversation_id}}/pinned?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "conversations",
+                "{{conversation_id}}",
+                "pinned"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Mới ghim trước."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"la mang\", () => pm.expect(pm.response.json().data).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bỏ ghim",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{message_id}}/pin",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{message_id}}",
+                "pin"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pinned\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"da bo ghim\", () => pm.expect(pm.response.json().data.pinned).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xoá tin nhắn (mềm)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{reply_message_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "messages",
+                "{{reply_message_id}}"
+              ]
+            },
+            "description": "Người gửi hoặc owner/admin nhóm. Xoá **tin trả lời** vừa tạo ở trên, không xoá `message_id` để các folder sau còn dùng được."
           },
           "response": [],
           "event": [
@@ -1043,7 +1193,7 @@
     },
     {
       "name": "03 · Tổ & gợi ý người phụ trách",
-      "description": "Tổ (bộ phận) dùng cho `chọn tổ` khi tạo yêu cầu. **Tổ phải có thành viên** thì bot/`/tasks` mới gợi ý được người phụ trách.",
+      "description": "Tổ (bộ phận) dùng cho `chọn tổ` khi tạo yêu cầu. **Tổ phải có thành viên** thì bot/`/tasks` mới gợi ý được người phụ trách.\n\n⚠️ Cần `TASK_ENGINE_ENABLED=true` (cùng nhóm với folder 05/06).",
       "item": [
         {
           "name": "Danh sách tổ",
@@ -1187,6 +1337,40 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bỏ thành viên khỏi tổ",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/members/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "members",
+                "{{user_id}}"
+              ]
+            },
+            "description": "Chạy sau phần gợi ý vì bỏ thành viên sẽ làm tổ trống."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -1500,7 +1684,7 @@
     },
     {
       "name": "05 · Task (yêu cầu / nhận việc)",
-      "description": "Vòng đời card của từng người. Trạng thái task tổng được **suy ra** từ các card.\n\nChạy theo thứ tự: Tạo → Danh sách (lưu `task_id`) → Nhận → Tạm dừng → Tiếp tục → Hoàn thành.",
+      "description": "Vòng đời card của từng người. Trạng thái task tổng được **suy ra** từ các card.\n\nChạy theo thứ tự: Tạo → Danh sách (lưu `task_id`) → Nhận → Tạm dừng → Tiếp tục → Hoàn thành.\n\n⚠️ Cần `TASK_ENGINE_ENABLED=true`. Khi tích hợp CMS thì tắt module này (CMS sở hữu đơn/task) và folder này sẽ trả 404 — dùng `make postman-run-task` để chạy riêng.",
       "item": [
         {
           "name": "Tạo yêu cầu (giao cho mình)",
@@ -2169,6 +2353,100 @@
               }
             }
           ]
+        },
+        {
+          "name": "Nhận task thiếu số lượng → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}/accept",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}",
+                "accept"
+              ]
+            },
+            "description": "Thiếu `quantity` → `400 accept_requires_quantity`; task đã nhận rồi → `409`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quota\": \"HD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 hoặc 409\", () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Huỷ task (chạy cuối folder này)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tasks",
+                "{{task_id}}",
+                "cancel"
+              ]
+            },
+            "description": "Huỷ sẽ thu hồi các card chưa hoàn thành → mọi thao tác sau đó trên task trả 409 `task_cancelled`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Khách đổi yêu cầu\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 hoac 403\", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -2406,14 +2684,14 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/tasks/khong-phai-uuid",
+              "raw": "{{base_url}}/api/v1/conversations/khong-phai-uuid",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "tasks",
+                "conversations",
                 "khong-phai-uuid"
               ]
             },
@@ -2541,53 +2819,6 @@
                 "exec": [
                   "pm.test(\"400\", () => pm.response.to.have.status(400));",
                   "pm.test(\"code empty_message\", () => pm.expect(pm.response.json().error.code).to.eql(\"empty_message\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Nhận task thiếu số lượng → 400",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}/accept",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "tasks",
-                "{{task_id}}",
-                "accept"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"quota\": \"HD\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"400 hoặc 409\", () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));"
                 ]
               }
             }
@@ -2902,6 +3133,136 @@
           ]
         },
         {
+          "name": "Ghim tin nhắn",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}/pin",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}",
+                "pin"
+              ]
+            },
+            "description": "CMS ghim card/tin quan trọng. `{\"pinned\": false}` để bỏ ghim.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"ok\", () => pm.expect(pm.response.json().ok).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cập nhật presence (lịch OFF)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/presence",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "presence"
+              ]
+            },
+            "description": "`status`: `on` → online; `off` **kèm `reason`** → `off_duty` (hiện chữ OFF cạnh tên); `off` không reason → offline. Actor không tồn tại thì bị bỏ qua, không lỗi.\n\nChat phát event realtime `presence` cho những người **chung hội thoại** với người đó.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"actorId\": \"{{actor_id}}\",\n      \"status\": \"off\",\n      \"reason\": \"Lịch OFF ca chiều\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co so dong cap nhat\", () => pm.expect(pm.response.json().updated).to.be.a(\"number\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Thông tin tệp đính kèm",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/attachments/{{attachment_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "attachments",
+                "{{attachment_id}}"
+              ]
+            },
+            "description": "Chat **không lưu file**, chỉ lưu URL do service upload/CDN cung cấp. Thêm `?redirect=true` để nhảy thẳng tới URL đó (302).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 hoac 404 neu chua co attachment_id\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Sai service key → 401",
           "request": {
             "method": "POST",
@@ -2959,7 +3320,7 @@
     },
     {
       "name": "09 · API cho FE (hợp đồng CMS)",
-      "description": "Bộ API `/api/client/v1/chat/*` với envelope `{statusCode, code, message, element}`.\n\nAuth: **access token do CMS phát** — đặt vào biến `cms_token` (lấy từ `POST /api/client/v1/workspace/auth/login` của CMS). Token dev `make token` cũng dùng được khi `AUTH_ALLOW_DEV_TOKEN=true`, nhưng sẽ không có `cmsUserId`/nhóm CMS.",
+      "description": "Bộ API `/api/client/v1/chat/*` với envelope `{statusCode, code, message, element}`.\n\nAuth: **access token do CMS phát** — đặt vào biến `cms_token` (lấy từ `POST /api/client/v1/workspace/auth/login` của CMS). Token dev `make token` cũng dùng được khi `AUTH_ALLOW_DEV_TOKEN=true`.\n\n**`{{chat_id}}` là gì**: id nhóm trong URL. Chế độ CMS là `wg_<hex>`; chế độ fake (chưa có CMS) thì dùng **UUID nhóm** — endpoint nhận cả hai. Collection tự gán `chat_id = conversation_id` nếu bạn chưa điền, nên chỉ cần chạy folder `01 · Hội thoại` trước là dùng được ngay.\n\nKhác với `/api/v1`: envelope `{statusCode, code, message, element}` và field dạng camelCase (`text`, `replyToId`, `threadRootId`, `clientMsgId`).",
       "item": [
         {
           "name": "Bootstrap",
@@ -3089,7 +3450,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 hoac 400 neu chua bat CMS\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                  "pm.test(\"200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));"
                 ]
               }
             }
@@ -3121,7 +3482,7 @@
                 }
               ]
             },
-            "description": "Card trả về đã **lọc nút theo `visibleTo`** của chính người gọi; `actions` liệt kê action người đó được bấm.",
+            "description": "Card trả về đã **lọc nút theo `visibleTo`** của chính người gọi; `actions` liệt kê action người đó được bấm.\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `chat_id`, không thì `403 not_conversation_member`.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3140,7 +3501,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                  "pm.test(\"200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));"
                 ]
               }
             }
@@ -3199,7 +3560,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                  "pm.test(\"200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));"
                 ]
               }
             }
@@ -3254,7 +3615,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                  "pm.test(\"200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));"
                 ]
               }
             }
@@ -3285,7 +3646,7 @@
                 "actions"
               ]
             },
-            "description": "Chat kiểm `visibleTo` trước (không được phép → `403 ACTION_NOT_ALLOWED`), rồi gửi `card.action` sang CMS và áp card mới nếu `cardVersion` lớn hơn.",
+            "description": "Chat kiểm `visibleTo` trước (không được phép → `403 ACTION_NOT_ALLOWED`), rồi gửi `card.action` sang CMS và áp card mới nếu `cardVersion` lớn hơn.\n\nChế độ fake (chưa bật CMS) hoặc tin nhắn không phải card → `400 cms_disabled` / `400 message_has_no_card`.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"action\": \"accept_task\",\n  \"values\": {\n    \"normItemId\": \"996802\",\n    \"quantity\": 2\n  }\n}",
@@ -3313,7 +3674,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 hoac 403\", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));"
+                  "pm.test(\"200 (CMS) hoac 400/403 (fake / khong co quyen)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));"
                 ]
               }
             }
@@ -3372,7 +3733,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 hoac 400 neu chua bat CMS\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));"
+                  "pm.test(\"200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));"
                 ]
               }
             }
@@ -3483,56 +3844,8 @@
     },
     {
       "name": "99 · Dọn dẹp (chạy cuối, tuỳ ý)",
-      "description": "Các request làm thay đổi/rút quyền — tách riêng để không phá flow ở trên.",
+      "description": "Các request làm thay đổi/rút quyền — tách riêng để không phá flow ở trên. Chạy được ở mọi cấu hình.",
       "item": [
-        {
-          "name": "Huỷ task",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/tasks/{{task_id}}/cancel",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "tasks",
-                "{{task_id}}",
-                "cancel"
-              ]
-            },
-            "description": "Huỷ sẽ thu hồi các card chưa hoàn thành → mọi thao tác sau đó trên task trả 409 `task_cancelled`. Vì vậy request này nằm ở folder dọn dẹp, chạy sau cùng.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reason\": \"Khách đổi yêu cầu\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
-                  "pm.test(\"da huy\", () => pm.expect(pm.response.json().data.status).to.eql(\"cancelled\"));"
-                ]
-              }
-            }
-          ]
-        },
         {
           "name": "Rời nhóm / xoá thành viên",
           "request": {
@@ -3562,40 +3875,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"200 hoặc 400/403\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Bỏ thành viên khỏi tổ",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/members/{{user_id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "teams",
-                "{{team_id}}",
-                "members",
-                "{{user_id}}"
-              ]
-            },
-            "description": ""
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }

@@ -279,3 +279,74 @@ func optionalDate(s, field string) (*time.Time, error) {
 	}
 	return nil, apperr.Invalid("invalid_date", field+" phai dang YYYY-MM-DD hoac RFC3339")
 }
+
+// ---------------- ghim / tep dinh kem ----------------
+
+type pinReq struct {
+	Pinned *bool `json:"pinned"` // mac dinh true
+}
+
+// Pin ghim / bo ghim tin nhan (nguoi dung thuong, khac voi Bot API cua CMS).
+func (h *MessageHandler) Pin(c *fiber.Ctx) error {
+	id, err := middleware.Identity(c)
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	msgID, err := paramUUID(c, "message_id")
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	pinned := true
+	if len(c.Body()) > 0 {
+		var req pinReq
+		if err := c.BodyParser(&req); err != nil {
+			return httpresp.Fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+		}
+		if req.Pinned != nil {
+			pinned = *req.Pinned
+		}
+	}
+
+	msg, err := h.msgs.SetPinned(c.UserContext(), &id.UserID, msgID, pinned)
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	return httpresp.OK(c, msg)
+}
+
+// ListPinned tra cac tin da ghim trong hoi thoai.
+func (h *MessageHandler) ListPinned(c *fiber.Ctx) error {
+	id, err := middleware.Identity(c)
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	convID, err := paramUUID(c, "id")
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	items, err := h.msgs.ListPinned(c.UserContext(), id.UserID, convID, c.QueryInt("limit", 50))
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	return httpresp.OK(c, items)
+}
+
+// Attachment tra metadata cua tep dinh kem (Chat chi luu URL, khong luu file).
+func (h *MessageHandler) Attachment(c *fiber.Ctx) error {
+	id, err := middleware.Identity(c)
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	attID, err := paramUUID(c, "attachment_id")
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	att, msg, err := h.msgs.Attachment(c.UserContext(), &id.UserID, attID)
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
+	if c.QueryBool("redirect", false) && att.URL != "" {
+		return c.Redirect(att.URL, fiber.StatusFound)
+	}
+	return httpresp.OK(c, fiber.Map{"attachment": att, "message_id": msg.ID, "conversation_id": msg.ConversationID})
+}

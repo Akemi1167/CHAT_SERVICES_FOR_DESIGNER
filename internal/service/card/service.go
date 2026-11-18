@@ -2,6 +2,7 @@ package card
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -69,6 +70,7 @@ func (s *Service) SubmitForm(ctx context.Context, in SubmitFormInput) (*Result, 
 	}
 
 	fields := map[string]any{
+		"botId":  botIDOf(conv),
 		"formId": in.FormID,
 		"values": map[string]any(in.Values),
 		"actor":  cms.Actor(actor.ActorID, actor.OpenID, actor.CMSUserID, actor.DisplayName),
@@ -123,6 +125,7 @@ func (s *Service) RunAction(ctx context.Context, in ActionInput) (*Result, error
 	}
 
 	fields := map[string]any{
+		"botId":       botIDOf(conv),
 		"messageId":   msg.ID.String(),
 		"action":      in.Action,
 		"values":      map[string]any(in.Values),
@@ -222,6 +225,23 @@ func (s *Service) actorAndConversation(ctx context.Context, actorID, convID uuid
 		return nil, nil, err
 	}
 	return actor, conv, nil
+}
+
+// botIDOf: event mang botId dang "b_<id>" theo spec (CMS khong dung, chi de doi chieu log).
+func botIDOf(c *domain.Conversation) string {
+	if c.CMSInfo != nil {
+		switch v := c.CMSInfo["botId"].(type) {
+		case float64:
+			return fmt.Sprintf("b_%d", int64(v))
+		case int64:
+			return fmt.Sprintf("b_%d", v)
+		case string:
+			if v != "" {
+				return "b_" + v
+			}
+		}
+	}
+	return ""
 }
 
 // groupID: CMS nhan nhom theo chatId (wg_...). Nhom tao trong Chat thi gui id noi bo.
