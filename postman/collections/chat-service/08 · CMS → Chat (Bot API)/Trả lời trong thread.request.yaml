@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{base_url}}/bot/v1/messages/{{card_message_id}}/thread"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "text": "Đã giao Trần Designer · Chờ nhận task.",
+      "bot": {
+        "id": 1,
+        "name": "Demo Designer Bot"
+      }
+    }
+auth:
+  type: noauth
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("co messageId", () => pm.expect(pm.response.json()).to.have.property("messageId"));
+    language: text/javascript
+order: 4000

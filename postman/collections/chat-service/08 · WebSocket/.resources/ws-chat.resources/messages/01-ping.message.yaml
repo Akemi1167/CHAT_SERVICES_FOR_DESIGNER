@@ -1,0 +1,6 @@
+$kind: websocket-message
+name: ping (giữ kết nối / đo RTT)
+content: |-
+  {"id":"p1","type":"ping"}
+contentType: json
+order: 1000

@@ -1,0 +1,20 @@
+$kind: http-request
+url: "{{base_url}}/bot/v1/notifications"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "actorId": "{{actor_id}}",
+      "text": "Bạn có task mới: WEB-20261118-0006",
+      "messageId": "{{card_message_id}}"
+    }
+auth:
+  type: noauth
+scripts:
+  - type: afterResponse
+    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    language: text/javascript
+order: 5000

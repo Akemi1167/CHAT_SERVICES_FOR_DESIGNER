@@ -1,0 +1,16 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/accept"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "quota": "HD"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test("400 hoặc 409", () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));
+    language: text/javascript
+order: 6000

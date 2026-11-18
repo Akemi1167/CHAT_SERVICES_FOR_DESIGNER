@@ -1,0 +1,30 @@
+$kind: http-request
+description: 'Đây chính là "join room": tư cách thành viên lưu trong DB, không phải frame WebSocket. Chỉ owner/admin. Thêm lại người đã có → idempotent. Người được thêm nếu đang mở WebSocket sẽ nhận `conversation.updated` và từ đó nhận mọi `message.new` của nhóm.'
+url: "{{base_url}}/api/v1/conversations/{{conversation_id}}/members"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "user_ids": [
+        "{{user_id_2}}"
+      ],
+      "role": "member"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      const u2 = pm.variables.get("user_id_2") || "";
+      if (u2.length === 36) {
+        pm.test("200 OK (them thanh vien thanh cong)", () => pm.response.to.have.status(200));
+        pm.test("user co trong danh sach thanh vien", () => {
+          const ids = (pm.response.json().data.members || []).map(m => m.user_id);
+          pm.expect(ids).to.include(u2);
+        });
+      } else {
+        pm.test("400 vi chua dien user_id_2", () => pm.response.to.have.status(400));
+      }
+    language: text/javascript
+order: 5000

@@ -1,0 +1,23 @@
+$kind: http-request
+description: "`client_msg_id` do FE sinh và phải **duy nhất mỗi tin**: gửi lại đúng id cũ sẽ trả về tin cũ với `duplicated=true`, **không tạo tin mới và không broadcast**. Ở đây dùng `{{$guid}}` nên mỗi lần Send là một id mới."
+url: "{{base_url}}/api/v1/conversations/{{conversation_id}}/messages"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "type": "text",
+      "content": "Chào cả nhà 👋",
+      "client_msg_id": "{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      const _d = pm.response.json().data;
+      if (_d) { pm.collectionVariables.set("message_id", _d.message.id); console.log("message_id =", pm.collectionVariables.get("message_id")); }
+      pm.collectionVariables.set("thread_id", pm.response.json().data.message.id);
+    language: text/javascript
+order: 1000

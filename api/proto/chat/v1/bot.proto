@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package chat.v1;
+
+import "chat/v1/common.proto";
+import "chat/v1/message.proto";
+
+option go_package = "github.com/abc-workspace/chat-service/gen/go/chat/v1;chatv1";
+
+message Bot {
+  string id = 1;
+  string slug = 2;
+  string name = 3;
+  string description = 4;
+  bool enabled = 5;
+}
+
+message BotTemplate {
+  string id = 1;
+  string bot_slug = 2;
+  string code = 3;
+  string name = 4;
+  string description = 5;
+  // JSON schema cac field cua mau (de FE render form).
+  string schema_json = 6;
+  bool enabled = 7;
+}
+
+// Mot lan "gui mau" da duoc luu xuong DB.
+message BotSubmission {
+  string id = 1;
+  string bot_slug = 2;
+  string template_code = 3;
+  string conversation_id = 4;
+  string message_id = 5;
+  string thread_id = 6;
+  string user_id = 7;
+  string raw_text = 8;
+  string payload_json = 9;
+  string status = 10;
+  string error = 11;
+  string created_at = 12;
+}
+
+message ListBotsRequest {}
+
+message ListBotsResponse {
+  repeated Bot bots = 1;
+}
+
+message ListBotTemplatesRequest {
+  string bot_slug = 1;
+}
+
+message ListBotTemplatesResponse {
+  repeated BotTemplate templates = 1;
+}
+
+message SubmitBotTemplateRequest {
+  string bot_slug = 1;
+  string template_code = 2;
+  string conversation_id = 3;
+  string thread_id = 4;
+  string payload_json = 5;
+  string raw_text = 6;
+  string client_msg_id = 7;
+}
+
+message SubmitBotTemplateResponse {
+  BotSubmission submission = 1;
+  Message message = 2;
+  Message bot_reply = 3;
+}
+
+message ListBotSubmissionsRequest {
+  string bot_slug = 1;
+  string conversation_id = 2;
+  CursorPage page = 3;
+}
+
+message ListBotSubmissionsResponse {
+  repeated BotSubmission submissions = 1;
+  PageInfo page_info = 2;
+}

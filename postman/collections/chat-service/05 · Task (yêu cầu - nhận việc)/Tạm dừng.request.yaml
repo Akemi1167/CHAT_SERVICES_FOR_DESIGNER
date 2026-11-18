@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/pause"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "note": "Chờ file gốc từ order"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("tam dung", () => pm.expect(pm.response.json().data.status).to.eql("paused"));
+    language: text/javascript
+order: 7000

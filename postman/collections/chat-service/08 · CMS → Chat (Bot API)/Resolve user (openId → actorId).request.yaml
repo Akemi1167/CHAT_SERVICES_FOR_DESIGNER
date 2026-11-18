@@ -1,0 +1,29 @@
+$kind: http-request
+description: Chưa có trong Chat thì tạo actor mới (lấy hồ sơ qua Workspace API của CMS).
+url: "{{base_url}}/bot/v1/users/resolve"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "items": [
+        {
+          "openId": "local:designer-1",
+          "cmsUserId": 68,
+          "name": "Trần Designer"
+        }
+      ]
+    }
+auth:
+  type: noauth
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("co actorId", () => pm.expect(pm.response.json().items[0]).to.have.property("actorId"));
+      const it = pm.response.json().items[0];
+      if (it) pm.collectionVariables.set("actor_id", it.actorId);
+    language: text/javascript
+order: 1000

@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package chat.v1;
+
+import "chat/v1/common.proto";
+
+option go_package = "github.com/abc-workspace/chat-service/gen/go/chat/v1;chatv1";
+
+message Message {
+  string id = 1;
+  string conversation_id = 2;
+  string sender_id = 3;
+  SenderType sender_type = 4;
+  MessageType type = 5;
+  string content = 6;
+  // Thread: id cua message goc (vi du card yeu cau/task).
+  string thread_id = 7;
+  string reply_to_id = 8;
+  string metadata_json = 9;
+  repeated Attachment attachments = 10;
+  string created_at = 11;
+  string updated_at = 12;
+  string client_msg_id = 13;
+  User sender = 14;
+}
+
+message SendMessageRequest {
+  string conversation_id = 1;
+  MessageType type = 2;
+  string content = 3;
+  string thread_id = 4;
+  string reply_to_id = 5;
+  string metadata_json = 6;
+  repeated Attachment attachments = 7;
+  // Idempotency key do client sinh (UUID) de chong gui trung.
+  string client_msg_id = 8;
+}
+
+message SendMessageResponse {
+  Message message = 1;
+}
+
+message ListMessagesRequest {
+  string conversation_id = 1;
+  string thread_id = 2;
+  CursorPage page = 3;
+}
+
+message ListMessagesResponse {
+  repeated Message messages = 1;
+  PageInfo page_info = 2;
+}
+
+message MarkReadRequest {
+  string conversation_id = 1;
+  string message_id = 2;
+}
+
+message MarkReadResponse {
+  int64 unread_count = 1;
+}
+
+message SearchMessagesRequest {
+  string conversation_id = 1;
+  string query = 2;
+  string sender_id = 3;
+  string from_date = 4;
+  string to_date = 5;
+  CursorPage page = 6;
+}
+
+message SearchMessagesResponse {
+  repeated Message messages = 1;
+  PageInfo page_info = 2;
+}

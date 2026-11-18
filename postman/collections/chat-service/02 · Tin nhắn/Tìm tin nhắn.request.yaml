@@ -1,0 +1,13 @@
+$kind: http-request
+description: Tìm theo nội dung, mã task (`metadata.task_code`), người gửi (`sender_id`), khoảng ngày (`from_date`, `to_date` dạng YYYY-MM-DD).
+url: "{{base_url}}/api/v1/messages/search?q=banner&conversation_id={{conversation_id}}&limit=20"
+method: GET
+queryParams:
+  q: banner
+  conversation_id: "{{conversation_id}}"
+  limit: "20"
+scripts:
+  - type: afterResponse
+    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    language: text/javascript
+order: 9000

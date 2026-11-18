@@ -1,0 +1,17 @@
+$kind: grpc-request
+name: ChatService/ListMessages
+description: |
+  Timeline mới nhất trước. Thêm thread_id để lấy tin trong 1 thread.
+url: '{{grpc_url}}'
+methodPath: chat.v1.ChatService/ListMessages
+message:
+  content: |-
+    {"conversation_id": "{{conversation_id}}", "page": {"limit": 20}}
+metadata:
+  - key: authorization
+    value: 'Bearer {{token}}'
+settings:
+  secureConnection: false
+  strictSSL: false
+  includeDefaultFields: true
+order: 3000

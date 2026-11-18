@@ -1,0 +1,16 @@
+$kind: http-request
+description: |-
+  Mới nhất trước. Dùng `cursor` = `meta.next_cursor` để tải tiếp (đừng dùng offset).
+
+  Mỗi tin kèm `reply_count` (trả lời trực tiếp) và `thread_count` (số tin trong thread tin đó mở) để UI hiện badge "N phản hồi" mà không phải gọi thêm API.
+url: "{{base_url}}/api/v1/conversations/{{conversation_id}}/messages?limit=30"
+method: GET
+queryParams:
+  limit: "30"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("co mang data", () => pm.expect(pm.response.json().data).to.be.an("array"));
+    language: text/javascript
+order: 7000

@@ -1,0 +1,17 @@
+$kind: grpc-request
+name: TaskService/AcceptTask
+description: |
+  5 RPC vòng đời (Accept/Pause/Resume/Hold/Complete) dùng chung TaskActionRequest. quota + quantity chỉ bắt buộc khi Accept.
+url: '{{grpc_url}}'
+methodPath: chat.v1.TaskService/AcceptTask
+message:
+  content: |-
+    {"task_id": "{{task_id}}", "quota": "A3", "quantity": 5}
+metadata:
+  - key: authorization
+    value: 'Bearer {{token}}'
+settings:
+  secureConnection: false
+  strictSSL: false
+  includeDefaultFields: true
+order: 7000

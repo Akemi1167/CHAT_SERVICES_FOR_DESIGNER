@@ -1,0 +1,6 @@
+$kind: collection
+description: |-
+  Các API **CMS gọi sang Chat**. Auth: header `X-Chat-Service-Key` (biến `service_key`), không dùng JWT. Mọi request ghi nên có `Idempotency-Key` — gặp lại key trả nguyên kết quả cũ.
+
+  Chỉ bật khi `CMS_ENABLED=true`. Chi tiết: `docs/10-cms-integration.md`.
+order: 9000

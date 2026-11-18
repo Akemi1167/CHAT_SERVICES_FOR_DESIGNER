@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package chat.v1;
+
+option go_package = "github.com/abc-workspace/chat-service/gen/go/chat/v1;chatv1";
+
+// Phan trang theo cursor (khuyen dung cho timeline chat).
+message CursorPage {
+  // Con tro: message_id hoac created_at dang RFC3339 (tuy endpoint).
+  string cursor = 1;
+  int32 limit = 2;
+}
+
+message PageInfo {
+  string next_cursor = 1;
+  bool has_more = 2;
+}
+
+enum ConversationType {
+  CONVERSATION_TYPE_UNSPECIFIED = 0;
+  CONVERSATION_TYPE_DIRECT = 1;
+  CONVERSATION_TYPE_GROUP = 2;
+}
+
+enum MemberRole {
+  MEMBER_ROLE_UNSPECIFIED = 0;
+  MEMBER_ROLE_OWNER = 1;
+  MEMBER_ROLE_ADMIN = 2;
+  MEMBER_ROLE_MEMBER = 3;
+}
+
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_TEXT = 1;
+  MESSAGE_TYPE_IMAGE = 2;
+  MESSAGE_TYPE_VIDEO = 3;
+  MESSAGE_TYPE_FILE = 4;
+  MESSAGE_TYPE_GIF = 5;
+  MESSAGE_TYPE_SYSTEM = 6;
+  MESSAGE_TYPE_BOT_COMMAND = 7;
+  MESSAGE_TYPE_BOT_REPLY = 8;
+}
+
+enum SenderType {
+  SENDER_TYPE_UNSPECIFIED = 0;
+  SENDER_TYPE_USER = 1;
+  SENDER_TYPE_BOT = 2;
+  SENDER_TYPE_SYSTEM = 3;
+}
+
+message User {
+  string id = 1;
+  string external_id = 2;
+  string display_name = 3;
+  string avatar_url = 4;
+  string email = 5;
+  string role = 6;
+  string presence = 7;
+}
+
+message Attachment {
+  string id = 1;
+  string kind = 2;
+  string url = 3;
+  string name = 4;
+  string mime_type = 5;
+  int64 size_bytes = 6;
+  int32 width = 7;
+  int32 height = 8;
+  int32 duration_ms = 9;
+}

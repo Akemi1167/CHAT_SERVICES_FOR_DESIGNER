@@ -1,0 +1,13 @@
+$kind: http-request
+description: Không cần token.
+url: "{{base_url}}/healthz"
+method: GET
+auth:
+  type: noauth
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("status=ok", () => pm.expect(pm.response.json().data.status).to.eql("ok"));
+    language: text/javascript
+order: 1000

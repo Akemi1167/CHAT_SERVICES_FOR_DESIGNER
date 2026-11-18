@@ -1,0 +1,17 @@
+$kind: http-request
+description: "Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, kèm `members` + `sources`/`teamCodes`), `notifications`, `unreadNotifications`."
+url: "{{base_url}}/api/client/v1/chat/bootstrap"
+method: GET
+auth:
+  type: bearer
+  credentials:
+    token: "{{cms_token}}"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      const el = pm.response.json().element;
+      pm.test("co me + groups", () => pm.expect(el).to.have.keys(["me","groups","notifications","unreadNotifications"]));
+      if (el.groups && el.groups[0]) pm.collectionVariables.set("chat_id", el.groups[0].chatId || el.groups[0].id);
+    language: text/javascript
+order: 1000

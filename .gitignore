@@ -1,0 +1,10 @@
+bin/
+coverage.out
+coverage.html
+.env
+*.log
+.DS_Store
+.idea/
+.vscode/
+tmp/
+scratch/

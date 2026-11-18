@@ -1,0 +1,20 @@
+$kind: http-request
+description: Bot trả về danh sách mẫu đang có.
+url: "{{base_url}}/api/v1/conversations/{{conversation_id}}/messages"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "content": "@bot",
+      "client_msg_id": "{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("bot tra loi", () => pm.expect(pm.response.json().data.bot_reply).to.not.eql(null));
+    language: text/javascript
+order: 3000

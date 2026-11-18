@@ -1,0 +1,34 @@
+$kind: http-request
+description: "**Thay thế toàn bộ** danh sách thành viên: ai không còn trong danh sách mất quyền xem nhóm ngay."
+url: "{{base_url}}/bot/v1/groups/{{chat_id}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "name": "Nhóm Thiết kế Web",
+      "members": [
+        {
+          "openId": "local:designer-1",
+          "cmsUserId": 68,
+          "name": "Trần Designer",
+          "sources": [
+            "team"
+          ],
+          "teamCodes": [
+            "DESIGN"
+          ]
+        }
+      ]
+    }
+auth:
+  type: noauth
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("co memberCount", () => pm.expect(pm.response.json()).to.have.property("memberCount"));
+    language: text/javascript
+order: 6000

@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package chat.v1;
+
+import "chat/v1/common.proto";
+
+option go_package = "github.com/abc-workspace/chat-service/gen/go/chat/v1;chatv1";
+
+message Conversation {
+  string id = 1;
+  ConversationType type = 2;
+  string name = 3;
+  string avatar_url = 4;
+  string created_by = 5;
+  string last_message_at = 6;
+  int64 unread_count = 7;
+  repeated ConversationMember members = 8;
+}
+
+message ConversationMember {
+  string user_id = 1;
+  MemberRole role = 2;
+  string last_read_message_id = 3;
+  bool muted = 4;
+  User user = 5;
+}
+
+message CreateConversationRequest {
+  ConversationType type = 1;
+  string name = 2;
+  string avatar_url = 3;
+  // Voi DIRECT: dung dung 1 user_id (nguoi doi dien).
+  repeated string member_user_ids = 4;
+}
+
+message CreateConversationResponse {
+  Conversation conversation = 1;
+}
+
+message GetConversationRequest {
+  string conversation_id = 1;
+}
+
+message GetConversationResponse {
+  Conversation conversation = 1;
+}
+
+message ListConversationsRequest {
+  CursorPage page = 1;
+}
+
+message ListConversationsResponse {
+  repeated Conversation conversations = 1;
+  PageInfo page_info = 2;
+}
+
+message AddMembersRequest {
+  string conversation_id = 1;
+  repeated string user_ids = 2;
+  MemberRole role = 3;
+}
+
+message AddMembersResponse {
+  Conversation conversation = 1;
+}
+
+message RemoveMemberRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+}
+
+message RemoveMemberResponse {}

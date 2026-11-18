@@ -1,0 +1,27 @@
+$kind: websocket-request
+name: Chat realtime (ws://.../ws?token=...)
+description: |
+  Xác thực ngay lúc handshake: token lấy theo thứ tự `?token=` → `Sec-WebSocket-Protocol`
+  → header `Authorization`.
+
+  Lưu ý khi dùng Postman: nếu request này được lưu trong collection có Bearer auth kế thừa,
+  Postman gửi kèm header `Authorization` của biến `{{token}}` — server ưu tiên token trong URL
+  nên tab vẫn đúng người. Cứ kiểm tra frame `ready` (`display_name`) để chắc chắn.
+
+  Sau khi kết nối, server gửi frame `ready`. Mỗi frame là 1 JSON object:
+  `{"id":"<req-id>","type":"<loại>","payload":{...}}`.
+
+  Server đẩy xuống: `ready`, `ack`, `error`, `pong`, `message.new`, `message.deleted`,
+  `message.read`, `typing`, `presence.update`, `conversation.created`,
+  `conversation.updated`, `bot.submission.stored`, `task.created`, `task.updated`.
+url: '{{ws_url}}?token={{token}}'
+queryParams:
+  - key: token
+    value: '{{token}}'
+messages: ./.resources/ws-chat.resources/messages/
+settings:
+  handshakeTimeout: 10000
+  retryCount: 3
+  retryDelay: 1000
+  strictSSL: false
+order: 1000

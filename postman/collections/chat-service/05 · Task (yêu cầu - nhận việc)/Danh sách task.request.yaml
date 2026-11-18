@@ -1,0 +1,12 @@
+$kind: http-request
+description: "Lọc: `team_id`, `assignee_id`, `created_by`, `status` (nhiều giá trị cách nhau bởi `,`), `thread_id`, `q`, `mine=true`, `waiting_accept=true`."
+url: "{{base_url}}/api/v1/tasks?conversation_id={{conversation_id}}&limit=20"
+method: GET
+queryParams:
+  conversation_id: "{{conversation_id}}"
+  limit: "20"
+scripts:
+  - type: afterResponse
+    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    language: text/javascript
+order: 2000

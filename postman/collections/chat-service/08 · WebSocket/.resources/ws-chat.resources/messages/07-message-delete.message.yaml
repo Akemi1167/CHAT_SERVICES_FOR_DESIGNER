@@ -1,0 +1,10 @@
+$kind: websocket-message
+name: message.delete — xoá mềm tin nhắn
+content: |-
+  {
+    "id": "c6",
+    "type": "message.delete",
+    "payload": {"message_id": "{{message_id}}"}
+  }
+contentType: json
+order: 7000

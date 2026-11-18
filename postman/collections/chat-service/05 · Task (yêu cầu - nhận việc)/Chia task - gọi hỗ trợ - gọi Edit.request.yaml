@@ -1,0 +1,22 @@
+$kind: http-request
+name: Chia task / gọi hỗ trợ / gọi Edit
+description: "`role`: primary (chia việc, mỗi người 1 card) | support (gọi hỗ trợ) | edit (gọi Edit làm video). Chỉ owner/admin nhóm hoặc người tạo task."
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/assignees"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "user_ids": [
+        "{{user_id_2}}"
+      ],
+      "role": "support",
+      "note": "Hỗ trợ phần hình"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test("200 hoặc 400/409 nếu chưa có user thứ 2", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 409]));
+    language: text/javascript
+order: 12000

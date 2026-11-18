@@ -1,0 +1,2 @@
+DELETE FROM bot_templates WHERE bot_id = '00000000-0000-0000-0000-0000000000b0';
+DELETE FROM bots WHERE slug = 'bot';

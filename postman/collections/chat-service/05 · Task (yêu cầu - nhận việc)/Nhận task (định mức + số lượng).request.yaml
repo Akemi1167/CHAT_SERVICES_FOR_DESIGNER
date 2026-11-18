@@ -1,0 +1,20 @@
+$kind: http-request
+description: "**Bắt buộc** chọn định mức và số lượng trước khi nhận; số lượng không vượt `quantity` của task. Nhận lại lần 2 → 409 `task_already_accepted`."
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/accept"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "quota": "HD-cao-cấp",
+      "quantity": 5
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("dang lam", () => pm.expect(pm.response.json().data.status).to.eql("in_progress"));
+    language: text/javascript
+order: 6000

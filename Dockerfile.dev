@@ -1,0 +1,17 @@
+# Image DEV: chay truc tiep source trong container, tu build lai khi sua code (air).
+# Dung voi docker-compose.dev.yml (bind mount ./ vao /app).
+FROM golang:1.26-alpine
+
+RUN apk add --no-cache git curl protobuf protobuf-dev \
+ && go install github.com/air-verse/air@latest \
+ && go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
+ && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+WORKDIR /app
+
+# Tai dependency truoc de lan build dau trong container nhanh hon.
+COPY go.mod go.sum ./
+RUN go mod download
+
+EXPOSE 8080 9090
+CMD ["air", "-c", ".air.toml"]

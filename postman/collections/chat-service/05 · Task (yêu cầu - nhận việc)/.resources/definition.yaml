@@ -1,0 +1,7 @@
+$kind: collection
+name: 05 · Task (yêu cầu / nhận việc)
+description: |-
+  Vòng đời card của từng người. Trạng thái task tổng được **suy ra** từ các card.
+
+  Chạy theo thứ tự: Tạo → Danh sách (lưu `task_id`) → Nhận → Tạm dừng → Tiếp tục → Hoàn thành.
+order: 6000

@@ -1,0 +1,9 @@
+$kind: http-request
+description: Người gửi hoặc owner/admin nhóm. ⚠️ Chạy cuối vì các request trên dùng `message_id`.
+url: "{{base_url}}/api/v1/messages/{{message_id}}"
+method: DELETE
+scripts:
+  - type: afterResponse
+    code: pm.test("200 hoặc 403", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));
+    language: text/javascript
+order: 12000

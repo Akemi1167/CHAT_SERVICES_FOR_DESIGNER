@@ -1,0 +1,11 @@
+$kind: http-request
+description: Ai làm gì, lúc nào, từ trạng thái nào sang trạng thái nào.
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/events?limit=50"
+method: GET
+queryParams:
+  limit: "50"
+scripts:
+  - type: afterResponse
+    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    language: text/javascript
+order: 15000

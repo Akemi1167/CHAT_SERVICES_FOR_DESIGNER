@@ -1,0 +1,12 @@
+$kind: http-request
+description: Trả cả tin nhắn gốc + mọi phản hồi trong thread.
+url: "{{base_url}}/api/v1/conversations/{{conversation_id}}/messages?thread_id={{thread_id}}&limit=50"
+method: GET
+queryParams:
+  thread_id: "{{thread_id}}"
+  limit: "50"
+scripts:
+  - type: afterResponse
+    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    language: text/javascript
+order: 8000

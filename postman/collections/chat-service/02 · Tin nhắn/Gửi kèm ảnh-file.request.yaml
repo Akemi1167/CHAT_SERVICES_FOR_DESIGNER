@@ -1,0 +1,31 @@
+$kind: http-request
+name: Gửi kèm ảnh/file
+description: Service chỉ lưu URL — việc upload do service file/CDN khác làm.
+url: "{{base_url}}/api/v1/conversations/{{conversation_id}}/messages"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "type": "image",
+      "content": "Mẫu banner v1",
+      "attachments": [
+        {
+          "kind": "image",
+          "url": "https://picsum.photos/800/600",
+          "name": "banner-v1.png",
+          "mime_type": "image/png",
+          "size_bytes": 102400,
+          "width": 800,
+          "height": 600
+        }
+      ],
+      "client_msg_id": "{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    language: text/javascript
+order: 2000

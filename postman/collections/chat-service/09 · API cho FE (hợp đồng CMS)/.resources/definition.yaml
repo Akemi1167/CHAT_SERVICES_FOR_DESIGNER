@@ -1,0 +1,6 @@
+$kind: collection
+description: |-
+  Bộ API `/api/client/v1/chat/*` với envelope `{statusCode, code, message, element}`.
+
+  Auth: **access token do CMS phát** — đặt vào biến `cms_token` (lấy từ `POST /api/client/v1/workspace/auth/login` của CMS). Token dev `make token` cũng dùng được khi `AUTH_ALLOW_DEV_TOKEN=true`, nhưng sẽ không có `cmsUserId`/nhóm CMS.
+order: 10000

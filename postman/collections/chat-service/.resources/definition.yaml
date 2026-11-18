@@ -1,0 +1,100 @@
+$kind: collection
+id: 6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e1001
+name: Chat Service · ABC Workspace
+description: |
+  # Chat Service — ABC Workspace
+
+  Chat (riêng/nhóm) + bot `@bot` gửi mẫu + task / nhận task / phiếu sửa.
+  Go · Fiber (REST + WebSocket) · gRPC · PostgreSQL · GORM.
+
+  ## Chuẩn bị (2 bước)
+
+  1. Chạy service: `make dev-up` (Docker, hot reload) hoặc `make up-deps && make migrate-up && make run`.
+  2. Lấy token dev và dán vào biến `token` của environment **Chat Service · Local**:
+     `make token SUB=user-001 NAME="Nguyen Van A" ROLE=designer`
+     Muốn thử phân công 2 người: tạo token thứ 2 (`SUB=user-002`), gọi `/me` bằng token đó,
+     rồi dán `user_id` nhận được vào biến `user_id_2`.
+
+  ## Cách chạy
+
+  Chạy lần lượt từ folder `00` xuống `06` (hoặc Run collection): mỗi folder tự lưu id cần thiết
+  (`user_id`, `conversation_id`, `message_id`, `task_id`, `task_code`, `assignment_id`, `revision_id`)
+  vào collection variable cho folder sau dùng.
+
+  Response thành công: `{"data": ..., "meta": {"next_cursor","has_more"}}`.
+  Lỗi: `{"error":{"code","message","details"}}` — `code` ổn định, dùng để FE bắt lỗi.
+  Phân trang: cursor (`?cursor=<meta.next_cursor>&limit=30`), **không** dùng offset.
+
+  ## Tích hợp CMS
+
+  Folder `08 · CMS → Chat (Bot API)` và `09 · API cho FE (hợp đồng CMS)` chỉ chạy khi service bật
+  `CMS_ENABLED=true`. Điền 2 biến environment: `service_key` (= `CHAT_SERVICE_KEY`) và `cms_token`
+  (access token do CMS phát). Header `X-Chat-Service-Key` + `Idempotency-Key` được gắn tự động cho
+  mọi request `/bot/v1`. Chi tiết: `docs/10-cms-integration.md`.
+
+  ## WebSocket & gRPC
+
+  Postman **không** cho export 2 loại request này trong file v2.1 (giới hạn của Postman),
+  nên chúng không có trong file import này. Hai cách dùng:
+
+  - **WebSocket**: New → WebSocket → `ws://localhost:8080/ws?token=<JWT>` → Connect.
+    Kiểm tra frame `ready` xem `display_name` có đúng người không (token trong URL luôn thắng
+    header `Authorization` mà Postman có thể tự gắn).
+    Gửi frame: `{"id":"1","type":"message.send","payload":{"conversation_id":"...","content":"hello"}}`.
+    Lưu ý: nếu thêm `client_msg_id` thì giá trị phải **khác nhau mỗi lần gửi** — trùng giá trị cũ sẽ
+    bị coi là retry (`ack` trả `"duplicated": true`) và **không broadcast cho ai cả**.
+    Các frame khác: `template.send`, `message.read`, `message.delete`, `typing`, `ping`.
+    Server đẩy xuống: `ready`, `ack`, `error`, `message.new`, `message.read`, `typing`,
+    `presence.update`, `task.created`, `task.updated`, `bot.submission.stored`.
+    Chi tiết: `docs/02-websocket.md`.
+  - **gRPC**: New → gRPC → `localhost:9090` → chọn service (server reflection đang bật) →
+    thêm metadata `authorization: Bearer <JWT>`. Có `ChatService`, `BotService`, `TaskService`.
+    Chi tiết: `docs/05-api.md`.
+
+  Repo cũng có sẵn collection dạng v3 (`postman/collections/`) đã khai báo đủ cả WebSocket và gRPC,
+  chạy bằng Postman CLI: `postman collection run "postman/collections/Chat Service"`.
+variables:
+  base_url: http://localhost:8080
+  token: ""
+  bot_slug: bot
+  service_key: ""
+  cms_token: ""
+  chat_id: ""
+  actor_id: ""
+  card_message_id: ""
+  user_id: ""
+  user_id_2: ""
+  conversation_id: ""
+  direct_conversation_id: ""
+  message_id: ""
+  thread_id: ""
+  team_id: ""
+  task_id: ""
+  task_code: ""
+  assignment_id: ""
+  revision_id: ""
+  reply_message_id: ""
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Bot API dùng service key thay vì JWT -> tự gắn header.
+      if (pm.request.url.getPath().startsWith('/bot/v1')) {
+        if (!pm.request.headers.has('X-Chat-Service-Key')) {
+          pm.request.headers.add({key: 'X-Chat-Service-Key', value: pm.variables.get('service_key') || ''});
+        }
+        pm.request.headers.upsert({key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}')});
+      }
+      // Cảnh báo sớm nếu chưa cấu hình biến bắt buộc.
+      const need = ["base_url", "token"];
+      need.forEach(k => {
+        if (!pm.variables.get(k)) {
+          console.warn("Thiếu biến " + k + " — chọn environment \"Chat Service · Local\" và dán token (make token).");
+        }
+      });
+    language: text/javascript
+auth:
+  - id: 83aafe25-da19-412f-a72c-d4d0f9a75f15
+    type: bearer
+    name: bearer auth
+    credentials:
+      token: "{{token}}"

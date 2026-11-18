@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/tasks/khong-phai-uuid"
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("400", () => pm.response.to.have.status(400));
+      pm.test("code invalid_uuid", () => pm.expect(pm.response.json().error.code).to.eql("invalid_uuid"));
+    language: text/javascript
+order: 2000

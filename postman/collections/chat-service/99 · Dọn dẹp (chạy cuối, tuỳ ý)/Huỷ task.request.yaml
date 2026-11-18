@@ -1,0 +1,19 @@
+$kind: http-request
+description: Huỷ sẽ thu hồi các card chưa hoàn thành → mọi thao tác sau đó trên task trả 409 `task_cancelled`. Vì vậy request này nằm ở folder dọn dẹp, chạy sau cùng.
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/cancel"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "reason": "Khách đổi yêu cầu"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("da huy", () => pm.expect(pm.response.json().data.status).to.eql("cancelled"));
+    language: text/javascript
+order: 1000

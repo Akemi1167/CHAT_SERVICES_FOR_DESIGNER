@@ -1,0 +1,25 @@
+$kind: http-request
+description: Dùng khi FE có form riêng. ⚠️ Cần `task_code` (chạy folder 05 trước) vì mẫu `phieu_sua` tạo phiếu sửa cho task đó.
+url: "{{base_url}}/api/v1/bots/{{bot_slug}}/submissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "conversation_id": "{{conversation_id}}",
+      "template_code": "phieu_sua",
+      "payload": {
+        "ma_task": "{{task_code}}",
+        "nguyen_nhan": "Sai màu nền",
+        "loai_sua": "màu",
+        "so_luong": 2
+      },
+      "client_msg_id": "{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test("201 hoặc 400 nếu chưa có task_code", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 400]));
+    language: text/javascript
+order: 5000

@@ -1,0 +1,25 @@
+$kind: http-request
+description: |-
+  Cú pháp `key=value` (dùng `"..."` cho giá trị có khoảng trắng) hoặc JSON: `@bot yeu_cau {"tieu_de":"..."}`.
+
+  Bot lưu mẫu (`submission.status=done`) rồi tạo task — **card task chính là câu trả lời** nên `bot_reply=null`. Thiếu trường bắt buộc → `bot_reply` ghi rõ thiếu gì và submission = `failed`.
+url: "{{base_url}}/api/v1/conversations/{{conversation_id}}/messages"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "content": "@bot yeu_cau tieu_de=\"Banner Tết 2027\" to=design so_luong=3 dinh_muc=A4 deadline=2026-12-01 ghi_chu=\"Làm gấp\"",
+      "client_msg_id": "{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      const d = pm.response.json().data;
+      pm.test("la bot_command", () => pm.expect(d.message.type).to.eql("bot_command"));
+      pm.test("mau da luu", () => pm.expect(d.submission.status).to.be.oneOf(["done", "stored"]));
+    language: text/javascript
+order: 4000

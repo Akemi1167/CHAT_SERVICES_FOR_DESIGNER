@@ -1,0 +1,25 @@
+$kind: http-request
+description: Chat kiểm `visibleTo` trước (không được phép → `403 ACTION_NOT_ALLOWED`), rồi gửi `card.action` sang CMS và áp card mới nếu `cardVersion` lớn hơn.
+url: "{{base_url}}/api/client/v1/chat/messages/{{card_message_id}}/actions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "action": "accept_task",
+      "values": {
+        "normItemId": "996802",
+        "quantity": 2
+      }
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{cms_token}}"
+scripts:
+  - type: afterResponse
+    code: pm.test("200 hoac 403", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));
+    language: text/javascript
+order: 7000

@@ -1,0 +1,24 @@
+DROP TABLE IF EXISTS webhook_outbox;
+DROP TABLE IF EXISTS idempotency_keys;
+DROP TABLE IF EXISTS notifications;
+
+ALTER TABLE messages DROP COLUMN IF EXISTS bot_sender;
+ALTER TABLE messages DROP COLUMN IF EXISTS card_version;
+ALTER TABLE messages DROP COLUMN IF EXISTS card;
+
+ALTER TABLE conversation_members DROP COLUMN IF EXISTS team_codes;
+ALTER TABLE conversation_members DROP COLUMN IF EXISTS sources;
+
+ALTER TABLE conversations DROP COLUMN IF EXISTS synced_at;
+ALTER TABLE conversations DROP COLUMN IF EXISTS cms_info;
+ALTER TABLE conversations DROP COLUMN IF EXISTS source;
+ALTER TABLE conversations DROP COLUMN IF EXISTS external_id;
+
+ALTER TABLE users DROP COLUMN IF EXISTS synced_at;
+ALTER TABLE users DROP COLUMN IF EXISTS cms_profile;
+ALTER TABLE users DROP COLUMN IF EXISTS is_designer;
+ALTER TABLE users DROP COLUMN IF EXISTS status;
+ALTER TABLE users DROP COLUMN IF EXISTS username;
+ALTER TABLE users DROP COLUMN IF EXISTS actor_id;
+ALTER TABLE users DROP COLUMN IF EXISTS open_id;
+ALTER TABLE users DROP COLUMN IF EXISTS cms_user_id;

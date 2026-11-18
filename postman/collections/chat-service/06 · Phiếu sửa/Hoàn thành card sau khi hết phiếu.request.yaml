@@ -1,0 +1,22 @@
+$kind: http-request
+description: "Trạng thái **task** được suy ra từ tất cả card: nếu task đã được chia cho người khác mà họ chưa xong thì task vẫn `in_progress` dù card của bạn đã `completed`."
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/complete"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "note": "Nộp lại file đã sửa"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      const t = pm.response.json().data;
+      const mine = (t.assignments || []).find(a => a.user_id === pm.collectionVariables.get("user_id"));
+      pm.test("card cua toi hoan thanh", () => pm.expect(mine && mine.status).to.eql("completed"));
+      pm.test("task completed, hoac in_progress neu con card nguoi khac", () => pm.expect(t.status).to.be.oneOf(["completed", "in_progress"]));
+    language: text/javascript
+order: 4000

@@ -1,0 +1,10 @@
+$kind: websocket-message
+name: typing — đang nhập (không lưu DB, không ack)
+content: |-
+  {
+    "id": "c5",
+    "type": "typing",
+    "payload": {"conversation_id": "{{conversation_id}}", "typing": true}
+  }
+contentType: json
+order: 6000

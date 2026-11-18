@@ -1,0 +1,19 @@
+$kind: http-request
+description: Thiếu `note` → 400 `hold_requires_note`.
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/hold"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "note": "Chờ duyệt mẫu từ khách"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+      pm.test("treo", () => pm.expect(pm.response.json().data.status).to.eql("on_hold"));
+    language: text/javascript
+order: 9000

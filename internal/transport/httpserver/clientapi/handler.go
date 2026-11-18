@@ -1,0 +1,578 @@
+package clientapi
+
+import (
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+
+	"github.com/abc-workspace/chat-service/internal/domain"
+	"github.com/abc-workspace/chat-service/internal/pkg/apperr"
+	"github.com/abc-workspace/chat-service/internal/pkg/paging"
+	"github.com/abc-workspace/chat-service/internal/repository"
+	"github.com/abc-workspace/chat-service/internal/service/card"
+	"github.com/abc-workspace/chat-service/internal/service/cmssync"
+	"github.com/abc-workspace/chat-service/internal/service/conversation"
+	"github.com/abc-workspace/chat-service/internal/service/message"
+	"github.com/abc-workspace/chat-service/internal/service/notification"
+	"github.com/abc-workspace/chat-service/internal/transport/httpserver/middleware"
+)
+
+type Handler struct {
+	store  repository.Store
+	convs  *conversation.Service
+	msgs   *message.Service
+	cards  *card.Service
+	notifs *notification.Service
+	sync   *cmssync.Service
+}
+
+func NewHandler(
+	store repository.Store,
+	convs *conversation.Service,
+	msgs *message.Service,
+	cards *card.Service,
+	notifs *notification.Service,
+	sync *cmssync.Service,
+) *Handler {
+	return &Handler{store: store, convs: convs, msgs: msgs, cards: cards, notifs: notifs, sync: sync}
+}
+
+// Register gan route; router da di qua middleware auth.
+func (h *Handler) Register(router fiber.Router) {
+	router.Get("/auth/me", h.Me)
+	router.Get("/bootstrap", h.Bootstrap)
+	router.Post("/groups/refresh", h.RefreshGroups)
+	router.Get("/groups/:id/messages", h.ListMessages)
+	router.Post("/groups/:id/messages", h.SendMessage)
+	router.Post("/groups/:id/read", h.MarkRead)
+	router.Get("/messages/:id/replies", h.Replies)
+	router.Post("/messages/:id/actions", h.RunAction)
+	router.Post("/forms/:formId/submit", h.SubmitForm)
+	router.Get("/notifications", h.ListNotifications)
+	router.Post("/notifications/read", h.ReadNotifications)
+}
+
+// ---------------- me / bootstrap ----------------
+
+func (h *Handler) Me(c *fiber.Ctx) error {
+	u, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, fiber.Map{"me": userView(u)})
+}
+
+// Bootstrap: tat ca thu FE can khi mo app — chi gom nhom user la thanh vien,
+// card da loc nut theo nguoi xem.
+func (h *Handler) Bootstrap(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	ctx := c.UserContext()
+
+	convs, _, err := h.convs.List(ctx, me.ID, paging.Normalize("", 100))
+	if err != nil {
+		return fail(c, err)
+	}
+
+	groups := make([]fiber.Map, 0, len(convs))
+	for i := range convs {
+		groups = append(groups, h.groupView(c, &convs[i], me))
+	}
+
+	notifs, _, err := h.notifs.List(ctx, me.ID, paging.Normalize("", 30))
+	if err != nil {
+		return fail(c, err)
+	}
+	unread, err := h.notifs.CountUnread(ctx, me.ID)
+	if err != nil {
+		return fail(c, err)
+	}
+
+	return ok(c, fiber.Map{
+		"me":                  userView(me),
+		"groups":              groups,
+		"notifications":       notifs,
+		"unreadNotifications": unread,
+	})
+}
+
+// RefreshGroups: FE goi sau khi vao nhom bang link moi -> Chat hoi lai CMS ngay.
+func (h *Handler) RefreshGroups(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	if h.sync == nil {
+		return fail(c, apperr.Invalid("cms_disabled", "Chua bat tich hop CMS"))
+	}
+	n, err := h.sync.SyncAll(c.UserContext())
+	if err != nil {
+		return fail(c, apperr.Internal("cms_unreachable", "Khong hoi duoc CMS, thu lai sau").Wrap(err))
+	}
+	convs, _, err := h.convs.List(c.UserContext(), me.ID, paging.Normalize("", 100))
+	if err != nil {
+		return fail(c, err)
+	}
+	groups := make([]fiber.Map, 0, len(convs))
+	for i := range convs {
+		groups = append(groups, h.groupView(c, &convs[i], me))
+	}
+	return ok(c, fiber.Map{"synced": n, "groups": groups})
+}
+
+// ---------------- tin nhan ----------------
+
+func (h *Handler) ListMessages(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	conv, err := h.resolveGroup(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	threadID, err := optionalUUID(c.Query("threadRootId"))
+	if err != nil {
+		return fail(c, err)
+	}
+
+	items, info, err := h.msgs.List(c.UserContext(), message.ListInput{
+		ActorID: me.ID, ConversationID: conv.ID, ThreadID: threadID,
+	}, paging.Normalize(c.Query("cursor"), int32(c.QueryInt("limit", 0))))
+	if err != nil {
+		return fail(c, err)
+	}
+
+	return ok(c, fiber.Map{
+		"messages": h.messageViews(items, me.ActorID),
+		"pageInfo": info,
+	})
+}
+
+type sendMessageReq struct {
+	Text string `json:"text"`
+	// threadRootId = tin mo thread (card/yeu cau); replyToId = tin duoc trich dan.
+	ThreadRootID string              `json:"threadRootId"`
+	ReplyToID    string              `json:"replyToId"`
+	Attachments  []attachmentPayload `json:"attachments"`
+	Metadata     domain.JSONMap      `json:"metadata"`
+	ClientMsgID  string              `json:"clientMsgId"`
+}
+
+type attachmentPayload struct {
+	Kind       string `json:"kind"`
+	URL        string `json:"url"`
+	Name       string `json:"name"`
+	MimeType   string `json:"mimeType"`
+	SizeBytes  int64  `json:"sizeBytes"`
+	Width      int32  `json:"width"`
+	Height     int32  `json:"height"`
+	DurationMs int32  `json:"durationMs"`
+}
+
+func toDomainAttachments(in []attachmentPayload) []domain.Attachment {
+	out := make([]domain.Attachment, 0, len(in))
+	for _, a := range in {
+		if a.URL == "" {
+			continue
+		}
+		out = append(out, domain.Attachment{
+			ID: uuid.New(), Kind: a.Kind, URL: a.URL, Name: a.Name,
+			MimeType: a.MimeType, SizeBytes: a.SizeBytes,
+			Width: a.Width, Height: a.Height, DurationMs: a.DurationMs,
+		})
+	}
+	return out
+}
+
+func (h *Handler) SendMessage(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	conv, err := h.resolveGroup(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	var req sendMessageReq
+	if err := c.BodyParser(&req); err != nil {
+		return fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+	}
+	threadID, err := optionalUUID(req.ThreadRootID)
+	if err != nil {
+		return fail(c, err)
+	}
+	replyTo, err := optionalUUID(req.ReplyToID)
+	if err != nil {
+		return fail(c, err)
+	}
+
+	msgType := domain.MessageText
+	if len(req.Attachments) > 0 {
+		msgType = domain.MessageFile
+	}
+	res, err := h.msgs.Send(c.UserContext(), message.SendInput{
+		ActorID:        me.ID,
+		ConversationID: conv.ID,
+		Type:           msgType,
+		Content:        req.Text,
+		ThreadID:       threadID,
+		ReplyToID:      replyTo,
+		Attachments:    toDomainAttachments(req.Attachments),
+		Metadata:       req.Metadata,
+		ClientMsgID:    req.ClientMsgID,
+	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, fiber.Map{
+		"message":    h.messageView(res.Message, me.ActorID),
+		"duplicated": res.Duplicated,
+	})
+}
+
+type markReadReq struct {
+	MessageID string `json:"messageId"`
+}
+
+func (h *Handler) MarkRead(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	conv, err := h.resolveGroup(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	var req markReadReq
+	if err := c.BodyParser(&req); err != nil {
+		return fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+	}
+	msgID, err := uuid.Parse(req.MessageID)
+	if err != nil {
+		return fail(c, apperr.Invalid("invalid_id", "messageId khong hop le"))
+	}
+
+	unread, err := h.msgs.MarkRead(c.UserContext(), me.ID, conv.ID, msgID)
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, fiber.Map{"unreadCount": unread})
+}
+
+// Replies: phan hoi cua 1 tin nhan.
+//
+//	?mode=direct (mac dinh) — tin tra loi truc tiep tin nay
+//	?mode=thread            — ca thread do tin nay mo (dung cho card/yeu cau)
+func (h *Handler) Replies(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	msgID, err := paramUUID(c, "id")
+	if err != nil {
+		return fail(c, err)
+	}
+
+	res, err := h.msgs.Replies(c.UserContext(), message.RepliesInput{
+		ActorID:   me.ID,
+		MessageID: msgID,
+		Mode:      repository.ReplyMode(c.Query("mode")),
+	}, paging.Normalize(c.Query("cursor"), int32(c.QueryInt("limit", 0))))
+	if err != nil {
+		return fail(c, err)
+	}
+
+	return ok(c, fiber.Map{
+		"root":        h.messageView(res.Root, me.ActorID),
+		"replies":     h.messageViews(res.Replies, me.ActorID),
+		"replyCount":  res.DirectCount,
+		"threadCount": res.ThreadCount,
+		"pageInfo":    res.PageInfo,
+	})
+}
+
+// ---------------- card / form (chuyen sang CMS) ----------------
+
+type actionReq struct {
+	Action string         `json:"action"`
+	Values domain.JSONMap `json:"values"`
+}
+
+func (h *Handler) RunAction(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	msgID, err := paramUUID(c, "id")
+	if err != nil {
+		return fail(c, err)
+	}
+	var req actionReq
+	if err := c.BodyParser(&req); err != nil {
+		return fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+	}
+
+	res, err := h.cards.RunAction(c.UserContext(), card.ActionInput{
+		ActorID: me.ID, MessageID: msgID, Action: req.Action, Values: req.Values,
+	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, res)
+}
+
+type submitFormReq struct {
+	Values  domain.JSONMap `json:"values"`
+	Context struct {
+		GroupID      string `json:"groupId"`
+		ThreadRootID string `json:"threadRootId"`
+	} `json:"context"`
+}
+
+// SubmitForm: FE gui form (vd create_task voi team_id) -> Chat ky va chuyen sang CMS.
+func (h *Handler) SubmitForm(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	var req submitFormReq
+	if err := c.BodyParser(&req); err != nil {
+		return fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+	}
+	conv, err := h.lookupGroup(c, req.Context.GroupID)
+	if err != nil {
+		return fail(c, err)
+	}
+	threadID, err := optionalUUID(req.Context.ThreadRootID)
+	if err != nil {
+		return fail(c, err)
+	}
+
+	res, err := h.cards.SubmitForm(c.UserContext(), card.SubmitFormInput{
+		ActorID:        me.ID,
+		ConversationID: conv.ID,
+		ThreadID:       threadID,
+		FormID:         c.Params("formId"),
+		Values:         req.Values,
+	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, res)
+}
+
+// ---------------- thong bao ----------------
+
+func (h *Handler) ListNotifications(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	items, info, err := h.notifs.List(c.UserContext(), me.ID,
+		paging.Normalize(c.Query("cursor"), int32(c.QueryInt("limit", 0))))
+	if err != nil {
+		return fail(c, err)
+	}
+	unread, err := h.notifs.CountUnread(c.UserContext(), me.ID)
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, fiber.Map{"notifications": items, "unread": unread, "pageInfo": info})
+}
+
+type readNotificationsReq struct {
+	IDs []string `json:"ids"`
+	All bool     `json:"all"`
+}
+
+func (h *Handler) ReadNotifications(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	var req readNotificationsReq
+	if len(c.Body()) > 0 {
+		if err := c.BodyParser(&req); err != nil {
+			return fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+		}
+	}
+	ids := make([]uuid.UUID, 0, len(req.IDs))
+	for _, raw := range req.IDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return fail(c, apperr.Invalid("invalid_id", "id thong bao khong hop le: "+raw))
+		}
+		ids = append(ids, id)
+	}
+
+	n, err := h.notifs.MarkRead(c.UserContext(), me.ID, ids, req.All || len(ids) == 0)
+	if err != nil {
+		return fail(c, err)
+	}
+	unread, err := h.notifs.CountUnread(c.UserContext(), me.ID)
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, fiber.Map{"updated": n, "unread": unread})
+}
+
+// ---------------- view helper ----------------
+
+func userView(u *domain.User) fiber.Map {
+	view := fiber.Map{
+		"id":        u.ID.String(),
+		"actorId":   u.ActorID,
+		"name":      u.DisplayName,
+		"avatarUrl": u.AvatarURL,
+		"role":      u.DisplayRole(),
+		"presence":  string(u.Presence),
+		"openId":    u.OpenID,
+		"email":     u.Email,
+		"username":  u.Username,
+	}
+	if u.CMSUserID != nil {
+		view["cmsUserId"] = *u.CMSUserID
+	}
+	if u.CMSProfile != nil {
+		view["profile"] = map[string]any(u.CMSProfile)
+	}
+	return view
+}
+
+func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.User) fiber.Map {
+	members := make([]fiber.Map, 0, len(conv.Members))
+	for _, m := range conv.Members {
+		item := fiber.Map{
+			"userId":    m.UserID.String(),
+			"role":      string(m.Role),
+			"sources":   []string(m.Sources),
+			"teamCodes": []string(m.TeamCodes),
+		}
+		if m.User != nil {
+			item["actorId"] = m.User.ActorID
+			item["name"] = m.User.DisplayName
+			item["avatarUrl"] = m.User.AvatarURL
+			item["presence"] = string(m.User.Presence)
+			item["title"] = m.User.DisplayRole()
+		}
+		members = append(members, item)
+	}
+
+	chatID := ""
+	if conv.ExternalID != nil {
+		chatID = *conv.ExternalID
+	}
+	return fiber.Map{
+		"id":          conv.ID.String(),
+		"chatId":      chatID,
+		"name":        conv.Name,
+		"source":      conv.Source,
+		"unreadCount": conv.UnreadCount,
+		"cms":         map[string]any(conv.CMSInfo),
+		"members":     members,
+	}
+}
+
+func (h *Handler) messageViews(items []domain.Message, actorID string) []fiber.Map {
+	out := make([]fiber.Map, 0, len(items))
+	for i := range items {
+		out = append(out, h.messageView(&items[i], actorID))
+	}
+	return out
+}
+
+// messageView loc card theo nguoi xem truoc khi tra cho UI.
+func (h *Handler) messageView(m *domain.Message, actorID string) fiber.Map {
+	if m == nil {
+		return nil
+	}
+	view := fiber.Map{
+		"id":             m.ID.String(),
+		"conversationId": m.ConversationID.String(),
+		"type":           string(m.Type),
+		"senderType":     string(m.SenderType),
+		"text":           m.Content,
+		"createdAt":      m.CreatedAt,
+		"clientMsgId":    m.ClientMsgID,
+	}
+	if m.SenderID != nil {
+		view["senderId"] = m.SenderID.String()
+	}
+	if m.Sender != nil {
+		view["sender"] = userView(m.Sender)
+	}
+	if m.ThreadID != nil {
+		view["threadRootId"] = m.ThreadID.String()
+	}
+	if len(m.Attachments) > 0 {
+		view["attachments"] = m.Attachments
+	}
+	if m.BotSender != nil {
+		view["bot"] = map[string]any(m.BotSender)
+	}
+	if m.Metadata != nil {
+		view["metadata"] = map[string]any(m.Metadata)
+	}
+	if m.ReplyToID != nil {
+		view["replyToId"] = m.ReplyToID.String()
+	}
+	if m.ReplyCount > 0 {
+		view["replyCount"] = m.ReplyCount
+	}
+	if m.ThreadCount > 0 {
+		view["threadCount"] = m.ThreadCount
+	}
+	if m.Card != nil {
+		view["card"] = map[string]any(card.FilterForViewer(m.Card, actorID))
+		view["cardVersion"] = m.CardVersion
+		view["actions"] = card.Actions(m.Card, actorID)
+	}
+	return view
+}
+
+func (h *Handler) currentUser(c *fiber.Ctx) (*domain.User, error) {
+	id, err := middleware.Identity(c)
+	if err != nil {
+		return nil, err
+	}
+	return h.store.Users().GetByID(c.UserContext(), id.UserID)
+}
+
+// resolveGroup nhan ca chatId cua CMS (wg_...) lan UUID noi bo.
+func (h *Handler) resolveGroup(c *fiber.Ctx) (*domain.Conversation, error) {
+	return h.lookupGroup(c, c.Params("id"))
+}
+
+func (h *Handler) lookupGroup(c *fiber.Ctx, id string) (*domain.Conversation, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, apperr.Invalid("invalid_request", "Thieu groupId")
+	}
+	if parsed, err := uuid.Parse(id); err == nil {
+		return h.store.Conversations().GetByID(c.UserContext(), parsed)
+	}
+	return h.store.Conversations().GetByExternalID(c.UserContext(), id)
+}
+
+func paramUUID(c *fiber.Ctx, name string) (uuid.UUID, error) {
+	id, err := uuid.Parse(c.Params(name))
+	if err != nil {
+		return uuid.Nil, apperr.Invalid("invalid_id", name+" khong hop le")
+	}
+	return id, nil
+}
+
+func optionalUUID(s string) (*uuid.UUID, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return nil, apperr.Invalid("invalid_id", "id khong hop le: "+s)
+	}
+	return &id, nil
+}

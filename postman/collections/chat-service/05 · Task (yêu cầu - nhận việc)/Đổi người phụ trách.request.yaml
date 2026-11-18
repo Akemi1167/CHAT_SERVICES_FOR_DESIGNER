@@ -1,0 +1,18 @@
+$kind: http-request
+description: Card cũ → `revoked`, người mới nhận card `pending`. 409 `same_assignee` nếu `user_id_2` là chính mình, 409 `already_assigned` nếu người đó đã có card trên task (ví dụ vừa được chia việc ở request trên) — muốn thấy 200 thì dùng người thứ 3 chưa có card.
+url: "{{base_url}}/api/v1/tasks/{{task_id}}/reassign"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "to_user_id": "{{user_id_2}}",
+      "note": "Người cũ đang quá tải"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test("200 hoặc 400/409 nếu chưa có user thứ 2", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 409]));
+    language: text/javascript
+order: 13000

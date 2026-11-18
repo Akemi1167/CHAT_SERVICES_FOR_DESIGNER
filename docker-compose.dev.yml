@@ -1,0 +1,92 @@
+# Stack DEV: source duoc mount vao container, air tu build lai khi sua code.
+#   make dev-up      -> chay
+#   make dev-logs    -> xem log
+#   make dev-sh      -> vao shell container
+#
+# Khac voi docker-compose.yml (prod-like: build binary vao image).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chat-postgres-dev
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+      POSTGRES_DB: chat
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: chat-redis-dev
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    container_name: chat-migrate-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://chat:chat@postgres:5432/chat?sslmode=disable"
+      - "up"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: chat-app-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: local
+      HTTP_ADDR: ":8080"
+      GRPC_ADDR: ":9090"
+      POSTGRES_DSN: "postgres://chat:chat@postgres:5432/chat?sslmode=disable"
+      POSTGRES_LOG_SQL: "false"
+      REDIS_ENABLED: "true"
+      REDIS_ADDR: "redis:6379"
+      JWT_SECRET: "doi-secret-nay-trong-moi-truong-that"
+      LOG_LEVEL: "debug"
+      LOG_FORMAT: "text"
+      # Module task noi bo (khi tich hop CMS that thi de false — CMS so huu don/task).
+      TASK_ENGINE_ENABLED: "true"
+      # Bat tich hop CMS khi da co CMS dev:
+      # CMS_ENABLED: "true"
+      # CHAT_SERVICE_KEY: "mock_service_key"
+      # CMS_WORKSPACE_BASE_URL: "http://host.docker.internal:3001/api/client/v1/workspace"
+      # CMS_WEBHOOK_URL: "http://host.docker.internal:3001/webhook/web/designer"
+      # CMS_BASE_URL: "http://host.docker.internal:3001"
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - .:/app                      # source that: sua la container build lai
+      - go-mod-cache:/go/pkg/mod    # cache module giua cac lan chay
+      - go-build-cache:/root/.cache/go-build
+
+volumes:
+  pgdata-dev:
+  go-mod-cache:
+  go-build-cache:

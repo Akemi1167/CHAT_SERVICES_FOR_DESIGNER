@@ -1,0 +1,3 @@
+$kind: collection
+description: Các request làm thay đổi/rút quyền — tách riêng để không phá flow ở trên.
+order: 11000

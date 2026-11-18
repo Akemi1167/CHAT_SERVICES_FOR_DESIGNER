@@ -1,0 +1,23 @@
+$kind: http-request
+name: Điều chỉnh thông tin / đổi tổ
+description: Chỉ gửi field muốn đổi. `clear_deadline=true` để bỏ deadline. Designer thường sửa → 403 `require_task_manager`.
+url: "{{base_url}}/api/v1/tasks/{{task_id}}"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "title": "Video quảng cáo Tết - bản 2",
+      "team_code": "edit",
+      "quantity": 12,
+      "quota": "4K",
+      "deadline": "2026-12-25",
+      "priority": "urgent"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
+    language: text/javascript
+order: 14000

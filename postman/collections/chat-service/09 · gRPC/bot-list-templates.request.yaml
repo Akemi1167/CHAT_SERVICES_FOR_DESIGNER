@@ -1,0 +1,17 @@
+$kind: grpc-request
+name: BotService/ListBotTemplates
+description: |
+  Schema các mẫu (FE render form gửi mẫu).
+url: '{{grpc_url}}'
+methodPath: chat.v1.BotService/ListBotTemplates
+message:
+  content: |-
+    {"bot_slug": "bot"}
+metadata:
+  - key: authorization
+    value: 'Bearer {{token}}'
+settings:
+  secureConnection: false
+  strictSSL: false
+  includeDefaultFields: true
+order: 4000
