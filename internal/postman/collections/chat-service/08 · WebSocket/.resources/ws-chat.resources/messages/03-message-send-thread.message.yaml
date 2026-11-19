@@ -1,0 +1,15 @@
+$kind: websocket-message
+name: message.send — trả lời trong thread
+content: |-
+  {
+    "id": "c2",
+    "type": "message.send",
+    "payload": {
+      "conversation_id": "{{conversation_id}}",
+      "content": "Phản hồi trong thread của nhiệm vụ",
+      "thread_id": "{{thread_id}}",
+      "client_msg_id": "{{$guid}}"
+    }
+  }
+contentType: json
+order: 3000

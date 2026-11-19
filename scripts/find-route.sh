@@ -2,7 +2,10 @@
 # Tra nhanh: tu duong dan URL -> noi khai bao route -> handler -> service.
 #
 #   ./scripts/find-route.sh /api/client/v1/chat/auth/me
-#   make route PATH=auth/me
+#   make route URL=auth/me
+#
+# Dung URL= chu khong phai PATH= : PATH la bien moi truong cua shell, make se lay
+# gia tri cua no thay vi doi so cua ban.
 set -uo pipefail
 
 RAW="${1:-}"

@@ -171,6 +171,7 @@ transport (http/grpc/ws)  ->  service  ->  repository (interface)  ->  postgres/
 | [docs/14-code-map.md](docs/14-code-map.md) | **Từ URL tới code**: route nằm đâu, handler nào, service nào — kèm `make route` |
 | [docs/13-test-guide.md](docs/13-test-guide.md) | **Cách test**: `make seed`, chat trên terminal, Postman, curl, xem log khi lỗi |
 | [docs/12-deploy.md](docs/12-deploy.md) | **Deploy VPS**: stack prod, TLS/WebSocket qua nginx, bảo mật, backup, checklist |
+| [docs/17-giao-dien-live.md](docs/17-giao-dien-live.md) | **Giao diện live** `/demo/live.html` — bản chạy thật của `chat-thread-demo.html` |
 | [docs/16-api-flow.md](docs/16-api-flow.md) | **Luồng gọi API theo thứ tự** (từ FE): mở app, mở nhóm, gửi tin, thread, tạo yêu cầu, bấm nút card |
 | [docs/11-frontend.md](docs/11-frontend.md) | **Dành cho FE**: 2 chế độ, auth, REST + WebSocket, reply/thread, card, luồng chuẩn, checklist |
 | [docs/15-cms-cutover.md](docs/15-cms-cutover.md) | **Nối vào CMS**: xin gì, đưa gì, điền env, `make cms-check`, cách quay lui |
@@ -198,8 +199,8 @@ make postman-run TOKEN=$(make -s token)   # chạy cả collection bằng Postma
 
 Import 2 file này vào Postman (Import → File):
 
-- `postman/chat-service.postman_collection.json` — 56 request, 9 folder, có sẵn test + tự lưu id giữa các request
-- `postman/chat-service.local.postman_environment.json` — environment `Chat Service · Local`
+- `internal/postman/chat-service.postman_collection.json` — 83 request, 11 folder, có sẵn test + tự lưu id giữa các request
+- `internal/postman/chat-service.local.postman_environment.json` — environment `Chat Service · Local`
 
 Rồi dán token (`make token`) vào biến `token`. Chi tiết + cách thêm request WebSocket/gRPC:
 [docs/09-postman.md](docs/09-postman.md).

@@ -4,9 +4,9 @@ Thư mục `postman/` có 2 dạng, cùng nội dung REST nhưng dùng cho 2 vi�
 
 | File / thư mục | Dùng để | Có WebSocket & gRPC? |
 |---|---|---|
-| `postman/chat-service.postman_collection.json` | **Import vào app Postman** (Import → File) | Không — Postman không export được 2 protocol này ra v2.1 |
-| `postman/chat-service.local.postman_environment.json` | Import environment đi kèm | — |
-| `postman/collections/chat-service/` | Chạy bằng **Postman CLI** / review trong Git (định dạng v3) | Có (folder `08 · WebSocket`, `09 · gRPC`) |
+| `internal/postman/chat-service.postman_collection.json` | **Import vào app Postman** (Import → File) | Không — Postman không export được 2 protocol này ra v2.1 |
+| `internal/postman/chat-service.local.postman_environment.json` | Import environment đi kèm | — |
+| `internal/postman/collections/chat-service/` | Chạy bằng **Postman CLI** / review trong Git (định dạng v3) | Có (folder `08 · WebSocket`, `09 · gRPC`) |
 | `postman/environments/Chat Service Local.environment.yaml` | Environment cho CLI | — |
 
 Cả hai được sinh từ `scripts/gen_postman.py` (`make postman`): sửa API thì sửa script rồi chạy lại,
@@ -17,7 +17,7 @@ Cả hai được sinh từ `scripts/gen_postman.py` (`make postman`): sửa API
 
 1. Chạy service: `make dev-up` (hoặc `make up-deps && make migrate-up && make run`).
 2. Postman → **Import** → chọn 2 file:
-   `postman/chat-service.postman_collection.json` và `postman/chat-service.local.postman_environment.json`.
+   `internal/postman/chat-service.postman_collection.json` và `internal/postman/chat-service.local.postman_environment.json`.
 3. Chọn environment **Chat Service · Local**, lấy token dev rồi dán vào biến `token`:
 
 ```bash
@@ -102,3 +102,25 @@ Nếu prod tắt reflection thì nạp proto từ `api/proto/chat/v1/`.
 1. Sửa `scripts/gen_postman.py` (thêm/sửa request, mô tả, assertion).
 2. `make postman` → sinh lại cả 2 dạng.
 3. `make postman-lint` và `make postman-run TOKEN=...` để chắc chắn còn chạy đúng.
+
+
+
+---
+
+## Hai định dạng, dùng khi nào
+
+| Định dạng | Đường dẫn | Dùng để |
+|---|---|---|
+| v2.1 (JSON) | `internal/postman/chat-service.postman_collection.json` | **Import vào app Postman** |
+| v3 (YAML) | `internal/postman/collections/chat-service/` | `postman collection run` (CLI) + review từng file trong Git |
+
+`scripts/gen_postman.py` sinh file JSON trước, rồi `postman collection migrate` dịch sang v3.
+Hai folder **`08 · WebSocket`** và **`09 · gRPC`** viết tay và **không bị ghi đè** — định dạng v2.1
+không chứa được hai protocol này, nên chúng chỉ tồn tại ở bản v3.
+
+`make postman-lint` chạy hai bước:
+
+1. `postman collection lint` trên cây v3 — bắt lỗi cấu trúc của từng request.
+2. `gen_postman.py --check` trên file JSON — bắt request trùng tên, thiếu method/URL, body không
+   phải JSON hợp lệ, và **file trên đĩa lệch với script sinh ra nó** (sửa tay trong app rồi quên
+   cập nhật script là lỗi hay gặp nhất).

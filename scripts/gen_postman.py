@@ -6,10 +6,13 @@ Nguon su that van la code/proto; file nay chi dich sang dang Postman import duoc
 """
 import json
 import pathlib
+import sys
 
-OUT_DIR = pathlib.Path(__file__).resolve().parent.parent / "postman"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+OUT_DIR = ROOT / "internal" / "postman"
 COLLECTION_FILE = OUT_DIR / "chat-service.postman_collection.json"
 ENV_FILE = OUT_DIR / "chat-service.local.postman_environment.json"
+V3_DIR = OUT_DIR / "collections" / "chat-service"
 
 SCHEMA = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 # ID on dinh de import nhieu lan khong tao ban trung.
@@ -664,7 +667,7 @@ nên chúng không có trong file import này. Hai cách dùng:
   thêm metadata `authorization: Bearer <JWT>`. Có `ChatService`, `BotService`, `TaskService`.
   Chi tiết: `docs/05-api.md`.
 
-Repo cũng có sẵn collection dạng v3 (`postman/collections/`) đã khai báo đủ cả WebSocket và gRPC,
+Hai loại request này **không nằm trong file JSON** (định dạng v2.1 của Postman không chứa được),
 chạy bằng Postman CLI: `postman collection run "postman/collections/Chat Service"`.
 """
 
@@ -755,7 +758,57 @@ environment = {
 }
 
 
-V3_DIR = OUT_DIR / "collections" / "chat-service"
+def check():
+    """Kiem tra file JSON: cau truc hop le + khong lech so voi script sinh ra no.
+
+    Thay cho `postman collection lint` (lenh do chi doc duoc dinh dang v3,
+    quet file v2.1 ra 0 ket qua nen khong noi len dieu gi)."""
+    errs, warns = [], []
+
+    if not COLLECTION_FILE.exists():
+        print(f"✗ thieu {COLLECTION_FILE}")
+        return 1
+    on_disk = json.loads(COLLECTION_FILE.read_text(encoding="utf-8"))
+
+    # 1) cau truc
+    seen = set()
+    for folder in on_disk.get("item", []):
+        if not folder.get("name"):
+            errs.append("co folder khong ten")
+        for req in folder.get("item", []):
+            name = f"{folder['name']} / {req.get('name', '?')}"
+            if name in seen:
+                errs.append(f"trung ten request: {name}")
+            seen.add(name)
+            r = req.get("request") or {}
+            if not r.get("method"):
+                errs.append(f"{name}: thieu method")
+            raw = ((r.get("url") or {}).get("raw") or "")
+            if not raw:
+                errs.append(f"{name}: thieu URL")
+            elif "{{base_url}}" not in raw:
+                warns.append(f"{name}: URL khong dung {{{{base_url}}}}")
+            if r.get("method") in ("POST", "PUT", "PATCH") and (r.get("body") or {}).get("mode") == "raw":
+                try:
+                    json.loads(((r.get("body") or {}).get("raw") or "{}"))
+                except json.JSONDecodeError as e:
+                    errs.append(f"{name}: body khong phai JSON hop le ({e})")
+
+    # 2) lech voi script
+    fresh = json.dumps(collection, ensure_ascii=False, indent=2) + "\n"
+    if fresh != COLLECTION_FILE.read_text(encoding="utf-8"):
+        errs.append("file tren dia LECH voi scripts/gen_postman.py — chay `make postman` de sinh lai")
+
+    n = sum(len(f["item"]) for f in on_disk.get("item", []))
+    print(f"  {len(on_disk.get('item', []))} folder, {n} request, {len(seen)} ten duy nhat")
+    for w in warns:
+        print(f"  ! {w}")
+    for e in errs:
+        print(f"  ✗ {e}")
+    print("✓ collection JSON hop le" if not errs else f"✗ {len(errs)} loi")
+    return 1 if errs else 0
+
+
 # Folder viet tay trong ban v3 (v2.1 khong chua duoc 2 protocol nay) — khong ghi de.
 HANDWRITTEN = ("08 · WebSocket", "09 · gRPC")
 
@@ -770,7 +823,7 @@ def sync_v3():
     import tempfile
 
     if shutil.which("postman") is None:
-        print("! khong thay Postman CLI → bo qua ban v3 (chi sinh file v2.1)")
+        print("! khong thay Postman CLI — bo qua ban v3 (chi sinh file v2.1)")
         return
     with tempfile.TemporaryDirectory() as tmp:
         out = pathlib.Path(tmp) / "chat-service"
@@ -789,7 +842,7 @@ def sync_v3():
         for item in out.iterdir():
             dst = V3_DIR / item.name
             shutil.copytree(item, dst) if item.is_dir() else shutil.copy2(item, dst)
-    print(f"✓ {V3_DIR.relative_to(OUT_DIR.parent)}/ (v3 cho Postman CLI, giu {', '.join(HANDWRITTEN)})")
+    print(f"✓ {V3_DIR.relative_to(ROOT)}/ (v3 cho Postman CLI, giu {', '.join(HANDWRITTEN)})")
 
 
 def main():
@@ -797,10 +850,12 @@ def main():
     COLLECTION_FILE.write_text(json.dumps(collection, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     ENV_FILE.write_text(json.dumps(environment, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     n = sum(len(f["item"]) for f in collection["item"])
-    print(f"✓ {COLLECTION_FILE.relative_to(OUT_DIR.parent)} ({len(collection['item'])} folder, {n} request)")
-    print(f"✓ {ENV_FILE.relative_to(OUT_DIR.parent)}")
+    print(f"✓ {COLLECTION_FILE.relative_to(ROOT)} ({len(collection['item'])} folder, {n} request)")
+    print(f"✓ {ENV_FILE.relative_to(ROOT)}")
     sync_v3()
 
 
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        raise SystemExit(check())
     main()

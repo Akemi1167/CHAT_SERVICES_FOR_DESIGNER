@@ -69,6 +69,7 @@ services:
       GRPC_ADDR: ":9090"
       POSTGRES_DSN: "postgres://chat:chat@postgres:5432/chat?sslmode=disable"
       POSTGRES_LOG_SQL: "false"
+      POSTGRES_LOG_PRETTY: "true" # SQL log nhieu dong + mau, chi dev
       REDIS_ENABLED: "true"
       REDIS_ADDR: "redis:6379"
       JWT_SECRET: "doi-secret-nay-trong-moi-truong-that"

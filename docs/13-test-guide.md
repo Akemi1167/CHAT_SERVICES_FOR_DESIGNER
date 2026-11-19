@@ -28,8 +28,8 @@ Gõ chữ rồi Enter → cửa sổ kia hiện ngay. Lệnh trong client: `/pin
 
 ## 2. Postman — bấm thử từng API
 
-1. Import 2 file: `postman/chat-service.postman_collection.json` và
-   `postman/chat-service.local.postman_environment.json`.
+1. Import 2 file: `internal/postman/chat-service.postman_collection.json` và
+   `internal/postman/chat-service.local.postman_environment.json`.
 2. Chọn environment **Chat Service · Local**, dán token (từ `make seed`) vào biến `token`.
 3. Chạy từ folder `00` xuống `07` — mỗi request tự lưu id cho request sau.
 

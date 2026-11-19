@@ -1,0 +1,15 @@
+$kind: websocket-message
+name: message.send — gửi tin nhắn
+content: |-
+  {
+    "id": "c1",
+    "type": "message.send",
+    "payload": {
+      "conversation_id": "{{conversation_id}}",
+      "type": "text",
+      "content": "Tin nhắn gửi qua WebSocket",
+      "client_msg_id": "{{$guid}}"
+    }
+  }
+contentType: json
+order: 2000

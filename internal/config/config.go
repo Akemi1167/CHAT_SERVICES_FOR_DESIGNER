@@ -45,6 +45,8 @@ type HTTP struct {
 	WSWriteTimeout  time.Duration
 	WSReadLimitByte int64
 	WSSendBuffer    int
+	// WebDemoDir: thu muc trang thu tay (web/). Rong = khong phuc vu (dung o prod).
+	WebDemoDir string
 }
 
 type GRPC struct {
@@ -60,6 +62,7 @@ type Postgres struct {
 	ConnMaxLifetime time.Duration
 	AutoMigrate     bool // chi nen bat o local
 	LogSQL          bool
+	LogPretty       bool // in SQL nhieu dong + mau (chi dung o dev)
 	SlowQuery       time.Duration
 }
 
@@ -135,6 +138,7 @@ func Load() (*Config, error) {
 		HTTP: HTTP{
 			Addr:            str("HTTP_ADDR", ":8080"),
 			AllowOrigins:    str("HTTP_ALLOW_ORIGINS", "*"),
+			WebDemoDir:      str("WEB_DEMO_DIR", "./web"),
 			BodyLimitMB:     num("HTTP_BODY_LIMIT_MB", 25),
 			ReadTimeout:     dur("HTTP_READ_TIMEOUT", 30*time.Second),
 			WriteTimeout:    dur("HTTP_WRITE_TIMEOUT", 30*time.Second),
@@ -156,6 +160,7 @@ func Load() (*Config, error) {
 			ConnMaxLifetime: dur("POSTGRES_CONN_MAX_LIFETIME", time.Hour),
 			AutoMigrate:     boolean("POSTGRES_AUTO_MIGRATE", false),
 			LogSQL:          boolean("POSTGRES_LOG_SQL", false),
+			LogPretty:       boolean("POSTGRES_LOG_PRETTY", false),
 			SlowQuery:       dur("POSTGRES_SLOW_QUERY", 300*time.Millisecond),
 		},
 		Redis: Redis{
@@ -273,6 +278,9 @@ func (c *Config) WarnProd() []string {
 	}
 	if c.Postgres.LogSQL {
 		warns = append(warns, "POSTGRES_LOG_SQL=true : khong nen bat o prod")
+	}
+	if c.Postgres.LogPretty {
+		warns = append(warns, "POSTGRES_LOG_PRETTY=true : chi dung o dev, SQL log se chua gia tri tham so that")
 	}
 	return warns
 }

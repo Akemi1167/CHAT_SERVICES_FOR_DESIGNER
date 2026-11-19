@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -44,15 +45,23 @@ func Open(cfg config.Postgres) (*gorm.DB, error) {
 	if cfg.LogSQL {
 		logLevel = gormlogger.Info
 	}
-	gl := gormlogger.New(
-		newSlogWriter(),
-		gormlogger.Config{
-			SlowThreshold:             cfg.SlowQuery,
-			LogLevel:                  logLevel,
-			IgnoreRecordNotFoundError: true,
-			ParameterizedQueries:      true,
-		},
-	)
+
+	var gl gormlogger.Interface
+	if cfg.LogPretty {
+		// Dev: in SQL nhieu dong, co mau, da dien gia tri tham so.
+		gl = NewPrettyLogger(os.Stdout, logLevel, cfg.SlowQuery)
+	} else {
+		// Prod: 1 dong JSON qua slog, tham so giu dang $1 de khong lot du lieu.
+		gl = gormlogger.New(
+			newSlogWriter(),
+			gormlogger.Config{
+				SlowThreshold:             cfg.SlowQuery,
+				LogLevel:                  logLevel,
+				IgnoreRecordNotFoundError: true,
+				ParameterizedQueries:      true,
+			},
+		)
+	}
 
 	db, err := gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{
 		Logger:                 gl,

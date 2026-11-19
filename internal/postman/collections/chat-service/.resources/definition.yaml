@@ -51,7 +51,7 @@ description: |
     thêm metadata `authorization: Bearer <JWT>`. Có `ChatService`, `BotService`, `TaskService`.
     Chi tiết: `docs/05-api.md`.
 
-  Repo cũng có sẵn collection dạng v3 (`postman/collections/`) đã khai báo đủ cả WebSocket và gRPC,
+  Hai loại request này **không nằm trong file JSON** (định dạng v2.1 của Postman không chứa được),
   chạy bằng Postman CLI: `postman collection run "postman/collections/Chat Service"`.
 variables:
   base_url: http://localhost:8080
@@ -105,7 +105,7 @@ scripts:
       });
     language: text/javascript
 auth:
-  - id: 1b0a099c-5b87-4978-b446-1927781e9107
+  - id: b4479c6c-a33f-416c-bc06-e7afc9c5a74b
     type: bearer
     name: bearer auth
     credentials:

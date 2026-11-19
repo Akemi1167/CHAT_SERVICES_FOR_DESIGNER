@@ -35,6 +35,10 @@ func registerRoutes(app *fiber.App, cfg *config.Config, d Deps) {
 		return httpresp.OK(c, fiber.Map{"status": "ready"})
 	})
 
+	if cfg.HTTP.WebDemoDir != "" {
+		app.Static("/demo", cfg.HTTP.WebDemoDir, fiber.Static{Browse: true})
+	}
+
 	// --- WebSocket: /ws?token=<JWT> ---
 	app.Use("/ws", middleware.RequestID(), middleware.AuthWS(d.Auth), wsH.Upgrade)
 	app.Get("/ws", wsH.Handle())

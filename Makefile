@@ -79,9 +79,15 @@ cms-check: ## Kiem tra ket noi CMS (JWKS, Workspace API, webhook HMAC, Bot API)
 	@./scripts/check-cms.sh
 
 .PHONY: route
-route: ## Tra URL -> route -> handler -> service: make route PATH=/api/client/v1/chat/auth/me
-	@test -n "$(PATH_)" -o -n "$(path)" -o -n "$(URL)" || true
-	@./scripts/find-route.sh "$(or $(URL),$(or $(path),$(PATH)))"
+route: ## Tra URL -> route -> handler -> service: make route URL=/api/client/v1/chat/auth/me
+	@test -n "$(URL)$(path)" || (echo 'Dung: make route URL=/api/client/v1/chat/auth/me'; exit 1)
+	@./scripts/find-route.sh "$(or $(URL),$(path))"
+
+.PHONY: demo
+demo: ## In duong dan giao dien live + token de dan vao: make demo [CMS_USER=6]
+	@echo "Giao dien live: http://localhost:8080/demo/live.html"
+	@if [ -n "$(CMS_USER)" ]; then echo "Token (user CMS $(CMS_USER)):"; $(MAKE) -s token-cms CMS_USER=$(CMS_USER); \
+	 else echo "Token: make token-cms CMS_USER=<id>  (hoac dung token that cua CMS)"; fi
 
 .PHONY: token-cms
 token-cms: ## Token dev dong vai 1 user CMS da dong bo (chi dung o local): make token-cms CMS_USER=6
@@ -151,8 +157,8 @@ postman: ## Sinh lai Postman collection (file v2.1 de import + ban v3 cho CLI)
 .PHONY: postman-run
 postman-run: ## Chay cac folder luon dung duoc (chat, tin nhan, loi): make postman-run TOKEN=<jwt> [USER2=<uuid>]
 	@test -n "$(TOKEN)" || (echo "Thieu TOKEN. Vi du: make postman-run TOKEN=$$(make -s token)"; exit 1)
-	postman collection run postman/chat-service.postman_collection.json \
-	  -e postman/chat-service.local.postman_environment.json \
+	postman collection run internal/postman/chat-service.postman_collection.json \
+	  -e internal/postman/chat-service.local.postman_environment.json \
 	  --env-var "token=$(TOKEN)" --env-var "user_id_2=$(or $(USER2),)" \
 	  -i "00 · Bắt đầu" -i "01 · Hội thoại" -i "02 · Tin nhắn" \
 	  -i "07 · Lỗi & quyền (xem cách API phản hồi)" -i "99 · Dọn dẹp (chạy cuối, tuỳ ý)"
@@ -160,8 +166,8 @@ postman-run: ## Chay cac folder luon dung duoc (chat, tin nhan, loi): make postm
 .PHONY: postman-run-task
 postman-run-task: ## Chay folder task noi bo (can TASK_ENGINE_ENABLED=true): make postman-run-task TOKEN=<jwt>
 	@test -n "$(TOKEN)" || (echo "Thieu TOKEN"; exit 1)
-	postman collection run postman/chat-service.postman_collection.json \
-	  -e postman/chat-service.local.postman_environment.json \
+	postman collection run internal/postman/chat-service.postman_collection.json \
+	  -e internal/postman/chat-service.local.postman_environment.json \
 	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" --env-var "token=$(TOKEN)" \
 	  -i "00 · Bắt đầu" -i "01 · Hội thoại" -i "03 · Tổ & gợi ý người phụ trách" \
 	  -i "04 · Bot @bot & gửi mẫu" -i "05 · Task (yêu cầu / nhận việc)" -i "06 · Phiếu sửa"
@@ -170,8 +176,8 @@ postman-run-task: ## Chay folder task noi bo (can TASK_ENGINE_ENABLED=true): mak
 postman-run-cms: ## Chay 2 folder CMS (can CMS_ENABLED=true): make postman-run-cms TOKEN=<cms jwt> KEY=<service key> CHAT_ID=wg_...
 	@test -n "$(TOKEN)" || (echo "Thieu TOKEN (access token do CMS phat)"; exit 1)
 	@test -n "$(KEY)" || (echo "Thieu KEY (= CHAT_SERVICE_KEY)"; exit 1)
-	postman collection run postman/chat-service.postman_collection.json \
-	  -e postman/chat-service.local.postman_environment.json \
+	postman collection run internal/postman/chat-service.postman_collection.json \
+	  -e internal/postman/chat-service.local.postman_environment.json \
 	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" \
 	  --env-var "token=$(TOKEN)" --env-var "cms_token=$(TOKEN)" \
 	  --env-var "service_key=$(KEY)" --env-var "chat_id=$(CHAT_ID)" \
@@ -179,8 +185,8 @@ postman-run-cms: ## Chay 2 folder CMS (can CMS_ENABLED=true): make postman-run-c
 
 .PHONY: postman-lint
 postman-lint: ## Lint ban v3 (gom ca request WebSocket/gRPC)
-	postman collection lint "postman/collections/chat-service"
-	postman environment lint "postman/environments/Chat Service Local.environment.yaml"
+	postman collection lint "internal/postman/collections/chat-service"
+	python3 scripts/gen_postman.py --check
 
 # ---------- docker ----------
 .PHONY: docker-build

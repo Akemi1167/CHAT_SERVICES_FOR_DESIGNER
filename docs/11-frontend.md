@@ -390,5 +390,5 @@ curl -s localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
 make ws SUB=an NAME=An CONV=<conversation_id> # client WebSocket dòng lệnh
 ```
 
-Import `postman/chat-service.postman_collection.json` + environment để bấm thử toàn bộ API
+Import `internal/postman/chat-service.postman_collection.json` + environment để bấm thử toàn bộ API
 (xem [09-postman.md](09-postman.md)).

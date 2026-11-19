@@ -72,6 +72,7 @@ services:
       REDIS_ADDR: "redis:6379"
       POSTGRES_AUTO_MIGRATE: "false"
       AUTH_ALLOW_DEV_TOKEN: "false"
+      WEB_DEMO_DIR: ""           # tat trang thu tay o production
       GRPC_REFLECTION: "false"
       LOG_LEVEL: "info"
       LOG_FORMAT: "json"
