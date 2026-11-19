@@ -5,8 +5,10 @@ import (
 
 	"github.com/abc-workspace/chat-service/internal/config"
 	"github.com/abc-workspace/chat-service/internal/pkg/httpresp"
+	"github.com/abc-workspace/chat-service/internal/realtime"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/botapi"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/clientapi"
+	"github.com/abc-workspace/chat-service/internal/transport/httpserver/clientview"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/handler"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/middleware"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/ws"
@@ -14,13 +16,16 @@ import (
 
 // registerRoutes: toan bo route cua service nam o day => mo file la thay het API.
 func registerRoutes(app *fiber.App, cfg *config.Config, d Deps) {
-	convH := handler.NewConversationHandler(d.Conversations)
-	msgH := handler.NewMessageHandler(d.Messages)
+	convH := handler.NewConversationHandler(d.Conversations, d.Store)
+	msgH := handler.NewMessageHandler(d.Messages, d.Store)
 	botH := handler.NewBotHandler(d.Bots, d.Messages)
 	taskH := handler.NewTaskHandler(d.Tasks)
 	clientH := clientapi.NewHandler(d.Store, d.Conversations, d.Messages, d.Cards, d.Notifications, d.CMSSync)
 	cmsBotH := botapi.NewHandler(d.Store, d.CMSSync, d.Messages, d.Cards, d.Notifications, d.Presence)
-	wsH := ws.NewHandler(cfg.HTTP, d.Hub, d.Messages)
+	wsH := ws.NewHandler(cfg.HTTP, d.Hub, d.Messages, d.Store)
+
+	// Hub khong biet gi ve hop dong CMS; tiem bo doi payload tu tang transport.
+	d.Hub.SetClientRenderer(clientview.Payload)
 
 	// --- public: health check cho k8s/docker ---
 	app.Get("/healthz", func(c *fiber.Ctx) error {
@@ -39,9 +44,21 @@ func registerRoutes(app *fiber.App, cfg *config.Config, d Deps) {
 		app.Static("/demo", cfg.HTTP.WebDemoDir, fiber.Static{Browse: true})
 	}
 
-	// --- WebSocket: /ws?token=<JWT> ---
+	// --- WebSocket ---
+	// Hai duong vao, CUNG mot handler va cung mot hub, khac nhau hinh dang frame:
+	//
+	//   /ws?token=<JWT>                      snake_case, payload nguyen domain
+	//                                        (cong cu noi bo: make ws, Postman)
+	//   /api/client/v1/chat/ws?token=<JWT>   camelCase theo hop dong CMS, dung
+	//                                        chung access token voi REST cua FE
+	//
+	// Browser khong set duoc header khi mo WebSocket nen token di qua ?token=.
 	app.Use("/ws", middleware.RequestID(), middleware.AuthWS(d.Auth), wsH.Upgrade)
-	app.Get("/ws", wsH.Handle())
+	app.Get("/ws", wsH.Handle(realtime.DialectInternal))
+
+	app.Use("/api/client/v1/chat/ws",
+		middleware.RequestID(), middleware.AuthWS(d.Auth), wsH.Upgrade)
+	app.Get("/api/client/v1/chat/ws", wsH.Handle(realtime.DialectClient))
 
 	// --- Bot API: CMS goi sang Chat (service key, khong dung JWT) ---
 	if cfg.CMS.Enabled {

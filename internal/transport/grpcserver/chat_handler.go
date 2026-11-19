@@ -7,6 +7,7 @@ import (
 
 	chatv1 "github.com/abc-workspace/chat-service/gen/go/chat/v1"
 	"github.com/abc-workspace/chat-service/internal/domain"
+	"github.com/abc-workspace/chat-service/internal/repository"
 	"github.com/abc-workspace/chat-service/internal/service/auth"
 	"github.com/abc-workspace/chat-service/internal/service/conversation"
 	"github.com/abc-workspace/chat-service/internal/service/message"
@@ -68,7 +69,8 @@ func (h *ChatHandler) ListConversations(ctx context.Context, req *chatv1.ListCon
 		return nil, err
 	}
 	p := pageFrom(req.GetPage())
-	items, info, err := h.convs.List(ctx, actor, p)
+	// Proto chua co field filter => khong loc.
+	items, info, err := h.convs.List(ctx, actor, repository.ConversationFilter{}, p)
 	if err != nil {
 		return nil, err
 	}

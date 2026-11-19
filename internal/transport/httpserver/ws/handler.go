@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -15,20 +16,22 @@ import (
 	"github.com/abc-workspace/chat-service/internal/domain"
 	"github.com/abc-workspace/chat-service/internal/pkg/apperr"
 	"github.com/abc-workspace/chat-service/internal/realtime"
+	"github.com/abc-workspace/chat-service/internal/repository"
 	"github.com/abc-workspace/chat-service/internal/service/auth"
 	"github.com/abc-workspace/chat-service/internal/service/message"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/middleware"
 )
 
 type Handler struct {
-	cfg  config.HTTP
-	hub  *realtime.Hub
-	msgs *message.Service
-	log  *slog.Logger
+	cfg   config.HTTP
+	hub   *realtime.Hub
+	msgs  *message.Service
+	log   *slog.Logger
+	store repository.Store
 }
 
-func NewHandler(cfg config.HTTP, hub *realtime.Hub, msgs *message.Service) *Handler {
-	return &Handler{cfg: cfg, hub: hub, msgs: msgs, log: slog.Default().With("component", "ws")}
+func NewHandler(cfg config.HTTP, hub *realtime.Hub, msgs *message.Service, store repository.Store) *Handler {
+	return &Handler{cfg: cfg, hub: hub, msgs: msgs, log: slog.Default().With("component", "ws"), store: store}
 }
 
 // Upgrade chan request khong phai WebSocket (dat SAU middleware Auth).
@@ -46,7 +49,12 @@ func (h *Handler) Upgrade(c *fiber.Ctx) error {
 }
 
 // Handle la handler chinh cua ket noi WebSocket.
-func (h *Handler) Handle() fiber.Handler {
+//
+// dialect quyet dinh hinh dang frame day xuong:
+//
+//	realtime.DialectInternal  /ws                     snake_case (ban goc)
+//	realtime.DialectClient    /api/client/v1/chat/ws  camelCase theo hop dong CMS
+func (h *Handler) Handle(dialect realtime.Dialect) fiber.Handler {
 	return websocket.New(func(conn *websocket.Conn) {
 		identity, ok := conn.Locals(middleware.IdentityKey).(*auth.Identity)
 		if !ok || identity == nil {
@@ -62,6 +70,8 @@ func (h *Handler) Handle() fiber.Handler {
 		defer cancel()
 
 		client := realtime.NewClient(identity.UserID, h.cfg.WSSendBuffer)
+		client.Dialect = dialect
+		client.ActorID = identity.ActorID
 		h.hub.Register(ctx, client)
 		defer h.hub.Unregister(ctx, client)
 
@@ -82,14 +92,26 @@ func (h *Handler) Handle() fiber.Handler {
 
 		// Tra ro "tab nay dang dang nhap bang ai" => nhin frame ready la biet ngay
 		// co dung nguoi hay khong (hay gap khi dan sai token/tool gan san header).
-		h.hub.SendToClient(client, Outbound{Type: OutReady, Payload: fiber.Map{
+		ready := fiber.Map{
 			"user_id":      identity.UserID,
 			"external_id":  identity.ExternalID,
 			"display_name": identity.Name,
 			"role":         identity.Role,
 			"conn_id":      client.ID,
 			"server_now":   time.Now().UTC(),
-		}})
+		}
+		if dialect == realtime.DialectClient {
+			// Be mat client dung camelCase + actorId thay vi external_id noi bo.
+			ready = fiber.Map{
+				"userId":    identity.UserID,
+				"actorId":   identity.ActorID,
+				"name":      identity.Name,
+				"role":      identity.Role,
+				"connId":    client.ID,
+				"serverNow": time.Now().UTC(),
+			}
+		}
+		h.hub.SendToClient(client, Outbound{Type: OutReady, Payload: ready})
 		h.log.Info("ws connected",
 			"user_id", identity.UserID, "name", identity.Name,
 			"external_id", identity.ExternalID, "conn_id", client.ID)
@@ -166,9 +188,10 @@ func (h *Handler) dispatch(ctx context.Context, client *realtime.Client, identit
 			h.fail(client, in.ID, apperr.Invalid("invalid_payload", "payload khong hop le"))
 			return
 		}
-		convID, err := uuid.Parse(p.ConversationID)
+		p.normalize()
+		convID, err := h.resolveConvID(ctx, p.ConversationID)
 		if err != nil {
-			h.fail(client, in.ID, apperr.Invalid("invalid_uuid", "conversation_id phai la UUID"))
+			h.fail(client, in.ID, err)
 			return
 		}
 		threadID, err := optUUID(p.ThreadID, "thread_id")
@@ -211,9 +234,10 @@ func (h *Handler) dispatch(ctx context.Context, client *realtime.Client, identit
 			h.fail(client, in.ID, apperr.Invalid("invalid_payload", "payload khong hop le"))
 			return
 		}
-		convID, err := uuid.Parse(p.ConversationID)
+		p.normalize()
+		convID, err := h.resolveConvID(ctx, p.ConversationID)
 		if err != nil {
-			h.fail(client, in.ID, apperr.Invalid("invalid_uuid", "conversation_id phai la UUID"))
+			h.fail(client, in.ID, err)
 			return
 		}
 		threadID, err := optUUID(p.ThreadID, "thread_id")
@@ -257,9 +281,10 @@ func (h *Handler) dispatch(ctx context.Context, client *realtime.Client, identit
 			h.fail(client, in.ID, apperr.Invalid("invalid_payload", "payload khong hop le"))
 			return
 		}
-		convID, err := uuid.Parse(p.ConversationID)
+		p.normalize()
+		convID, err := h.resolveConvID(ctx, p.ConversationID)
 		if err != nil {
-			h.fail(client, in.ID, apperr.Invalid("invalid_uuid", "conversation_id phai la UUID"))
+			h.fail(client, in.ID, err)
 			return
 		}
 		msgID, err := uuid.Parse(p.MessageID)
@@ -281,6 +306,7 @@ func (h *Handler) dispatch(ctx context.Context, client *realtime.Client, identit
 			h.fail(client, in.ID, apperr.Invalid("invalid_payload", "payload khong hop le"))
 			return
 		}
+		p.normalize()
 		msgID, err := uuid.Parse(p.MessageID)
 		if err != nil {
 			h.fail(client, in.ID, apperr.Invalid("invalid_uuid", "message_id phai la UUID"))
@@ -297,7 +323,8 @@ func (h *Handler) dispatch(ctx context.Context, client *realtime.Client, identit
 		if err := json.Unmarshal(in.Payload, &p); err != nil {
 			return // typing khong quan trong, bo qua im lang
 		}
-		convID, err := uuid.Parse(p.ConversationID)
+		p.normalize()
+		convID, err := h.resolveConvID(ctx, p.ConversationID)
 		if err != nil {
 			return
 		}
@@ -341,4 +368,24 @@ func toDomainAttachments(in []attachmentPayload) []domain.Attachment {
 		})
 	}
 	return out
+}
+
+// resolveConvID nhan UUID noi bo HOAC chatId cua CMS (wg_<hex>), giong moi
+// route hoi thoai cua REST — de FE dung chung mot gia tri id o moi noi.
+func (h *Handler) resolveConvID(ctx context.Context, raw string) (uuid.UUID, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return uuid.Nil, apperr.Invalid("invalid_request", "thieu conversationId")
+	}
+	if id, err := uuid.Parse(raw); err == nil {
+		return id, nil
+	}
+	if h.store == nil {
+		return uuid.Nil, apperr.Invalid("invalid_uuid", "conversationId phai la UUID")
+	}
+	conv, err := h.store.Conversations().GetByExternalID(ctx, raw)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return conv.ID, nil
 }

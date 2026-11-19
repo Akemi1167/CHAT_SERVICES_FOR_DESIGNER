@@ -1,7 +1,9 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -18,8 +20,8 @@ import (
 // ---------------- nhom do CMS quan ly ----------------
 
 // ListAll: moi hoi thoai, moi nhat truoc (khong loc theo thanh vien).
-func (r *ConversationRepo) ListAll(ctx context.Context, p paging.Page) ([]domain.Conversation, error) {
-	q := r.db(ctx).Model(&domain.Conversation{})
+func (r *ConversationRepo) ListAll(ctx context.Context, f repository.ConversationFilter, p paging.Page) ([]domain.Conversation, error) {
+	q := applyConversationFilter(r.db(ctx).Model(&domain.Conversation{}), f)
 	if p.Cursor.Valid {
 		q = q.Where("(created_at, id) < (?, ?)", p.Cursor.CreatedAt, p.Cursor.ID)
 	}
@@ -49,13 +51,17 @@ func (r *ConversationRepo) GetByExternalID(ctx context.Context, externalID strin
 // Tra ve nhom MOC: KHONG preload Members/Members.User. Caller duy nhat
 // (cmssync.applyGroup) thay danh sach thanh vien ngay sau do, nen members doc
 // o day vua ton 2 query vua lac hau. Ai can danh sach day du thi goi GetByID.
-func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Conversation) (*domain.Conversation, error) {
+//
+// changed = CO gi dang ke doi (ten hoac cms_info), hoac nhom vua duoc tao.
+// `synced_at` doi moi chu ky dong bo nen KHONG tinh la doi — neu tinh thi
+// vong poll 60s se bao "co thay doi" mai mai.
+func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Conversation) (conv *domain.Conversation, changed bool, err error) {
 	if in.ExternalID == nil || *in.ExternalID == "" {
-		return nil, apperr.Invalid("missing_external_id", "Nhom CMS phai co chatId")
+		return nil, false, apperr.Invalid("missing_external_id", "Nhom CMS phai co chatId")
 	}
 
 	var existing domain.Conversation
-	err := r.db(ctx).First(&existing, "external_id = ?", *in.ExternalID).Error
+	err = r.db(ctx).First(&existing, "external_id = ?", *in.ExternalID).Error
 	now := time.Now().UTC()
 
 	switch {
@@ -63,13 +69,15 @@ func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Convers
 		fields := map[string]any{"synced_at": now, "source": domain.SourceCMS}
 		if in.Name != "" {
 			fields["name"] = in.Name
+			changed = changed || in.Name != existing.Name
 		}
 		if in.CMSInfo != nil {
 			fields["cms_info"] = in.CMSInfo
+			changed = changed || !sameJSONMap(existing.CMSInfo, in.CMSInfo)
 		}
 		if uerr := r.db(ctx).Model(&domain.Conversation{}).
 			Where("id = ?", existing.ID).Updates(fields).Error; uerr != nil {
-			return nil, wrap(uerr, "conversation.upsertFromCMS.update")
+			return nil, false, wrap(uerr, "conversation.upsertFromCMS.update")
 		}
 		// Phan anh dung cac field vua ghi, khoi doc lai row.
 		existing.SyncedAt = &now
@@ -81,7 +89,7 @@ func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Convers
 		if in.CMSInfo != nil {
 			existing.CMSInfo = in.CMSInfo
 		}
-		return &existing, nil
+		return &existing, changed, nil
 
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		if in.ID == uuid.Nil {
@@ -93,14 +101,28 @@ func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Convers
 			in.Type = domain.ConversationGroup
 		}
 		if cerr := r.db(ctx).Omit("Members").Create(in).Error; cerr != nil {
-			return nil, wrap(cerr, "conversation.upsertFromCMS.create")
+			return nil, false, wrap(cerr, "conversation.upsertFromCMS.create")
 		}
 		// Vua tao xong nen `in` chinh la trang thai trong DB; chua co thanh vien.
-		return in, nil
+		return in, true, nil
 
 	default:
-		return nil, wrap(err, "conversation.upsertFromCMS.lookup")
+		return nil, false, wrap(err, "conversation.upsertFromCMS.lookup")
 	}
+}
+
+// sameJSONMap so 2 JSONMap bang JSON da chuan hoa (khoa duoc sap xep boi
+// encoding/json nen 2 map cung noi dung cho ra cung chuoi).
+func sameJSONMap(a, b domain.JSONMap) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	ja, err1 := json.Marshal(a)
+	jb, err2 := json.Marshal(b)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return bytes.Equal(ja, jb)
 }
 
 // ReplaceMembers dat danh sach thanh vien = dung danh sach CMS tra ve.
@@ -173,8 +195,11 @@ func (r *NotificationRepo) Create(ctx context.Context, n *domain.Notification) e
 	return wrap(r.db(ctx).Create(n).Error, "notification.create")
 }
 
-func (r *NotificationRepo) ListByUser(ctx context.Context, userID uuid.UUID, p paging.Page) ([]domain.Notification, error) {
+func (r *NotificationRepo) ListByUser(ctx context.Context, userID uuid.UUID, f repository.NotificationFilter, p paging.Page) ([]domain.Notification, error) {
 	q := r.db(ctx).Model(&domain.Notification{}).Where("user_id = ?", userID)
+	if f.UnreadOnly {
+		q = q.Where("NOT read")
+	}
 	if p.Cursor.Valid {
 		q = q.Where("(created_at, id) < (?, ?)", p.Cursor.CreatedAt, p.Cursor.ID)
 	}

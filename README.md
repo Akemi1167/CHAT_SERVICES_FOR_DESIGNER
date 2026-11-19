@@ -197,13 +197,16 @@ make seed            # dựng dữ liệu demo + in token/ID để test ngay
 make token SUB=user-002 ROLE=order
 make postman         # sinh lại collection Postman sau khi đổi API
 make postman-run TOKEN=$(make -s token)   # chạy cả collection bằng Postman CLI
+make postman-flow TOKEN=$(make -s token) [STOP=2.3]   # chạy folder FLOW, dừng ở bước muốn xem
 ```
 
 ## 4b. Postman
 
 Import 2 file này vào Postman (Import → File):
 
-- `internal/postman/chat-service.postman_collection.json` — 83 request, 11 folder, có sẵn test + tự lưu id giữa các request
+- `internal/postman/chat-service.postman_collection.json` — 79 request, 10 folder, có sẵn test + tự lưu id giữa các request.
+  Folder **`FLOW`** là 16 bước đánh số theo đúng thứ tự thật — chạy cái này trước nếu mới làm quen.
+  Folder **`10 · WebSocket & gRPC`** chứa mẫu frame WS (body + các trường hợp xảy ra) trong tab Documentation.
 - `internal/postman/chat-service.local.postman_environment.json` — environment `Chat Service · Local`
 
 Rồi dán token (`make token`) vào biến `token`. Chi tiết + cách thêm request WebSocket/gRPC:

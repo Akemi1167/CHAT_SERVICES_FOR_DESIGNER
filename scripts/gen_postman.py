@@ -9,10 +9,11 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Chi sinh 2 file JSON (collection v2.1 + environment). KHONG sinh cay v3
+# `collections/` nua — xem docs/09-postman.md.
 OUT_DIR = ROOT / "internal" / "postman"
 COLLECTION_FILE = OUT_DIR / "chat-service.postman_collection.json"
 ENV_FILE = OUT_DIR / "chat-service.local.postman_environment.json"
-V3_DIR = OUT_DIR / "collections" / "chat-service"
 
 SCHEMA = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 # ID on dinh de import nhieu lan khong tao ban trung.
@@ -42,9 +43,15 @@ def req(name, method, path, *, body=None, query=None, desc="", tests=None, auth=
     clean = path.split("?")[0].strip("/")
     url["path"] = clean.split("/") if clean else []
     if query:
-        url["query"] = [{"key": k, "value": v} for k, v in query]
-        qs = "&".join(f"{k}={v}" for k, v in query)
-        url["raw"] = "{{base_url}}" + clean_path(path) + "?" + qs
+        # Moi phan tu: (key, value) hoac (key, value, disabled).
+        # disabled=True => tham so hien trong Postman nhung tat san (filter tuy chon).
+        norm = [(q[0], q[1], (len(q) > 2 and q[2])) for q in query]
+        url["query"] = [
+            {"key": k, "value": v, **({"disabled": True} if off else {})}
+            for k, v, off in norm
+        ]
+        qs = "&".join(f"{k}={v}" for k, v, off in norm if not off)
+        url["raw"] = "{{base_url}}" + clean_path(path) + ("?" + qs if qs else "")
     item = {
         "name": name,
         "request": {
@@ -108,13 +115,13 @@ start = folder(
 
 conversations = folder(
     "01 · Hội thoại",
-    "Chat nhóm và chat riêng. `Tạo nhóm` lưu `conversation_id` — mọi folder sau đều dùng biến này.",
+    "Chat nhóm và chat riêng. `Tạo nhóm` lưu `group_id` — mọi folder sau đều dùng biến này.",
     [
         req("Tạo nhóm", "POST", "/api/v1/conversations",
             body={"type": "group", "name": "Tổ Design · Đơn hàng 11",
                   "member_user_ids": []},
             desc="`type=group` bắt buộc có `name`. Người tạo là `owner`, người được thêm là `member`.",
-            tests=(OK, *save("conversation_id", "_d.id"),
+            tests=(OK, *save("group_id", "_d.id"),
                    'pm.test("la group", () => pm.expect(pm.response.json().data.type).to.eql("group"));')),
         req("Tạo chat riêng (1-1)", "POST", "/api/v1/conversations",
             body={"type": "direct", "member_user_ids": ["{{user_id_2}}"]},
@@ -123,12 +130,23 @@ conversations = folder(
             tests=('pm.test("200 hoặc 400 nếu chưa có user thứ 2",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 400]));',
                    'if (pm.response.code < 300) pm.collectionVariables.set("direct_conversation_id", pm.response.json().data.id);')),
-        req("Danh sách hội thoại", "GET", "/api/v1/conversations", query=[("limit", "20")],
-            desc="Mới nhất trước, kèm `unread_count`. Trang sau: thêm `cursor` = `meta.next_cursor`.",
+        req("Danh sách hội thoại", "GET", "/api/v1/conversations",
+            query=[("limit", "20"),
+                   ("type", "group", True), ("source", "cms", True), ("q", "TEAM", True)],
+            desc="Mới nhất trước, kèm `unread_count`. Trang sau: thêm `cursor` = `meta.next_cursor`.\n\n"
+                 "**Filter** (bật trong tab Params, bỏ trống = không lọc):\n"
+                 "- `type` — `direct` | `group`. Giá trị khác → 400 `invalid_type`.\n"
+                 "- `source` — `cms` | `local`. Giá trị khác → 400 `invalid_source`.\n"
+                 "- `q` — tìm trong tên nhóm, không phân biệt hoa thường; `%` và `_` được escape.",
             tests=(OK, 'pm.test("co meta", () => pm.expect(pm.response.json()).to.have.property("meta"));')),
-        req("Chi tiết hội thoại", "GET", "/api/v1/conversations/{{conversation_id}}",
+        req("Danh sách hội thoại — lọc sai type", "GET", "/api/v1/conversations",
+            query=[("type", "nhom")],
+            desc="Giá trị `type` ngoài `direct|group` bị từ chối ngay thay vì trả danh sách rỗng khó hiểu.",
+            tests=('pm.test("400 invalid_type", () => { pm.response.to.have.status(400);'
+                   ' pm.expect(pm.response.json().error.code).to.eql("invalid_type"); });',)),
+        req("Chi tiết hội thoại", "GET", "/api/v1/conversations/{{group_id}}",
             desc="Kèm danh sách thành viên và role (owner/admin/member)."),
-        req("Thêm thành viên (join room)", "POST", "/api/v1/conversations/{{conversation_id}}/members",
+        req("Thêm thành viên (join room)", "POST", "/api/v1/conversations/{{group_id}}/members",
             body={"user_ids": ["{{user_id_2}}"], "role": "member"},
             desc="Đây chính là \"join room\": tư cách thành viên lưu trong DB, không phải frame "
                  "WebSocket. Chỉ owner/admin. Thêm lại người đã có → idempotent. "
@@ -151,14 +169,14 @@ messages = folder(
     "02 · Tin nhắn",
     "Gửi/đọc tin nhắn, thread theo nhiệm vụ, trạng thái đã xem, tìm kiếm.",
     [
-        req("Gửi tin nhắn text", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("Gửi tin nhắn text", "POST", "/api/v1/conversations/{{group_id}}/messages",
             body={"type": "text", "content": "Chào cả nhà 👋", "client_msg_id": "{{$guid}}"},
             desc="`client_msg_id` do FE sinh và phải **duy nhất mỗi tin**: gửi lại đúng id cũ sẽ "
                  "trả về tin cũ với `duplicated=true`, **không tạo tin mới và không broadcast**. "
                  "Ở đây dùng `{{$guid}}` nên mỗi lần Send là một id mới.",
             tests=(OK, *save("message_id", "_d.message.id"),
                    'pm.collectionVariables.set("thread_id", pm.response.json().data.message.id);')),
-        req("Gửi kèm ảnh/file", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("Gửi kèm ảnh/file", "POST", "/api/v1/conversations/{{group_id}}/messages",
             body={"type": "image", "content": "Mẫu banner v1",
                   "attachments": [{"kind": "image", "url": "https://picsum.photos/800/600",
                                    "name": "banner-v1.png", "mime_type": "image/png",
@@ -169,11 +187,11 @@ messages = folder(
                    'const m = pm.response.json().data.message;',
                    'if (m.attachments && m.attachments[0]) pm.collectionVariables.set("attachment_id", m.attachments[0].id);',
                    'pm.test("co attachment", () => pm.expect(m.attachments).to.have.lengthOf(1));')),
-        req("Trả lời trong thread", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("Trả lời trong thread", "POST", "/api/v1/conversations/{{group_id}}/messages",
             body={"content": "Phản hồi trong thread của nhiệm vụ", "thread_id": "{{thread_id}}",
                   "client_msg_id": "{{$guid}}"},
             desc="`thread_id` = id tin nhắn gốc (hoặc card task). Phản hồi hiện cả trong nhóm và trong thread."),
-        req("Trả lời (trích dẫn) một tin nhắn", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("Trả lời (trích dẫn) một tin nhắn", "POST", "/api/v1/conversations/{{group_id}}/messages",
             body={"content": "Mình nhận nhé", "reply_to_id": "{{message_id}}",
                   "thread_id": "{{thread_id}}"},
             desc="Hai quan hệ khác nhau:\n\n"
@@ -198,20 +216,20 @@ messages = folder(
             query=[("mode", "thread"), ("limit", "50")],
             desc="Giống panel thread trong demo: mọi tin trong thread, sắp xếp cũ → mới.",
             tests=(OK, 'pm.test("replies la mang", () => pm.expect(pm.response.json().data.replies).to.be.an("array"));')),
-        req("Lịch sử tin nhắn", "GET", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("Lịch sử tin nhắn", "GET", "/api/v1/conversations/{{group_id}}/messages",
             query=[("limit", "30")],
             desc="Mới nhất trước. Dùng `cursor` = `meta.next_cursor` để tải tiếp (đừng dùng offset).\n\n"
                  "Mỗi tin kèm `reply_count` (trả lời trực tiếp) và `thread_count` (số tin trong thread "
                  "tin đó mở) để UI hiện badge \"N phản hồi\" mà không phải gọi thêm API.",
             tests=(OK, 'pm.test("co mang data", () => pm.expect(pm.response.json().data).to.be.an("array"));')),
-        req("Tin nhắn trong 1 thread", "GET", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("Tin nhắn trong 1 thread", "GET", "/api/v1/conversations/{{group_id}}/messages",
             query=[("thread_id", "{{thread_id}}"), ("limit", "50")],
             desc="Trả cả tin nhắn gốc + mọi phản hồi trong thread."),
         req("Tìm tin nhắn", "GET", "/api/v1/messages/search",
-            query=[("q", "banner"), ("conversation_id", "{{conversation_id}}"), ("limit", "20")],
+            query=[("q", "banner"), ("conversation_id", "{{group_id}}"), ("limit", "20")],
             desc="Tìm theo nội dung, mã task (`metadata.task_code`), người gửi (`sender_id`), "
                  "khoảng ngày (`from_date`, `to_date` dạng YYYY-MM-DD)."),
-        req("Đánh dấu đã đọc", "POST", "/api/v1/conversations/{{conversation_id}}/read",
+        req("Đánh dấu đã đọc", "POST", "/api/v1/conversations/{{group_id}}/read",
             body={"message_id": "{{message_id}}"},
             desc="Trả về `unread_count` còn lại. Mốc đã đọc chỉ tiến, không lùi.",
             tests=(OK, 'pm.test("co unread_count", () => pm.expect(pm.response.json().data).to.have.property("unread_count"));')),
@@ -222,7 +240,7 @@ messages = folder(
             desc="Ghim tin trong nhóm. Gửi `{\"pinned\": false}` để bỏ ghim. Ghim lại tin đã ghim "
                  "không đổi gì (idempotent). Cả nhóm nhận event `message` để cập nhật.",
             tests=(OK, 'pm.test("da ghim", () => pm.expect(pm.response.json().data.pinned).to.be.true);')),
-        req("Danh sách tin đã ghim", "GET", "/api/v1/conversations/{{conversation_id}}/pinned",
+        req("Danh sách tin đã ghim", "GET", "/api/v1/conversations/{{group_id}}/pinned",
             query=[("limit", "50")],
             desc="Mới ghim trước.",
             tests=(OK, 'pm.test("la mang", () => pm.expect(pm.response.json().data).to.be.an("array"));')),
@@ -236,35 +254,6 @@ messages = folder(
     ],
 )
 
-teams = folder(
-    "03 · Tổ & gợi ý người phụ trách",
-    "Tổ (bộ phận) dùng cho `chọn tổ` khi tạo yêu cầu. **Tổ phải có thành viên** thì bot/`/tasks` mới "
-    "gợi ý được người phụ trách.\n\n⚠️ Cần `TASK_ENGINE_ENABLED=true` (cùng nhóm với folder 05/06).",
-    [
-        req("Danh sách tổ", "GET", "/api/v1/teams",
-            desc="Seed sẵn: `design`, `edit`, `order`. Lưu `team_id` của tổ design.",
-            tests=(OK,
-                   'const d = pm.response.json().data;',
-                   'const design = d.find(t => t.code === "design") || d[0];',
-                   'if (design) pm.collectionVariables.set("team_id", design.id);')),
-        req("Thêm mình vào tổ design", "POST", "/api/v1/teams/{{team_id}}/members",
-            body={"user_ids": ["{{user_id}}"], "role": "member"},
-            desc="`role`: leader (tổ trưởng) | assistant (trợ lý) | member. Thêm lại → idempotent."),
-        req("Thành viên của tổ", "GET", "/api/v1/teams/{{team_id}}/members"),
-        req("Gợi ý người phụ trách", "GET", "/api/v1/teams/{{team_id}}/suggest",
-            desc="Xếp hạng: người **không OFF** trước, rồi **ít việc đang mở nhất** (`open_tasks`), "
-                 "rồi theo tên. FE hiển thị gợi ý nhưng vẫn cho đổi người."),
-        req("Bỏ thành viên khỏi tổ", "DELETE", "/api/v1/teams/{{team_id}}/members/{{user_id}}",
-            desc="Chạy sau phần gợi ý vì bỏ thành viên sẽ làm tổ trống.",
-            tests=('pm.test("200", () => pm.response.to.have.status(200));',)),
-        req("Tạo tổ mới", "POST", "/api/v1/teams",
-            body={"code": "design-2", "name": "Tổ Design 2", "kind": "design"},
-            desc="`kind`: design | edit | order | other.",
-            tests=('pm.test("201 hoặc 409 nếu đã tồn tại",'
-                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]));',)),
-    ],
-)
-
 bots = folder(
     "04 · Bot @bot & gửi mẫu",
     "Gọi bot bằng `@bot <mã_mẫu> trường=giá_trị`. Bot luôn lưu mẫu vào `bot_submissions`, "
@@ -274,11 +263,11 @@ bots = folder(
         req("Schema các mẫu (FE render form)", "GET", "/api/v1/bots/{{bot_slug}}/templates",
             desc="Trả `schema.fields` (key/label/type/required) để FE dựng form `gửi mẫu`.",
             tests=(OK, 'pm.test("co templates", () => pm.expect(pm.response.json().data.templates).to.be.an("array"));')),
-        req("@bot (không có mẫu → help)", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("@bot (không có mẫu → help)", "POST", "/api/v1/conversations/{{group_id}}/messages",
             body={"content": "@bot", "client_msg_id": "{{$guid}}"},
             desc="Bot trả về danh sách mẫu đang có.",
             tests=(OK, 'pm.test("bot tra loi", () => pm.expect(pm.response.json().data.bot_reply).to.not.eql(null));')),
-        req("@bot yeu_cau → tạo task", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("@bot yeu_cau → tạo task", "POST", "/api/v1/conversations/{{group_id}}/messages",
             body={"content": '@bot yeu_cau tieu_de="Banner Tết 2027" to=design so_luong=3 '
                              'dinh_muc=A4 deadline=2026-12-01 ghi_chu="Làm gấp"',
                   "client_msg_id": "{{$guid}}"},
@@ -291,132 +280,18 @@ bots = folder(
                    'pm.test("la bot_command", () => pm.expect(d.message.type).to.eql("bot_command"));',
                    'pm.test("mau da luu", () => pm.expect(d.submission.status).to.be.oneOf(["done", "stored"]));')),
         req("Gửi mẫu từ form (không gõ @bot)", "POST", "/api/v1/bots/{{bot_slug}}/submissions",
-            body={"conversation_id": "{{conversation_id}}", "template_code": "phieu_sua",
-                  "payload": {"ma_task": "{{task_code}}", "nguyen_nhan": "Sai màu nền",
+            body={"conversation_id": "{{group_id}}", "template_code": "phieu_sua",
+                  "payload": {"ma_task": "T-000001", "nguyen_nhan": "Sai màu nền",
                               "loai_sua": "màu", "so_luong": 2},
                   "client_msg_id": "{{$guid}}"},
-            desc="Dùng khi FE có form riêng. ⚠️ Cần `task_code` (chạy folder 05 trước) vì mẫu "
-                 "`phieu_sua` tạo phiếu sửa cho task đó.",
-            tests=('pm.test("201 hoặc 400 nếu chưa có task_code",'
-                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 400]));',)),
+            desc="Dùng khi FE có form riêng thay vì gõ `@bot`.\n\n"
+                 "`ma_task` ở đây chỉ là giá trị mẫu. Khi `TASK_ENGINE_ENABLED=false` (cấu hình "
+                 "chuẩn lúc tích hợp CMS) Chat **chỉ lưu** mẫu với `status=stored`, không tạo phiếu "
+                 "sửa — đơn/task do CMS sở hữu.",
+            tests=('pm.test("200/201", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));',)),
         req("Các mẫu đã lưu", "GET", "/api/v1/bots/{{bot_slug}}/submissions",
-            query=[("conversation_id", "{{conversation_id}}"), ("limit", "20")],
+            query=[("conversation_id", "{{group_id}}"), ("limit", "20")],
             desc="Lọc thêm `status` = stored | processing | done | failed."),
-    ],
-)
-
-tasks = folder(
-    "05 · Task (yêu cầu / nhận việc)",
-    "Vòng đời card của từng người. Trạng thái task tổng được **suy ra** từ các card.\n\n"
-    "Chạy theo thứ tự: Tạo → Danh sách (lưu `task_id`) → Nhận → Tạm dừng → Tiếp tục → Hoàn thành.\n\n"
-    "⚠️ Cần `TASK_ENGINE_ENABLED=true`. Khi tích hợp CMS thì tắt module này (CMS sở hữu đơn/task) "
-    "và folder này sẽ trả 404 — dùng `make postman-run-task` để chạy riêng.",
-    [
-        req("Tạo yêu cầu (giao cho mình)", "POST", "/api/v1/tasks",
-            body={"conversation_id": "{{conversation_id}}", "title": "Video quảng cáo Tết",
-                  "description": "Dựng 15s theo kịch bản", "team_code": "design",
-                  "quantity": 10, "quota": "HD", "priority": "high",
-                  "deadline": "2026-12-20", "assignee_ids": ["{{user_id}}"]},
-            desc="Bỏ trống `assignee_ids` → hệ thống tự gợi ý người trong tổ. "
-                 "Người được giao mà chưa ở trong nhóm sẽ được tự thêm vào nhóm.",
-            tests=(OK, *save("task_id", "_d.id"),
-                   'pm.collectionVariables.set("task_code", pm.response.json().data.code);',
-                   'const a = pm.response.json().data.assignments[0];',
-                   'if (a) pm.collectionVariables.set("assignment_id", a.id);',
-                   'pm.test("cho nhan", () => pm.expect(pm.response.json().data.status).to.eql("waiting_accept"));')),
-        req("Danh sách task", "GET", "/api/v1/tasks",
-            query=[("conversation_id", "{{conversation_id}}"), ("limit", "20")],
-            desc="Lọc: `team_id`, `assignee_id`, `created_by`, `status` (nhiều giá trị cách nhau bởi `,`), "
-                 "`thread_id`, `q`, `mine=true`, `waiting_accept=true`."),
-        req("Chờ nhận (của tôi)", "GET", "/api/v1/tasks",
-            query=[("waiting_accept", "true"), ("mine", "true"), ("limit", "20")],
-            desc="Task đã giao nhưng chưa nhận — màn hình `Chờ nhận` của designer."),
-        req("Chi tiết task", "GET", "/api/v1/tasks/{{task_id}}",
-            desc="Kèm card của từng người, phiếu sửa, tổ."),
-        req("Tra cứu theo mã task", "GET", "/api/v1/tasks/code/{{task_code}}",
-            desc="Mã dạng `T-000001` — tiện khi người dùng nhắc mã trong chat."),
-        req("Nhận task (định mức + số lượng)", "POST", "/api/v1/tasks/{{task_id}}/accept",
-            body={"quota": "HD-cao-cấp", "quantity": 5},
-            desc="**Bắt buộc** chọn định mức và số lượng trước khi nhận; số lượng không vượt "
-                 "`quantity` của task. Nhận lại lần 2 → 409 `task_already_accepted`.",
-            tests=(OK, 'pm.test("dang lam", () => pm.expect(pm.response.json().data.status).to.eql("in_progress"));')),
-        req("Tạm dừng", "POST", "/api/v1/tasks/{{task_id}}/pause",
-            body={"note": "Chờ file gốc từ order"},
-            tests=(OK, 'pm.test("tam dung", () => pm.expect(pm.response.json().data.status).to.eql("paused"));')),
-        req("Tiếp tục", "POST", "/api/v1/tasks/{{task_id}}/resume", body={"note": ""},
-            tests=(OK, 'pm.test("dang lam", () => pm.expect(pm.response.json().data.status).to.eql("in_progress"));')),
-        req("Treo (bắt buộc ghi lý do)", "POST", "/api/v1/tasks/{{task_id}}/hold",
-            body={"note": "Chờ duyệt mẫu từ khách"},
-            desc="Thiếu `note` → 400 `hold_requires_note`.",
-            tests=(OK, 'pm.test("treo", () => pm.expect(pm.response.json().data.status).to.eql("on_hold"));')),
-        req("Tiếp tục sau khi treo", "POST", "/api/v1/tasks/{{task_id}}/resume", body={"note": ""}),
-        req("Hoàn thành", "POST", "/api/v1/tasks/{{task_id}}/complete", body={"note": "Đã nộp file"},
-            desc="Bị chặn (409 `task_has_open_revision`) nếu còn phiếu sửa đang mở. "
-                 "Chuyển trạng thái sai (vd đang `paused` mà hoàn thành) → 409 `invalid_task_transition` "
-                 "kèm `details.allowed`.",
-            tests=(OK, 'pm.test("hoan thanh", () => pm.expect(pm.response.json().data.status).to.eql("completed"));')),
-        req("Chia task / gọi hỗ trợ / gọi Edit", "POST", "/api/v1/tasks/{{task_id}}/assignees",
-            body={"user_ids": ["{{user_id_2}}"], "role": "support", "note": "Hỗ trợ phần hình"},
-            desc="`role`: primary (chia việc, mỗi người 1 card) | support (gọi hỗ trợ) | edit (gọi Edit làm video). "
-                 "Chỉ owner/admin nhóm hoặc người tạo task.",
-            tests=('pm.test("200 hoặc 400/409 nếu chưa có user thứ 2",'
-                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 409]));',)),
-        req("Đổi người phụ trách", "POST", "/api/v1/tasks/{{task_id}}/reassign",
-            body={"to_user_id": "{{user_id_2}}", "note": "Người cũ đang quá tải"},
-            desc="Card cũ → `revoked`, người mới nhận card `pending`. 409 `same_assignee` nếu "
-                 "`user_id_2` là chính mình, 409 `already_assigned` nếu người đó đã có card trên "
-                 "task (ví dụ vừa được chia việc ở request trên) — muốn thấy 200 thì dùng người "
-                 "thứ 3 chưa có card.",
-            tests=('pm.test("200 hoặc 400/409 nếu chưa có user thứ 2",'
-                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 409]));',)),
-        req("Điều chỉnh thông tin / đổi tổ", "PATCH", "/api/v1/tasks/{{task_id}}",
-            body={"title": "Video quảng cáo Tết - bản 2", "team_code": "edit",
-                  "quantity": 12, "quota": "4K", "deadline": "2026-12-25", "priority": "urgent"},
-            desc="Chỉ gửi field muốn đổi. `clear_deadline=true` để bỏ deadline. "
-                 "Designer thường sửa → 403 `require_task_manager`."),
-        req("Lịch sử task", "GET", "/api/v1/tasks/{{task_id}}/events", query=[("limit", "50")],
-            desc="Ai làm gì, lúc nào, từ trạng thái nào sang trạng thái nào."),
-        req("Nhận task thiếu số lượng → 400", "POST", "/api/v1/tasks/{{task_id}}/accept",
-            body={"quota": "HD"},
-            desc="Thiếu `quantity` → `400 accept_requires_quantity`; task đã nhận rồi → `409`.",
-            tests=('pm.test("400 hoặc 409", () => pm.expect(pm.response.code).to.be.oneOf([400, 409]));',)),
-        req("Huỷ task (chạy cuối folder này)", "POST", "/api/v1/tasks/{{task_id}}/cancel",
-            body={"reason": "Khách đổi yêu cầu"},
-            desc="Huỷ sẽ thu hồi các card chưa hoàn thành → mọi thao tác sau đó trên task trả "
-                 "409 `task_cancelled`.",
-            tests=('pm.test("200 hoac 403", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));',)),
-    ],
-)
-
-revisions = folder(
-    "06 · Phiếu sửa",
-    "Ghi nguyên nhân / loại sửa / số lượng. Nếu card đã hoàn thành thì **tự mở lại** để sửa, "
-    "và mỗi phiếu được hoàn thành **riêng**.",
-    [
-        req("Tạo phiếu sửa", "POST", "/api/v1/tasks/{{task_id}}/revisions",
-            body={"reason": "Sai màu nền so với brief", "revision_type": "màu",
-                  "quantity": 2, "assignment_id": "{{assignment_id}}"},
-            desc="Bắt buộc `reason` + `revision_type`. Bỏ `assignment_id` → tính cho card phụ trách chính.",
-            tests=(OK,
-                   'const d = pm.response.json().data;',
-                   'pm.collectionVariables.set("revision_id", d.revision.id);',
-                   'pm.test("phieu dang mo", () => pm.expect(d.revision.status).to.eql("open"));',
-                   'pm.test("card mo lai", () => pm.expect(d.task.status).to.be.oneOf(["in_progress", "waiting_accept"]));')),
-        req("Danh sách phiếu sửa của task", "GET", "/api/v1/tasks/{{task_id}}/revisions"),
-        req("Hoàn thành 1 phiếu sửa", "POST", "/api/v1/revisions/{{revision_id}}/complete",
-            body={"note": "Đã sửa lại màu nền"},
-            desc="Người phụ trách card hoặc admin. Tin nhắn hệ thống ghi rõ còn bao nhiêu phiếu đang mở.",
-            tests=(OK, 'pm.test("da hoan thanh", () => pm.expect(pm.response.json().data.revision.status).to.eql("completed"));')),
-        req("Hoàn thành card sau khi hết phiếu", "POST", "/api/v1/tasks/{{task_id}}/complete",
-            body={"note": "Nộp lại file đã sửa"},
-            desc="Trạng thái **task** được suy ra từ tất cả card: nếu task đã được chia cho người "
-                 "khác mà họ chưa xong thì task vẫn `in_progress` dù card của bạn đã `completed`.",
-            tests=(OK,
-                   'const t = pm.response.json().data;',
-                   'const mine = (t.assignments || []).find(a => a.user_id === pm.collectionVariables.get("user_id"));',
-                   'pm.test("card cua toi hoan thanh", () => pm.expect(mine && mine.status).to.eql("completed"));',
-                   'pm.test("task completed, hoac in_progress neu con card nguoi khac",'
-                   ' () => pm.expect(t.status).to.be.oneOf(["completed", "in_progress"]));')),
     ],
 )
 
@@ -428,9 +303,13 @@ errors = folder(
             desc="Code: `unauthenticated`.",
             tests=('pm.test("401", () => pm.response.to.have.status(401));',
                    'pm.test("code unauthenticated", () => pm.expect(pm.response.json().error.code).to.eql("unauthenticated"));')),
-        req("UUID sai → 400", "GET", "/api/v1/conversations/khong-phai-uuid",
-            tests=('pm.test("400", () => pm.response.to.have.status(400));',
-                   'pm.test("code invalid_uuid", () => pm.expect(pm.response.json().error.code).to.eql("invalid_uuid"));')),
+        req("ID nhóm không tồn tại → 404", "GET", "/api/v1/conversations/khong-phai-uuid",
+            desc="`:id` của route hội thoại nhận **cả UUID lẫn chatId của CMS** (`wg_<hex>`), nên chuỗi "
+                 "không phải UUID không còn bị coi là sai định dạng — nó được tra như một `external_id`. "
+                 "Không có thì `404 conversation_not_found`.",
+            tests=('pm.test("404", () => pm.response.to.have.status(404));',
+                   'pm.test("code conversation_not_found", () => pm.expect(pm.response.json().error.code)'
+                   '.to.eql("conversation_not_found"));')),
         req("Hội thoại không tồn tại → 403/404", "GET",
             "/api/v1/conversations/00000000-0000-0000-0000-000000000000/messages",
             desc="Không phải thành viên → `not_conversation_member` (không tiết lộ hội thoại có tồn tại hay không).",
@@ -440,7 +319,7 @@ errors = folder(
                  "status thay vì 500.",
             tests=('pm.test("404", () => pm.response.to.have.status(404));',
                    'pm.test("code route_not_found", () => pm.expect(pm.response.json().error.code).to.eql("route_not_found"));')),
-        req("Tin nhắn rỗng → 400", "POST", "/api/v1/conversations/{{conversation_id}}/messages",
+        req("Tin nhắn rỗng → 400", "POST", "/api/v1/conversations/{{group_id}}/messages",
             body={"content": "   "},
             tests=('pm.test("400", () => pm.response.to.have.status(400));',
                    'pm.test("code empty_message", () => pm.expect(pm.response.json().error.code).to.eql("empty_message"));')),
@@ -461,7 +340,7 @@ cms_bot = folder(
                    'const it = pm.response.json().items[0];',
                    'if (it) pm.collectionVariables.set("actor_id", it.actorId);')),
         req("Gửi card vào nhóm", "POST", "/bot/v1/messages",
-            body={"groupId": "{{chat_id}}", "bot": {"id": 1, "name": "Demo Designer Bot"},
+            body={"groupId": "{{group_id}}", "bot": {"id": 1, "name": "Demo Designer Bot"},
                   "card": {"schema": "abc.card/v1",
                            "header": {"code": "WEB-20261118-0006", "kind": "DESIGN",
                                       "title": "Banner Tết 2027",
@@ -492,7 +371,7 @@ cms_bot = folder(
                   "messageId": "{{card_message_id}}"},
             auth={"type": "noauth"},
             tests=(OK,)),
-        req("Đẩy nhóm + thành viên", "PUT", "/bot/v1/groups/{{chat_id}}",
+        req("Đẩy nhóm + thành viên", "PUT", "/bot/v1/groups/{{cms_chat_id}}",
             body={"name": "Nhóm Thiết kế Web",
                   "members": [{"openId": "local:designer-1", "cmsUserId": 68, "name": "Trần Designer",
                                "sources": ["team"], "teamCodes": ["DESIGN"]}]},
@@ -513,6 +392,26 @@ cms_bot = folder(
                  "Chat phát event realtime `presence` cho những người **chung hội thoại** với người đó.",
             auth={"type": "noauth"},
             tests=(OK, 'pm.test("co so dong cap nhat", () => pm.expect(pm.response.json().updated).to.be.a("number"));')),
+        req("Tra cứu: danh sách nhóm", "GET", "/bot/v1/groups",
+            query=[("q", "TEAM", True), ("source", "cms", True)],
+            desc="Spec §7.7. Liệt kê nhóm Chat đang giữ — dùng để đối chiếu khi debug đồng bộ.\n\n"
+                 "**Filter** (bật trong tab Params): `q` tìm theo tên (không phân biệt hoa thường), "
+                 "`source` = `cms` | `local`.",
+            auth={"type": "noauth"},
+            tests=(OK, 'pm.test("co items", () => pm.expect(pm.response.json()).to.have.property("items"));')),
+        req("Tra cứu: 1 nhóm", "GET", "/bot/v1/groups/{{group_id}}",
+            desc="Spec §7.7. Nhận `chatId` của CMS hoặc UUID nội bộ.",
+            auth={"type": "noauth"},
+            tests=('pm.test("200 / 404", () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',)),
+        req("Tra cứu: 1 user", "GET", "/bot/v1/users/{{actor_id}}",
+            desc="Spec §7.7. Nhận `actorId` (`u_68`), `openId`, hoặc UUID nội bộ.",
+            auth={"type": "noauth"},
+            tests=('pm.test("200 / 404", () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',)),
+        req("Tra cứu: nhiều user", "POST", "/bot/v1/users/batch",
+            body={"actorIds": ["{{actor_id}}"], "openIds": [], "cmsUserIds": []},
+            desc="Spec §7.7. Tra hàng loạt bằng **một** query cho mỗi loại id (không phải N query).",
+            auth={"type": "noauth"},
+            tests=(OK, 'pm.test("co items", () => pm.expect(pm.response.json()).to.have.property("items"));')),
         req("Thông tin tệp đính kèm", "GET", "/bot/v1/attachments/{{attachment_id}}",
             desc="Chat **không lưu file**, chỉ lưu URL do service upload/CDN cung cấp. "
                  "Thêm `?redirect=true` để nhảy thẳng tới URL đó (302).",
@@ -536,9 +435,9 @@ cms_client = folder(
     "Auth: **access token do CMS phát** — đặt vào biến `cms_token` (lấy từ "
     "`POST /api/client/v1/workspace/auth/login` của CMS). Token dev `make token` cũng dùng được "
     "khi `AUTH_ALLOW_DEV_TOKEN=true`.\n\n"
-    "**`{{chat_id}}` là gì**: id nhóm trong URL. Chế độ CMS là `wg_<hex>`; chế độ fake (chưa có CMS) "
-    "thì dùng **UUID nhóm** — endpoint nhận cả hai. Collection tự gán `chat_id = conversation_id` "
-    "nếu bạn chưa điền, nên chỉ cần chạy folder `01 · Hội thoại` trước là dùng được ngay.\n\n"
+    "**`{{group_id}}` là gì**: id nhóm trong URL — một biến duy nhất cho cả 3 bề mặt. "
+    "Nhận **UUID nội bộ** hoặc **`wg_<hex>` (chatId của CMS)**, endpoint tự nhận ra. "
+    "Chạy folder `FLOW` hoặc `01 · Hội thoại` trước là biến này có sẵn.\n\n"
     "Khác với `/api/v1`: envelope `{statusCode, code, message, element}` và field dạng camelCase "
     "(`text`, `replyToId`, `threadRootId`, `clientMsgId`).",
     [
@@ -548,7 +447,7 @@ cms_client = folder(
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=(OK, 'const el = pm.response.json().element;',
                    'pm.test("co me + groups", () => pm.expect(el).to.have.keys(["me","groups","notifications","unreadNotifications"]));',
-                   'if (el.groups && el.groups[0]) pm.collectionVariables.set("chat_id", el.groups[0].chatId || el.groups[0].id);')),
+                   'if (el.groups && el.groups[0]) pm.collectionVariables.set("group_id", el.groups[0].chatId || el.groups[0].id);')),
         req("Tôi là ai", "GET", "/api/client/v1/chat/auth/me",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=(OK,)),
@@ -557,15 +456,15 @@ cms_client = folder(
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
-        req("Lịch sử tin nhắn (card đã lọc)", "GET", "/api/client/v1/chat/groups/{{chat_id}}/messages",
+        req("Lịch sử tin nhắn (card đã lọc)", "GET", "/api/client/v1/chat/groups/{{group_id}}/messages",
             query=[("limit", "30")],
             desc="Card trả về đã **lọc nút theo `visibleTo`** của chính người gọi; `actions` liệt kê "
-                 "action người đó được bấm.\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `chat_id`, "
+                 "action người đó được bấm.\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `group_id`, "
                  "không thì `403 not_conversation_member`.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
-        req("Gửi tin nhắn", "POST", "/api/client/v1/chat/groups/{{chat_id}}/messages",
+        req("Gửi tin nhắn", "POST", "/api/client/v1/chat/groups/{{group_id}}/messages",
             body={"text": "Nhờ team làm gấp giúp mình nhé", "clientMsgId": "{{$guid}}"},
             desc="Chat lưu + phát realtime + gửi `message.created` sang CMS (bất đồng bộ qua outbox).",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
@@ -589,15 +488,24 @@ cms_client = folder(
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
         req("Gửi form tạo yêu cầu", "POST", "/api/client/v1/chat/forms/create_task/submit",
             body={"values": {"kind": "task", "title": "Banner Tết 2027", "teamId": "27", "useAI": False},
-                  "context": {"groupId": "{{chat_id}}"}},
+                  "context": {"groupId": "{{group_id}}"}},
             desc="FE gửi `teamId` trong `values`; Chat **không diễn giải**, chuyển nguyên sang CMS "
                  "trong event `form.submit` rồi trả `toast`/`closeForm` cho UI.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
         req("Thông báo của tôi", "GET", "/api/client/v1/chat/notifications",
+            query=[("unread", "true", True), ("limit", "20", True)],
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
+            desc="**Filter**: `unread=true` chỉ trả thông báo chưa đọc. "
+                 "`element.unread` luôn là **tổng** số chưa đọc, không đổi theo filter (dùng cho badge).",
             tests=(OK,)),
+        req("Thông báo chưa đọc", "GET", "/api/client/v1/chat/notifications",
+            query=[("unread", "true")],
+            auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
+            desc="Chỉ lấy thông báo chưa đọc. Phân trang cursor vẫn hoạt động cùng filter.",
+            tests=(OK, 'pm.test("tat ca deu chua doc", () => pm.expect('
+                   'pm.response.json().element.notifications.every(n => !n.read)).to.be.true);')),
         req("Đánh dấu đã đọc thông báo", "POST", "/api/client/v1/chat/notifications/read",
             body={"all": True},
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
@@ -611,7 +519,7 @@ cleanup = folder(
     "Chạy được ở mọi cấu hình.",
     [
         req("Rời nhóm / xoá thành viên", "DELETE",
-            "/api/v1/conversations/{{conversation_id}}/members/{{user_id_2}}",
+            "/api/v1/conversations/{{group_id}}/members/{{user_id_2}}",
             desc="Tự rời nhóm được; xoá người khác cần owner/admin.",
             tests=('pm.test("200 hoặc 400/403", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
     ],
@@ -620,7 +528,7 @@ cleanup = folder(
 DESCRIPTION = """\
 # Chat Service — ABC Workspace
 
-Chat (riêng/nhóm) + bot `@bot` gửi mẫu + task / nhận task / phiếu sửa.
+Chat (riêng/nhóm) + bot `@bot` gửi mẫu + tích hợp CMS (card, form, thông báo).
 Go · Fiber (REST + WebSocket) · gRPC · PostgreSQL · GORM.
 
 ## Chuẩn bị (2 bước)
@@ -633,9 +541,15 @@ Go · Fiber (REST + WebSocket) · gRPC · PostgreSQL · GORM.
 
 ## Cách chạy
 
-Chạy lần lượt từ folder `00` xuống `06` (hoặc Run collection): mỗi folder tự lưu id cần thiết
-(`user_id`, `conversation_id`, `message_id`, `task_id`, `task_code`, `assignment_id`, `revision_id`)
-vào collection variable cho folder sau dùng.
+**Mới dùng**: chạy folder `FLOW` — 16 bước đánh số theo đúng thứ tự thật, đặt biến `stop_at`
+= số bước (vd `2.3`) để dừng lại xem kỹ.
+
+**Tra cứu từng endpoint**: folder `00` → `09`. Mỗi request tự lưu id cần thiết
+(`user_id`, `group_id`, `message_id`, `thread_id`, `actor_id`, `card_message_id`) vào collection
+variable cho request sau dùng.
+
+`group_id` nhận **cả UUID nội bộ lẫn `chatId` của CMS** (`wg_<hex>`) — một biến cho cả ba bề mặt
+`/api/v1`, `/bot/v1`, `/api/client/v1`.
 
 Response thành công: `{"data": ..., "meta": {"next_cursor","has_more"}}`.
 Lỗi: `{"error":{"code","message","details"}}` — `code` ổn định, dùng để FE bắt lỗi.
@@ -671,6 +585,401 @@ Hai loại request này **không nằm trong file JSON** (định dạng v2.1 c�
 chạy bằng Postman CLI: `postman collection run "postman/collections/Chat Service"`.
 """
 
+
+# ---------------------------------------------------------------- FLOW
+# Folder FLOW: chay tu tren xuong de hieu luong. Moi request co so thu tu;
+# hai request cung cap thi 1.1, 1.2...
+
+def stop(step):
+    """Snippet dung runner tai buoc nay neu bien stop_at = so buoc.
+
+    Dat stop_at = "2.2" roi Run collection => chay den 2.2 thi dung, xem ket qua
+    roi doi stop_at sang buoc sau de di tiep. De trong = chay het.
+    """
+    return (
+        f'if (String(pm.variables.get("stop_at") || "").trim() === "{step}") {{',
+        f'  console.log("DUNG tai buoc {step} (stop_at). Doi stop_at de di tiep.");',
+        '  postman.setNextRequest(null);',
+        '}',
+    )
+
+
+def step(num, name, method, path, **kw):
+    """Request trong FLOW: ten co so thu tu + tu dong gan diem dung."""
+    kw["tests"] = tuple(kw.get("tests") or (OK,)) + stop(num)
+    return req(f"{num} · {name}", method, path, **kw)
+
+
+CMS_AUTH = {"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]}
+
+flow = folder(
+    "FLOW · Chạy từ trên xuống để hiểu luồng",
+    "Toàn bộ vòng đời một nhóm chat, theo đúng thứ tự thật. **Chạy lần lượt từ 1.1**.\n\n"
+    "### Dừng ở một bước\n"
+    "Đặt biến `stop_at` = số bước (vd `2.3`) rồi **Run collection** → chạy tới bước đó thì dừng. "
+    "Xem response, đổi `stop_at` sang bước sau để đi tiếp. Để trống = chạy hết.\n\n"
+    "### Đánh số\n"
+    "`1.1`, `1.2`… = các bước **cùng cấp** trong một giai đoạn. Giai đoạn:\n"
+    "1 · chuẩn bị · 2 · nhóm & thành viên · 3 · tin nhắn · 4 · card và form (CMS) · "
+    "5 · thông báo · 6 · dọn dẹp.\n\n"
+    "### Cần gì trước\n"
+    "- `token` — `make token SUB=demo-an NAME=\"An\" ROLE=order`\n"
+    "- `service_key` — = `CHAT_SERVICE_KEY` trong `.env` (chỉ cho bước 2.x, 4.x)\n"
+    "- `cms_token` — token của người **thuộc nhóm**; thiếu thì để bằng `token`\n\n"
+    "Biến `group_id` được bước 2.1 lưu lại, các bước sau dùng chung — không phải điền tay.",
+    [
+        # ---- 1 · chuan bi ----
+        step("1.1", "Service còn sống?", "GET", "/healthz",
+             desc="Chưa 200 thì không cần đi tiếp: `make dev-up` rồi `make dev-logs`.",
+             tests=(OK, 'pm.test("status ok", () => pm.expect(pm.response.json().data.status).to.eql("ok"));')),
+        step("1.2", "Tôi là ai", "GET", "/api/v1/me",
+             desc="Xác minh `token` hợp lệ và lấy `user_id`. 401 ở đây = token sai hoặc "
+                  "`JWT_SECRET` của app khác với lúc sinh token.",
+             tests=(OK, *save("user_id", "_d.user_id"))),
+
+        # ---- 2 · nhom & thanh vien ----
+        step("2.1", "Tạo nhóm", "POST", "/api/v1/conversations",
+             body={"type": "group", "name": "FLOW · nhóm thử", "member_user_ids": []},
+             desc="Lưu **`group_id`** — biến dùng xuyên suốt cả 3 bề mặt API.\n\n"
+                  "Đang có CMS thật? Bỏ qua bước này, chạy 2.2 để CMS đẩy nhóm sang.",
+             tests=(OK, *save("group_id", "_d.id"))),
+        step("2.2", "CMS đẩy nhóm + thành viên sang Chat", "PUT", "/bot/v1/groups/{{cms_chat_id}}",
+             body={"name": "FLOW · nhóm từ CMS",
+                   "members": [{"openId": "local:flow-1", "cmsUserId": 9001, "name": "Flow User",
+                                "sources": ["team"], "teamCodes": ["DESIGN"]}]},
+             auth={"type": "noauth"},
+             desc="Đây là **chiều CMS → Chat**. Tham số URL là `cms_chat_id` (dạng `wg_<hex>`), "
+                  "KHÔNG phải `group_id` — vì nó chính là chatId mà CMS muốn tạo.\n\n"
+                  "**Thay thế toàn bộ** danh sách thành viên: ai không có trong `members` mất quyền xem ngay.\n\n"
+                  "Cần `service_key`. Chưa bật CMS (`CMS_ENABLED=false`) thì bước này 404 — bỏ qua.\n\n"
+                  "Bước này **không** đổi `group_id`: nhóm vừa đẩy chỉ có thành viên do CMS "
+                  "khai, token của bạn không nằm trong đó nên các bước 3.x sẽ bị 403. "
+                  "Nhóm ở 2.1 (bạn là owner) mới là nhóm dùng xuyên suốt.",
+             tests=('pm.test("200 (da bat CMS) / 404 (CMS_ENABLED=false)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',)),
+        step("2.3", "Nhóm vừa đẩy có những ai?", "GET", "/bot/v1/groups/{{cms_chat_id}}/members",
+             auth={"type": "noauth"},
+             desc="**Điểm dừng hay dùng**: xác nhận CMS đẩy thành viên sang đúng chưa.\n\n"
+                  "`id` trả về là **actorId** (`u_9001`) — định danh Chat cấp cho CMS, không phải UUID. "
+                  "Bước này lưu `actor_id` cho 5.1.\n\n"
+                  "Muốn xem thành viên nhóm của 2.1 thì đổi URL sang `{{group_id}}` — cùng endpoint, "
+                  "cả hai dạng id đều nhận.",
+             tests=('pm.test("200 / 404 (chua bat CMS)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',
+                    'const _it = pm.response.code === 200 && pm.response.json().items[0];',
+                    'if (_it) pm.collectionVariables.set("actor_id", _it.id);')),
+        step("2.4", "Nhóm của tôi (bề mặt FE)", "GET", "/api/client/v1/chat/bootstrap",
+             auth=CMS_AUTH,
+             desc="Tất cả thứ FE cần khi mở app. `groups` **chỉ gồm nhóm mình là thành viên** — "
+                  "không thấy nhóm vừa tạo ở 2.2 là đúng, vì bạn không nằm trong `members` của nó.",
+             tests=(OK,)),
+
+        # ---- 3 · tin nhan ----
+        step("3.1", "Gửi tin nhắn", "POST", "/api/v1/conversations/{{group_id}}/messages",
+             body={"content": "FLOW: tin nhắn đầu tiên", "client_msg_id": "{{$guid}}"},
+             desc="`client_msg_id` giúp chống gửi trùng khi mạng chập chờn.",
+             tests=(OK, *save("message_id", "_d.message.id"))),
+        step("3.2", "Trả lời trong thread", "POST", "/api/v1/conversations/{{group_id}}/messages",
+             body={"content": "FLOW: trả lời", "reply_to_id": "{{message_id}}", "client_msg_id": "{{$guid}}"},
+             desc="`reply_to_id` tạo thread. Tin gốc giữ nguyên, tin này có `thread_id` = id tin gốc.",
+             tests=(OK, *save("reply_message_id", "_d.message.id"))),
+        step("3.3", "Đọc lịch sử", "GET", "/api/v1/conversations/{{group_id}}/messages",
+             query=[("limit", "30"), ("only_root", "true", True)],
+             desc="Mới nhất trước, phân trang bằng `cursor`. Bật `only_root=true` để ẩn tin trong thread.",
+             tests=(OK,)),
+        step("3.4", "Đánh dấu đã đọc", "POST", "/api/v1/conversations/{{group_id}}/read",
+             body={"message_id": "{{message_id}}"},
+             desc="Trả `unread_count` mới. Realtime phát event `read` cho người khác trong nhóm.",
+             tests=(OK,)),
+
+        # ---- 4 · card & form (CMS) ----
+        step("4.1", "CMS gửi card vào nhóm", "POST", "/bot/v1/messages",
+             body={"groupId": "{{group_id}}", "card": {
+                 "schema": "abc.card/v1", "title": "FLOW · Đơn thử",
+                 "elements": [{"type": "text", "text": "Nội dung đơn"},
+                              {"type": "button", "text": "Nhận việc", "action": "accept_task"}]}},
+             auth={"type": "noauth"},
+             desc="Chiều **CMS → Chat**. Card theo schema `abc.card/v1`.\n\n"
+                  "⚠️ Khoá của nút là **`action`**, KHÔNG phải `actionId` — dùng sai tên thì "
+                  "`POST /messages/:id/actions` trả `403 action_not_allowed`.\n\n"
+                  "Nút có `visibleTo` được lọc theo từng người xem.",
+             tests=('pm.test("200 / 404 (chua bat CMS)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',
+                    'if (pm.response.code === 200) pm.collectionVariables.set("card_message_id",'
+                    ' pm.response.json().messageId);')),
+        step("4.2", "FE gửi form tạo yêu cầu", "POST", "/api/client/v1/chat/forms/create_task/submit",
+             body={"values": {"kind": "task", "title": "FLOW · Banner", "teamId": "27", "useAI": False},
+                   "context": {"groupId": "{{group_id}}"}},
+             auth=CMS_AUTH,
+             desc="Chiều **FE → Chat → CMS**. Chat **không diễn giải** `values`, chỉ ký HMAC rồi "
+                  "chuyển nguyên sang CMS.\n\n"
+                  "⚠️ `teamId` ở đây là **tổ của CMS**, dạng số (vd `27`) — không phải UUID, và không "
+                  "liên quan gì tới bảng `teams` của module task nội bộ.",
+             tests=('pm.test("200 / 400 (chua bat CMS) / 403 (khong thuoc nhom)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
+
+        # ---- 5 · thong bao ----
+        step("5.1", "CMS tạo thông báo cho 1 người", "POST", "/bot/v1/notifications",
+             body={"actorId": "{{actor_id}}", "text": "FLOW: bạn có việc mới"},
+             auth={"type": "noauth"},
+             desc="Cần `actor_id`. Chưa có thì lấy ở 2.3 (`items[].id`).",
+             tests=('pm.test("200 / 400 / 404", () => pm.expect(pm.response.code)'
+                    '.to.be.oneOf([200, 400, 404]));',)),
+        step("5.2", "Thông báo chưa đọc của tôi", "GET", "/api/client/v1/chat/notifications",
+             query=[("unread", "true")],
+             auth=CMS_AUTH,
+             desc="`element.unread` là **tổng** số chưa đọc (cho badge), không đổi theo filter.",
+             tests=(OK,)),
+        step("5.3", "Đánh dấu đã đọc hết", "POST", "/api/client/v1/chat/notifications/read",
+             body={"all": True}, auth=CMS_AUTH,
+             desc="Trả số dòng vừa đánh dấu.", tests=(OK,)),
+
+        # ---- 6 · don dep ----
+        step("6.1", "Xoá tin nhắn vừa gửi", "DELETE", "/api/v1/messages/{{message_id}}",
+             desc="Xoá mềm: tin còn trong DB nhưng FE không hiện. Bỏ qua nếu muốn giữ để xem tiếp.",
+             tests=('pm.test("200 / 403 / 404", () => pm.expect(pm.response.code)'
+                    '.to.be.oneOf([200, 403, 404]));',)),
+    ],
+)
+
+# ---------------------------------------------------------------- WebSocket / gRPC
+# v2.1 JSON khong co kieu request WebSocket/gRPC. Giu mau o day duoi dang tai
+# lieu: mo folder trong Postman -> tab Documentation -> copy khoi JSON can dung.
+
+WS_DOC = """\
+Postman khong import duoc WebSocket tu file v2.1, nen mo tay:
+**New -> WebSocket**, dan URL, **Connect**, roi dan tung khoi JSON ben duoi vao o Message.
+
+## 1. Hai URL
+
+```
+ws://localhost:8080/api/client/v1/chat/ws?token={{cms_token}}    <- FE dung cai nay
+ws://localhost:8080/ws?token={{token}}                           <- cong cu noi bo
+```
+
+Cung mot hub, cung event. Khac o **ten field**: duong FE tra camelCase trung ten voi REST
+(`text`, `createdAt`, `threadRootId`), duong noi bo tra snake_case + nguyen struct domain.
+
+Token di qua `?token=` vi browser khong set duoc header khi mo WebSocket. Thu tu uu tien:
+`?token=` -> `Sec-WebSocket-Protocol` -> header `Authorization`.
+
+Khong co token rieng cho WebSocket: **dung lai dung access token dang goi REST**.
+
+## 2. Frame gui len (client -> server)
+
+Moi frame la 1 JSON object. `id` do client tu dat, server tra lai trong `ref` cua `ack`/`error`
+de biet ack cua frame nao.
+
+`conversationId` nhan **ca UUID lan chatId cua CMS** (`wg_...`). Khoa chap nhan ca camelCase
+lan snake_case (`conversationId` = `conversation_id`, `text` = `content`).
+
+### 2.1 ping - giu ket noi, do RTT
+
+```json
+{"id":"p1","type":"ping"}
+```
+-> `{"type":"pong","ref":"p1","payload":{"server_now":"..."}}`
+
+### 2.2 message.send - gui tin nhan
+
+```json
+{
+  "id": "c1",
+  "type": "message.send",
+  "payload": {
+    "conversationId": "{{group_id}}",
+    "type": "text",
+    "text": "Tin nhan gui qua WebSocket",
+    "clientMsgId": "ws-1"
+  }
+}
+```
+
+### 2.3 message.send - tra loi trong thread
+
+```json
+{
+  "id": "c2",
+  "type": "message.send",
+  "payload": {
+    "conversationId": "{{group_id}}",
+    "text": "Phan hoi trong thread",
+    "threadRootId": "{{message_id}}",
+    "clientMsgId": "ws-2"
+  }
+}
+```
+
+### 2.4 message.send - kem anh/tep
+
+```json
+{
+  "id": "c3",
+  "type": "message.send",
+  "payload": {
+    "conversationId": "{{group_id}}",
+    "type": "image",
+    "text": "Anh mau",
+    "attachments": [{
+      "kind": "image",
+      "url": "https://cdn.example.com/a.png",
+      "name": "a.png",
+      "mime_type": "image/png",
+      "size_bytes": 20480,
+      "width": 800,
+      "height": 600
+    }],
+    "clientMsgId": "ws-3"
+  }
+}
+```
+
+### 2.5 message.read - danh dau da doc
+
+```json
+{
+  "id": "c4",
+  "type": "message.read",
+  "payload": {"conversationId": "{{group_id}}", "messageId": "{{message_id}}"}
+}
+```
+
+### 2.6 typing - dang nhap
+
+```json
+{
+  "id": "c5",
+  "type": "typing",
+  "payload": {"conversationId": "{{group_id}}", "typing": true}
+}
+```
+Khong luu DB, **khong co ack**. Chi nhung nguoi khac trong nhom nhan event `typing`.
+
+### 2.7 message.delete - xoa mem
+
+```json
+{"id":"c6","type":"message.delete","payload":{"messageId":"{{message_id}}"}}
+```
+
+### 2.8 template.send - gui mau cho bot
+
+```json
+{
+  "id": "c7",
+  "type": "template.send",
+  "payload": {
+    "conversationId": "{{group_id}}",
+    "bot_slug": "bot",
+    "template_code": "yeu_cau",
+    "payload": {"tieu_de": "Banner Tet", "to": "design", "so_luong": 2, "dinh_muc": "A4"},
+    "clientMsgId": "ws-4"
+  }
+}
+```
+
+## 3. Frame nhan ve (server -> client)
+
+### 3.1 ready - ngay sau khi ket noi
+
+Duong FE:
+```json
+{"type":"ready","payload":{
+  "userId":"6a63be69-...","actorId":"u_6","name":"tester",
+  "role":"designer","connId":"81f68ee6-...","serverNow":"2026-11-20T10:00:00Z"}}
+```
+Duong noi bo: `conn_id`, `display_name`, `external_id`, `server_now`.
+
+**Nhin frame nay truoc tien**: no cho biet tab dang dang nhap bang AI. Dan sai token
+hoac tool tu gan header `Authorization` cua nguoi khac la thay ngay o day.
+
+### 3.2 ack - rieng cho nguoi vua gui
+
+```json
+{"type":"ack","ref":"c1","payload":{
+  "client_msg_id":"ws-1",
+  "message":{"id":"...","conversationId":"...","text":"...","createdAt":"..."},
+  "bot_reply":null,"submission":null,"duplicated":false}}
+```
+`duplicated: true` = `clientMsgId` da gui roi, server **khong** tao tin moi (chong gui trung
+khi mang chap chon).
+
+### 3.3 message - tin moi hoac tin duoc cap nhat
+
+```json
+{"type":"message","eventId":"...","conversationId":"...","ts":"...","payload":{
+  "id":"...","conversationId":"...","type":"text","senderType":"user",
+  "text":"...","createdAt":"...","clientMsgId":"...",
+  "senderId":"...","sender":{"actorId":"u_6","name":"tester","cmsUserId":6,
+                             "openId":"...","presence":"online","role":"designer"},
+  "card":{...},"cardVersion":2,"actions":["accept_task"]}}
+```
+FE **upsert theo `id`**: card doi cung den bang `type: "message"` chu khong co type rieng.
+`card` da loc nut theo `visibleTo` cua chinh nguoi nhan, `actions` la cac action nguoi do
+duoc bam.
+
+### 3.4 Cac event con lai
+
+| `type` | Khi nao | Payload chinh |
+|---|---|---|
+| `message.deleted` | ai do xoa tin | `conversationId`, `messageId` |
+| `read` | ai do danh dau da doc | `conversationId`, `userId`, `messageId`, `seenAt` |
+| `typing` | ai do dang nhap | `conversationId`, `userId`, `typing` |
+| `presence` | nguoi chung nhom doi trang thai | `actorId`, `userId`, `presence`, `online`, `reason` |
+| `notification` | CMS tao thong bao cho minh | `id`, `text`, `read`, `createdAt`, `messageId` |
+| `user` | ho so nguoi dung doi | ho so dang rut gon |
+| `reload` | nhom doi -> tai lai danh sach | `reason` (`group.members_changed` khi them/bot thanh vien, `group.updated` khi doi ten/cms_info), `conversationId`, `chatId`. **Khong doi gi thi khong ban** — khong phai moi 60s mot lan |
+
+### 3.5 error - frame bi tu choi
+
+```json
+{"type":"error","ref":"c1","payload":{"code":"not_conversation_member",
+  "message":"Ban khong thuoc cuoc hoi thoai nay"}}
+```
+
+## 4. Cac truong hop hay gap
+
+| Tinh huong | Ket qua |
+|---|---|
+| Thieu `token` | HTTP **401** luc handshake, khong len duoc WebSocket |
+| Token sai / het han | HTTP **401** luc handshake |
+| Khong phai thanh vien nhom | ket noi OK, nhung frame bi tra `error` `not_conversation_member` |
+| `conversationId` khong ton tai | `error` `conversation_not_found` |
+| `conversationId` de trong | `error` `invalid_request` |
+| JSON sai cu phap / payload sai kieu | `error` `invalid_payload` |
+| `type` khong biet | `error` `unknown_frame_type` |
+| Gui lai cung `clientMsgId` | `ack` voi `duplicated: true`, khong tao tin moi |
+| `text` rong va khong co attachment | `error` `empty_message` |
+| Gui `typing` | khong co ack — dung cho la loi |
+| Khong hoat dong lau | server tu gui WebSocket **ping** moi `WS_PING_INTERVAL` (25s); client khong tra pong trong `WS_READ_TIMEOUT` (90s) thi bi dong |
+| Mat ket noi | Pub/Sub la at-most-once: **goi lai REST** `GET /groups/:id/messages?cursor=` de dong bo, dung trong cho event bu |
+
+## 5. gRPC
+
+Postman: **New -> gRPC**, URL `{{grpc_url}}` (`localhost:9090`), metadata
+`authorization: Bearer {{token}}`. Reflection dang bat o local nen Postman tu tai duoc
+danh sach method (`GRPC_REFLECTION=false` o prod).
+
+| Method | Message mau |
+|---|---|
+| `chat.v1.ChatService/ListConversations` | `{"page": {"limit": 10}}` |
+| `chat.v1.ChatService/ListMessages` | `{"conversation_id": "{{group_id}}", "page": {"limit": 20}}` |
+| `chat.v1.ChatService/SendMessage` | `{"conversation_id": "{{group_id}}", "content": "Tin qua gRPC", "client_msg_id": "g-1"}` |
+| `chat.v1.BotService/ListBotTemplates` | `{"bot_slug": "bot"}` |
+| `chat.v1.BotService/SubmitBotTemplate` | `{"bot_slug": "bot", "template_code": "yeu_cau", "conversation_id": "{{group_id}}", "payload_json": "{\\"tieu_de\\":\\"Yeu cau tu gRPC\\",\\"to\\":\\"design\\",\\"so_luong\\":2,\\"dinh_muc\\":\\"A4\\"}"}` |
+
+`grpcurl -plaintext localhost:9090 list` de xem toan bo service.
+"""
+
+websocket = folder("10 · WebSocket & gRPC (mẫu frame)", WS_DOC, [
+    req("Mở trang demo để thử WebSocket thật", "GET", "/demo/live.html",
+        desc="Giao diện chat thật, tự nối `/api/client/v1/chat/ws` bằng token bạn dán vào. "
+             "Dùng khi muốn thấy event chạy mà không phải dán frame bằng tay.\\n\\n"
+             "Cần `WEB_DEMO_DIR` khác rỗng (mặc định `./web`; prod để rỗng nên sẽ 404).",
+        auth={"type": "noauth"},
+        tests=('pm.test("200 (co WEB_DEMO_DIR) / 404 (da tat)",'
+               ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',)),
+])
+
 collection = {
     "info": {
         "_postman_id": COLLECTION_ID,
@@ -685,13 +994,11 @@ collection = {
             "script": {
                 "type": "text/javascript",
                 "exec": [
-                    "// chat_id = id nhóm: chế độ CMS là wg_<hex>, chế độ fake là UUID nhóm.",
-                    "// Lưu ý: nếu environment có biến chat_id thì giá trị đó LẤN ÁT biến collection,",
-                    "// nên khi dùng CMS hãy điền chat_id ở environment, còn fake thì để trống.",
-                    "// Chưa có thì lấy luôn conversation_id (folder 01 đã lưu) để khỏi điền tay.",
-                    "if (!pm.variables.get('chat_id') && pm.variables.get('conversation_id')) {",
-                    "  pm.collectionVariables.set('chat_id', pm.variables.get('conversation_id'));",
-                    "}",
+                    "// group_id = id nhóm chat, dùng cho CẢ BA bề mặt (/api/v1, /bot/v1,",
+                    "// /api/client/v1): UUID nội bộ hoặc chatId của CMS (wg_<hex>) đều được.",
+                    "// Folder 01 (hoặc FLOW) tự lưu biến này sau khi tạo/đồng bộ nhóm.",
+                    "// Ngoại lệ duy nhất: PUT /bot/v1/groups/:id dùng cms_chat_id, vì tham số",
+                    "// đó LÀ chatId mà CMS muốn tạo — truyền UUID vào sẽ đẻ ra nhóm lạ.",
                     "// Chưa chạy folder CMS thì dùng tạm tin nhắn thường để các request không vỡ.",
                     "if (!pm.variables.get('card_message_id') && pm.variables.get('message_id')) {",
                     "  pm.collectionVariables.set('card_message_id', pm.variables.get('message_id'));",
@@ -720,25 +1027,21 @@ collection = {
         {"key": "bot_slug", "value": "bot", "type": "string"},
         {"key": "service_key", "value": "", "type": "string"},
         {"key": "cms_token", "value": "", "type": "string"},
-        {"key": "chat_id", "value": "", "type": "string"},
+        {"key": "group_id", "value": "", "type": "string"},
+        {"key": "cms_chat_id", "value": "wg_postman_demo", "type": "string"},
+        {"key": "stop_at", "value": "", "type": "string"},
         {"key": "actor_id", "value": "", "type": "string"},
         {"key": "card_message_id", "value": "", "type": "string"},
         {"key": "user_id", "value": "", "type": "string"},
         {"key": "user_id_2", "value": "", "type": "string"},
-        {"key": "conversation_id", "value": "", "type": "string"},
         {"key": "direct_conversation_id", "value": "", "type": "string"},
         {"key": "message_id", "value": "", "type": "string"},
         {"key": "thread_id", "value": "", "type": "string"},
-        {"key": "team_id", "value": "", "type": "string"},
-        {"key": "task_id", "value": "", "type": "string"},
-        {"key": "task_code", "value": "", "type": "string"},
-        {"key": "assignment_id", "value": "", "type": "string"},
-        {"key": "revision_id", "value": "", "type": "string"},
         {"key": "reply_message_id", "value": "", "type": "string"},
         {"key": "attachment_id", "value": "", "type": "string"},
     ],
-    "item": [start, conversations, messages, teams, bots, tasks, revisions, errors,
-             cms_bot, cms_client, cleanup],
+    "item": [flow, start, conversations, messages, bots, errors,
+             cms_bot, cms_client, websocket, cleanup],
 }
 
 environment = {
@@ -748,11 +1051,21 @@ environment = {
         {"key": "base_url", "value": "http://localhost:8080", "type": "default", "enabled": True},
         {"key": "grpc_url", "value": "localhost:9090", "type": "default", "enabled": True},
         {"key": "ws_url", "value": "ws://localhost:8080/ws", "type": "default", "enabled": True},
+        # WebSocket tren be mat FE (hop dong CMS) — dung chung cms_token voi REST.
+        {"key": "ws_client_url", "value": "ws://localhost:8080/api/client/v1/chat/ws",
+         "type": "default", "enabled": True},
         {"key": "token", "value": "", "type": "secret", "enabled": True},
         {"key": "token_2", "value": "", "type": "secret", "enabled": True},
         {"key": "cms_token", "value": "", "type": "secret", "enabled": True},
         {"key": "service_key", "value": "", "type": "secret", "enabled": True},
         {"key": "user_id_2", "value": "", "type": "default", "enabled": True},
+        # CO Y khong khai group_id o environment: bien environment LAN AT bien
+        # collection, nen mot `group_id` rong o day se vo hieu hoa gia tri ma
+        # folder FLOW / 01 vua luu => URL thanh /conversations//messages -> 404.
+        # Can ghim mot nhom cu the thi truyen --env-var group_id=... khi chay CLI.
+        #
+        # stop_at: dat = so buoc (vd 2.3) de folder FLOW dung lai o do.
+        {"key": "stop_at", "value": "", "type": "default", "enabled": True},
     ],
     "_postman_variable_scope": "environment",
 }
@@ -810,40 +1123,6 @@ def check():
 
 
 # Folder viet tay trong ban v3 (v2.1 khong chua duoc 2 protocol nay) — khong ghi de.
-HANDWRITTEN = ("08 · WebSocket", "09 · gRPC")
-
-
-def sync_v3():
-    """Dich file v2.1 sang collection v3 (de `postman collection run` + review trong git).
-
-    Chi thay cac folder HTTP do script sinh ra; folder WebSocket/gRPC viet tay giu nguyen.
-    """
-    import shutil
-    import subprocess
-    import tempfile
-
-    if shutil.which("postman") is None:
-        print("! khong thay Postman CLI — bo qua ban v3 (chi sinh file v2.1)")
-        return
-    with tempfile.TemporaryDirectory() as tmp:
-        out = pathlib.Path(tmp) / "chat-service"
-        res = subprocess.run(
-            ["postman", "collection", "migrate", str(COLLECTION_FILE), "-o", str(out)],
-            capture_output=True, text=True,
-        )
-        if res.returncode != 0:
-            print("! postman collection migrate loi:", res.stderr.strip()[:200])
-            return
-        V3_DIR.mkdir(parents=True, exist_ok=True)
-        for item in V3_DIR.iterdir():
-            if item.name in HANDWRITTEN:
-                continue
-            shutil.rmtree(item) if item.is_dir() else item.unlink()
-        for item in out.iterdir():
-            dst = V3_DIR / item.name
-            shutil.copytree(item, dst) if item.is_dir() else shutil.copy2(item, dst)
-    print(f"✓ {V3_DIR.relative_to(ROOT)}/ (v3 cho Postman CLI, giu {', '.join(HANDWRITTEN)})")
-
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -852,7 +1131,6 @@ def main():
     n = sum(len(f["item"]) for f in collection["item"])
     print(f"✓ {COLLECTION_FILE.relative_to(ROOT)} ({len(collection['item'])} folder, {n} request)")
     print(f"✓ {ENV_FILE.relative_to(ROOT)}")
-    sync_v3()
 
 
 if __name__ == "__main__":

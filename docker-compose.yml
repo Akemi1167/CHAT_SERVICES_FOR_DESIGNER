@@ -70,7 +70,9 @@ services:
       REDIS_ENABLED: "true"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}   # service app khong doc .env nen phai truyen tay
-      JWT_SECRET: "doi-secret-nay-trong-moi-truong-that"
+      # Lay tu .env de `make token` / `make token-cms` ky cung mot khoa voi app.
+      # Ghi cung o day se de len env_file => token sinh ngoai host bi 401.
+      JWT_SECRET: "${JWT_SECRET:-doi-secret-nay-trong-moi-truong-that}"
       LOG_LEVEL: "debug"
       LOG_FORMAT: "text"
     ports:

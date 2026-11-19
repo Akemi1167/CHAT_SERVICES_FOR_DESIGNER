@@ -6,13 +6,19 @@ Response có dạng `{"data": ..., "meta": {...}}` hoặc `{"error":{"code","mes
 
 ## REST
 
+> `:id` của mọi route hội thoại nhận **cả hai dạng id của cùng một nhóm**: UUID nội bộ
+> hoặc `chatId` của CMS (`wg_<hex>` = `conversations.external_id`). Nhờ vậy `/api/v1`,
+> `/bot/v1` và `/api/client/v1` dùng chung một giá trị id.
+
 | Method | Path | Mô tả |
 |---|---|---|
 | GET | `/healthz` | liveness |
 | GET | `/readyz` | readiness (ping DB) |
+| GET | `/ws?token=` | WebSocket, hình dạng nội bộ (snake_case) |
+| GET | `/api/client/v1/chat/ws?token=` | WebSocket cho FE — **cùng access token CMS với REST**, field camelCase trùng REST (xem [02-websocket.md](02-websocket.md)) |
 | GET | `/api/v1/me` | thông tin user từ token |
 | POST | `/api/v1/conversations` | tạo chat riêng (`type=direct`, 1 `member_user_ids`) hoặc nhóm (`type=group`, có `name`) |
-| GET | `/api/v1/conversations?cursor=&limit=` | danh sách hội thoại + `unread_count` |
+| GET | `/api/v1/conversations?type=&source=&q=&cursor=&limit=` | danh sách hội thoại + `unread_count`. `type`=`direct\|group`, `source`=`cms\|local`, `q` tìm trong tên (không phân biệt hoa thường). Giá trị `type`/`source` lạ → 400 `invalid_type` / `invalid_source` |
 | GET | `/api/v1/conversations/:id` | chi tiết + thành viên |
 | POST | `/api/v1/conversations/:id/members` | thêm thành viên (owner/admin) |
 | DELETE | `/api/v1/conversations/:id/members/:user_id` | xoá thành viên / tự rời nhóm |

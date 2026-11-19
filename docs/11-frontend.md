@@ -104,7 +104,7 @@ truyền cái nào cũng được. Nghĩa là `…/chat/groups/:id/messages` th�
 
 | Việc | (A) | (B) |
 |---|---|---|
-| Danh sách nhóm + `unread_count` | `GET /api/v1/conversations?limit=30` | `GET …/chat/bootstrap` (kèm `me`, `notifications`) |
+| Danh sách nhóm + `unread_count` | `GET /api/v1/conversations?limit=30&type=&source=&q=` | `GET …/chat/bootstrap` (kèm `me`, `notifications`) |
 | Chi tiết + thành viên | `GET /api/v1/conversations/:id` | có sẵn trong `bootstrap` |
 | Tạo nhóm *(chỉ chế độ fake)* | `POST /api/v1/conversations` `{"type":"group","name":"…","member_user_ids":[…]}` | — (CMS tạo) |
 | Thêm thành viên *(chỉ fake)* | `POST /api/v1/conversations/:id/members` | — |
@@ -246,7 +246,8 @@ Upload tệp là service khác: FE upload xong lấy URL rồi gửi URL trong `
 | Ghim / bỏ ghim | `POST /api/v1/messages/:message_id/pin` (`{"pinned":false}` để bỏ) | — |
 | Danh sách ghim | `GET /api/v1/conversations/:id/pinned` | — |
 | Thông tin tệp đính kèm | `GET /api/v1/messages/:message_id/attachments/:attachment_id` (`?redirect=true` → 302) | — |
-| Thông báo | — | `GET …/chat/notifications`, `POST …/chat/notifications/read` |
+| Thông báo | — | `GET …/chat/notifications?unread=true&cursor=&limit=`, `POST …/chat/notifications/read` |
+| Realtime | `ws://…/ws?token=` | `ws://…/api/client/v1/chat/ws?token=` — **cùng access token, field trùng tên với REST** |
 
 ---
 

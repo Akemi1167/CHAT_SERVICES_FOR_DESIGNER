@@ -2,6 +2,8 @@
 package handler
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
@@ -9,16 +11,18 @@ import (
 	"github.com/abc-workspace/chat-service/internal/pkg/apperr"
 	"github.com/abc-workspace/chat-service/internal/pkg/httpresp"
 	"github.com/abc-workspace/chat-service/internal/pkg/paging"
+	"github.com/abc-workspace/chat-service/internal/repository"
 	"github.com/abc-workspace/chat-service/internal/service/conversation"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/middleware"
 )
 
 type ConversationHandler struct {
 	convs *conversation.Service
+	store repository.Store
 }
 
-func NewConversationHandler(convs *conversation.Service) *ConversationHandler {
-	return &ConversationHandler{convs: convs}
+func NewConversationHandler(convs *conversation.Service, store repository.Store) *ConversationHandler {
+	return &ConversationHandler{convs: convs, store: store}
 }
 
 type createConversationReq struct {
@@ -60,8 +64,12 @@ func (h *ConversationHandler) List(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
+	f, err := conversationFilterFromQuery(c)
+	if err != nil {
+		return httpresp.Fail(c, err)
+	}
 	p := pageFromQuery(c)
-	items, info, err := h.convs.List(c.UserContext(), id.UserID, p)
+	items, info, err := h.convs.List(c.UserContext(), id.UserID, f, p)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
@@ -73,7 +81,7 @@ func (h *ConversationHandler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
-	convID, err := paramUUID(c, "id")
+	convID, err := convIDParam(c, h.store)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
@@ -94,7 +102,7 @@ func (h *ConversationHandler) AddMembers(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
-	convID, err := paramUUID(c, "id")
+	convID, err := convIDParam(c, h.store)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
@@ -121,7 +129,7 @@ func (h *ConversationHandler) RemoveMember(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
-	convID, err := paramUUID(c, "id")
+	convID, err := convIDParam(c, h.store)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
@@ -136,6 +144,32 @@ func (h *ConversationHandler) RemoveMember(c *fiber.Ctx) error {
 }
 
 // ---- helper dung chung cho cac handler ----
+
+// convIDParam doc tham so `:id` cua route hoi thoai.
+//
+// Nhan CA HAI dang id cua cung mot nhom:
+//   - UUID noi bo        (vd 47ea176b-1bd0-4740-a878-deaca8a9731d)
+//   - chatId cua CMS     (vd wg_00f2d7a7021bdf59) = conversations.external_id
+//
+// Nho vay /api/v1, /bot/v1 va /api/client/v1 dung chung MOT gia tri id.
+// Dang wg_ ton them 1 query tra external_id; dang UUID khong ton gi.
+func convIDParam(c *fiber.Ctx, store repository.Store) (uuid.UUID, error) {
+	raw := strings.TrimSpace(c.Params("id"))
+	if raw == "" {
+		return uuid.Nil, apperr.Invalid("invalid_id", "Thieu id hoi thoai")
+	}
+	if id, err := uuid.Parse(raw); err == nil {
+		return id, nil
+	}
+	if store == nil {
+		return uuid.Nil, apperr.Invalid("invalid_uuid", "id phai la UUID")
+	}
+	conv, err := store.Conversations().GetByExternalID(c.UserContext(), raw)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return conv.ID, nil
+}
 
 func paramUUID(c *fiber.Ctx, name string) (uuid.UUID, error) {
 	id, err := uuid.Parse(c.Params(name))
@@ -159,4 +193,25 @@ func parseUUIDList(in []string, field string) ([]uuid.UUID, error) {
 
 func pageFromQuery(c *fiber.Ctx) paging.Page {
 	return paging.Normalize(c.Query("cursor"), int32(c.QueryInt("limit", 0)))
+}
+
+// conversationFilterFromQuery doc ?type=&source=&q= . Rong = khong loc.
+// Gia tri la bi tu choi ngay thay vi tra danh sach rong mot cach kho hieu.
+func conversationFilterFromQuery(c *fiber.Ctx) (repository.ConversationFilter, error) {
+	f := repository.ConversationFilter{Query: c.Query("q")}
+
+	if v := c.Query("type"); v != "" {
+		t := domain.ConversationType(v)
+		if !t.Valid() {
+			return f, apperr.Invalid("invalid_type", "type chi nhan: direct | group")
+		}
+		f.Type = t
+	}
+	if v := c.Query("source"); v != "" {
+		if v != domain.SourceCMS && v != domain.SourceLocal {
+			return f, apperr.Invalid("invalid_source", "source chi nhan: cms | local")
+		}
+		f.Source = v
+	}
+	return f, nil
 }

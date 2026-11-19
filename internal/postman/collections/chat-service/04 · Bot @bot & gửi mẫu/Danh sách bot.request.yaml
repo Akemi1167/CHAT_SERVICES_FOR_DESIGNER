@@ -1,8 +1,0 @@
-$kind: http-request
-url: "{{base_url}}/api/v1/bots"
-method: GET
-scripts:
-  - type: afterResponse
-    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
-    language: text/javascript
-order: 1000

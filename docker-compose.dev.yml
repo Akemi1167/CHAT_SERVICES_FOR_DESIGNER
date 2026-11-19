@@ -81,7 +81,9 @@ services:
       POSTGRES_LOG_PRETTY: "${POSTGRES_LOG_PRETTY:-true}" # SQL nhieu dong + mau, chi dev
       REDIS_ENABLED: "true"
       REDIS_ADDR: "redis:6379"
-      JWT_SECRET: "doi-secret-nay-trong-moi-truong-that"
+      # Lay tu .env de `make token` / `make token-cms` ky cung mot khoa voi app.
+      # Ghi cung o day se de len env_file => token sinh ngoai host bi 401.
+      JWT_SECRET: "${JWT_SECRET:-doi-secret-nay-trong-moi-truong-that}"
       LOG_LEVEL: "${LOG_LEVEL:-debug}"
       LOG_FORMAT: "${LOG_FORMAT:-text}"
       # LOG_FILE / LOG_STDOUT lay tu .env (xem docs/08-docker.md muc 3).

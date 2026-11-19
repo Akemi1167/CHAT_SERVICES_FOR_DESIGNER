@@ -56,6 +56,18 @@ type TaskFilter struct {
 	Query              string
 }
 
+// ConversationFilter: moi field rong = khong filter.
+type ConversationFilter struct {
+	Type   domain.ConversationType // group | direct
+	Source string                  // cms | local
+	Query  string                  // tim trong ten nhom, khong phan biet hoa thuong
+}
+
+// NotificationFilter: moi field zero = khong filter.
+type NotificationFilter struct {
+	UnreadOnly bool
+}
+
 type SubmissionFilter struct {
 	BotID          *uuid.UUID
 	ConversationID *uuid.UUID
@@ -86,7 +98,7 @@ type ConversationRepository interface {
 	Create(ctx context.Context, c *domain.Conversation) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Conversation, error)
 	GetByDirectKey(ctx context.Context, key string) (*domain.Conversation, error)
-	ListByUser(ctx context.Context, userID uuid.UUID, p paging.Page) ([]domain.Conversation, error)
+	ListByUser(ctx context.Context, userID uuid.UUID, f ConversationFilter, p paging.Page) ([]domain.Conversation, error)
 	UpdateLastMessage(ctx context.Context, convID, msgID uuid.UUID, at time.Time) error
 
 	AddMembers(ctx context.Context, members []domain.ConversationMember) error
@@ -104,10 +116,14 @@ type ConversationRepository interface {
 
 	// ---- nhom do CMS quan ly ----
 	// ListAll liet ke moi hoi thoai (dung cho Bot API tra cuu / doi chieu dong bo).
-	ListAll(ctx context.Context, p paging.Page) ([]domain.Conversation, error)
+	ListAll(ctx context.Context, f ConversationFilter, p paging.Page) ([]domain.Conversation, error)
 	GetByExternalID(ctx context.Context, externalID string) (*domain.Conversation, error)
 	// UpsertFromCMS tao/cap nhat nhom theo chatId cua CMS (khong doi id noi bo neu da co).
-	UpsertFromCMS(ctx context.Context, c *domain.Conversation) (*domain.Conversation, error)
+	//
+	// changed = ten hoac cms_info CO doi, hoac nhom vua duoc tao. `synced_at`
+	// doi moi chu ky dong bo nen khong tinh la doi — neu tinh thi vong poll 60s
+	// se bao "co thay doi" mai mai.
+	UpsertFromCMS(ctx context.Context, c *domain.Conversation) (conv *domain.Conversation, changed bool, err error)
 	// ReplaceMembers dat danh sach thanh vien = dung danh sach CMS tra
 	// (ai khong con trong danh sach thi bi danh dau left_at).
 	ReplaceMembers(ctx context.Context, convID uuid.UUID, members []domain.ConversationMember) error
@@ -196,7 +212,7 @@ type TeamRepository interface {
 // NotificationRepository: thong bao do CMS day sang.
 type NotificationRepository interface {
 	Create(ctx context.Context, n *domain.Notification) error
-	ListByUser(ctx context.Context, userID uuid.UUID, p paging.Page) ([]domain.Notification, error)
+	ListByUser(ctx context.Context, userID uuid.UUID, f NotificationFilter, p paging.Page) ([]domain.Notification, error)
 	MarkRead(ctx context.Context, userID uuid.UUID, ids []uuid.UUID, all bool) (int64, error)
 	CountUnread(ctx context.Context, userID uuid.UUID) (int64, error)
 }

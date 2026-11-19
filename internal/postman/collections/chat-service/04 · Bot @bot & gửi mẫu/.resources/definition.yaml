@@ -1,3 +1,0 @@
-$kind: collection
-description: Gọi bot bằng `@bot <mã_mẫu> trường=giá_trị`. Bot luôn lưu mẫu vào `bot_submissions`, mẫu `yeu_cau`/`phieu_sua` còn tạo task/phiếu sửa thật.
-order: 5000

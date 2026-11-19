@@ -1,9 +1,0 @@
-$kind: http-request
-description: Danh sách người đã đọc (bảng `message_receipts`).
-url: "{{base_url}}/api/v1/messages/{{message_id}}/readers"
-method: GET
-scripts:
-  - type: afterResponse
-    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
-    language: text/javascript
-order: 11000

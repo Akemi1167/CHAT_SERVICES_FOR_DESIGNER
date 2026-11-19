@@ -121,8 +121,9 @@ func (s *Service) Get(ctx context.Context, actorID, convID uuid.UUID) (*domain.C
 	return s.decorate(ctx, actorID, conv)
 }
 
-func (s *Service) List(ctx context.Context, actorID uuid.UUID, p paging.Page) ([]domain.Conversation, paging.PageInfo, error) {
-	rows, err := s.store.Conversations().ListByUser(ctx, actorID, p)
+// List tra hoi thoai cua actorID. ConversationFilter rong = khong loc gi.
+func (s *Service) List(ctx context.Context, actorID uuid.UUID, f repository.ConversationFilter, p paging.Page) ([]domain.Conversation, paging.PageInfo, error) {
+	rows, err := s.store.Conversations().ListByUser(ctx, actorID, f, p)
 	if err != nil {
 		return nil, paging.PageInfo{}, err
 	}

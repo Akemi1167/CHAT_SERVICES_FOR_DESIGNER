@@ -15,6 +15,7 @@ import (
 	"github.com/abc-workspace/chat-service/internal/service/conversation"
 	"github.com/abc-workspace/chat-service/internal/service/message"
 	"github.com/abc-workspace/chat-service/internal/service/notification"
+	"github.com/abc-workspace/chat-service/internal/transport/httpserver/clientview"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver/middleware"
 )
 
@@ -72,7 +73,7 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 	}
 	ctx := c.UserContext()
 
-	convs, _, err := h.convs.List(ctx, me.ID, paging.Normalize("", 100))
+	convs, _, err := h.convs.List(ctx, me.ID, repository.ConversationFilter{}, paging.Normalize("", 100))
 	if err != nil {
 		return fail(c, err)
 	}
@@ -82,7 +83,7 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 		groups = append(groups, h.groupView(c, &convs[i], me))
 	}
 
-	notifs, _, err := h.notifs.List(ctx, me.ID, paging.Normalize("", 30))
+	notifs, _, err := h.notifs.List(ctx, me.ID, repository.NotificationFilter{}, paging.Normalize("", 30))
 	if err != nil {
 		return fail(c, err)
 	}
@@ -113,7 +114,7 @@ func (h *Handler) RefreshGroups(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, apperr.Internal("cms_unreachable", "Khong hoi duoc CMS, thu lai sau").Wrap(err))
 	}
-	convs, _, err := h.convs.List(c.UserContext(), me.ID, paging.Normalize("", 100))
+	convs, _, err := h.convs.List(c.UserContext(), me.ID, repository.ConversationFilter{}, paging.Normalize("", 100))
 	if err != nil {
 		return fail(c, err)
 	}
@@ -374,6 +375,7 @@ func (h *Handler) ListNotifications(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 	items, info, err := h.notifs.List(c.UserContext(), me.ID,
+		repository.NotificationFilter{UnreadOnly: c.QueryBool("unread", false)},
 		paging.Normalize(c.Query("cursor"), int32(c.QueryInt("limit", 0))))
 	if err != nil {
 		return fail(c, err)
@@ -424,24 +426,7 @@ func (h *Handler) ReadNotifications(c *fiber.Ctx) error {
 // ---------------- view helper ----------------
 
 func userView(u *domain.User) fiber.Map {
-	view := fiber.Map{
-		"id":        u.ID.String(),
-		"actorId":   u.ActorID,
-		"name":      u.DisplayName,
-		"avatarUrl": u.AvatarURL,
-		"role":      u.DisplayRole(),
-		"presence":  string(u.Presence),
-		"openId":    u.OpenID,
-		"email":     u.Email,
-		"username":  u.Username,
-	}
-	if u.CMSUserID != nil {
-		view["cmsUserId"] = *u.CMSUserID
-	}
-	if u.CMSProfile != nil {
-		view["profile"] = map[string]any(u.CMSProfile)
-	}
-	return view
+	return clientview.User(u)
 }
 
 func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.User) fiber.Map {
@@ -480,64 +465,21 @@ func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.
 
 // pageView doi pageInfo sang camelCase cho be mat /api/client/v1 (hop dong voi CMS/FE).
 func pageView(info paging.PageInfo) fiber.Map {
-	return fiber.Map{"nextCursor": info.NextCursor, "hasMore": info.HasMore}
+	return clientview.Page(info.NextCursor, info.HasMore)
 }
 
 func (h *Handler) messageViews(items []domain.Message, actorID string) []fiber.Map {
 	out := make([]fiber.Map, 0, len(items))
 	for i := range items {
-		out = append(out, h.messageView(&items[i], actorID))
+		out = append(out, clientview.Message(&items[i], actorID))
 	}
 	return out
 }
 
 // messageView loc card theo nguoi xem truoc khi tra cho UI.
+// Hinh dang do clientview dung, de REST va WebSocket khong lech ten truong.
 func (h *Handler) messageView(m *domain.Message, actorID string) fiber.Map {
-	if m == nil {
-		return nil
-	}
-	view := fiber.Map{
-		"id":             m.ID.String(),
-		"conversationId": m.ConversationID.String(),
-		"type":           string(m.Type),
-		"senderType":     string(m.SenderType),
-		"text":           m.Content,
-		"createdAt":      m.CreatedAt,
-		"clientMsgId":    m.ClientMsgID,
-	}
-	if m.SenderID != nil {
-		view["senderId"] = m.SenderID.String()
-	}
-	if m.Sender != nil {
-		view["sender"] = userView(m.Sender)
-	}
-	if m.ThreadID != nil {
-		view["threadRootId"] = m.ThreadID.String()
-	}
-	if len(m.Attachments) > 0 {
-		view["attachments"] = m.Attachments
-	}
-	if m.BotSender != nil {
-		view["bot"] = map[string]any(m.BotSender)
-	}
-	if m.Metadata != nil {
-		view["metadata"] = map[string]any(m.Metadata)
-	}
-	if m.ReplyToID != nil {
-		view["replyToId"] = m.ReplyToID.String()
-	}
-	if m.ReplyCount > 0 {
-		view["replyCount"] = m.ReplyCount
-	}
-	if m.ThreadCount > 0 {
-		view["threadCount"] = m.ThreadCount
-	}
-	if m.Card != nil {
-		view["card"] = map[string]any(card.FilterForViewer(m.Card, actorID))
-		view["cardVersion"] = m.CardVersion
-		view["actions"] = card.Actions(m.Card, actorID)
-	}
-	return view
+	return clientview.Message(m, actorID)
 }
 
 func (h *Handler) currentUser(c *fiber.Ctx) (*domain.User, error) {

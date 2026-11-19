@@ -453,7 +453,11 @@ func (h *Handler) GroupMembers(c *fiber.Ctx) error {
 
 // ListGroups liet ke nhom Chat dang giu (chu yeu de doi chieu khi debug dong bo).
 func (h *Handler) ListGroups(c *fiber.Ctx) error {
-	convs, err := h.store.Conversations().ListAll(c.UserContext(), paging.Normalize("", 200))
+	// ?q= tim theo ten, ?source= loc cms|local (rong = tat ca).
+	convs, err := h.store.Conversations().ListAll(c.UserContext(), repository.ConversationFilter{
+		Query:  c.Query("q"),
+		Source: c.Query("source"),
+	}, paging.Normalize("", 200))
 	if err != nil {
 		return fail(c, err)
 	}

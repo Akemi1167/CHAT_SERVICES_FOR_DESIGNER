@@ -1,9 +1,0 @@
-$kind: collection
-name: 08 · WebSocket
-description: |
-  Kênh realtime của FE. Postman không export được request WebSocket ra file v2.1,
-  nên request này chỉ có trong collection v3 (bản trong repo).
-
-  Mở bằng Postman: chọn request `Chat realtime`, bấm **Connect**, rồi gửi các message
-  đã lưu sẵn (tab Message). Giao thức đầy đủ: `docs/02-websocket.md`.
-order: 9000

@@ -15,11 +15,12 @@ import (
 )
 
 type MessageHandler struct {
-	msgs *message.Service
+	msgs  *message.Service
+	store repository.Store
 }
 
-func NewMessageHandler(msgs *message.Service) *MessageHandler {
-	return &MessageHandler{msgs: msgs}
+func NewMessageHandler(msgs *message.Service, store repository.Store) *MessageHandler {
+	return &MessageHandler{msgs: msgs, store: store}
 }
 
 type sendMessageReq struct {
@@ -67,7 +68,7 @@ func (h *MessageHandler) Send(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
-	convID, err := paramUUID(c, "id")
+	convID, err := convIDParam(c, h.store)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
@@ -111,7 +112,7 @@ func (h *MessageHandler) List(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
-	convID, err := paramUUID(c, "id")
+	convID, err := convIDParam(c, h.store)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
@@ -176,7 +177,7 @@ func (h *MessageHandler) MarkRead(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
-	convID, err := paramUUID(c, "id")
+	convID, err := convIDParam(c, h.store)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
@@ -320,7 +321,7 @@ func (h *MessageHandler) ListPinned(c *fiber.Ctx) error {
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}
-	convID, err := paramUUID(c, "id")
+	convID, err := convIDParam(c, h.store)
 	if err != nil {
 		return httpresp.Fail(c, err)
 	}

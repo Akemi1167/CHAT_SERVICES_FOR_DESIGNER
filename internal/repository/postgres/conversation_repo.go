@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,10 +62,11 @@ func (r *ConversationRepo) GetByDirectKey(ctx context.Context, key string) (*dom
 
 // ListByUser tra cac hoi thoai user dang tham gia, moi nhat truoc.
 // Sort key = COALESCE(last_message_at, created_at) de hoi thoai moi tao van len dau.
-func (r *ConversationRepo) ListByUser(ctx context.Context, userID uuid.UUID, p paging.Page) ([]domain.Conversation, error) {
+func (r *ConversationRepo) ListByUser(ctx context.Context, userID uuid.UUID, f repository.ConversationFilter, p paging.Page) ([]domain.Conversation, error) {
 	q := r.db(ctx).Model(&domain.Conversation{}).
 		Joins("JOIN conversation_members cm ON cm.conversation_id = conversations.id AND cm.left_at IS NULL").
 		Where("cm.user_id = ?", userID)
+	q = applyConversationFilter(q, f)
 
 	if p.Cursor.Valid {
 		q = q.Where(
@@ -133,7 +135,7 @@ func (r *ConversationRepo) RemoveMember(ctx context.Context, convID, userID uuid
 
 func (r *ConversationRepo) GetMember(ctx context.Context, convID, userID uuid.UUID) (*domain.ConversationMember, error) {
 	var m domain.ConversationMember
-	err := r.db(ctx).
+	err := r.db(ctx).Debug().
 		First(&m, "conversation_id = ? AND user_id = ? AND left_at IS NULL", convID, userID).Error
 	if err != nil {
 		return nil, mapErr(err, apperr.ErrNotMember)
@@ -217,4 +219,27 @@ func (r *ConversationRepo) ListPeerUserIDs(ctx context.Context, userID uuid.UUID
 		return nil, wrap(err, "conversation.listPeerUserIDs")
 	}
 	return ids, nil
+}
+
+// applyConversationFilter gan dieu kien loc; field rong thi bo qua.
+// Phai goi truoc khi them dieu kien cursor de thu tu WHERE khong doi y nghia.
+func applyConversationFilter(q *gorm.DB, f repository.ConversationFilter) *gorm.DB {
+	if f.Type != "" {
+		q = q.Where("conversations.type = ?", string(f.Type))
+	}
+	if f.Source != "" {
+		q = q.Where("conversations.source = ?", f.Source)
+	}
+	if s := strings.TrimSpace(f.Query); s != "" {
+		// ILIKE: Postgres, khong phan biet hoa thuong. Escape ky tu dai dien
+		// de nguoi dung go "%" khong quet ca bang.
+		q = q.Where("conversations.name ILIKE ?", "%"+escapeLike(s)+"%")
+	}
+	return q
+}
+
+// escapeLike vo hieu hoa %, _ va \\ trong chuoi nguoi dung nhap.
+func escapeLike(s string) string {
+	r := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_")
+	return r.Replace(s)
 }

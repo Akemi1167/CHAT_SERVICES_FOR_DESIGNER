@@ -643,7 +643,10 @@
   // ----------------------------------------------------------------- realtime
   function connectWS() {
     if (S.ws) { try { S.ws.close(); } catch (_) {} }
-    const url = S.base.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(S.token);
+    // WebSocket tren CHINH be mat client: cung access token, cung hinh dang
+    // field (camelCase) voi REST — khong phai doi ten khoa o FE nua.
+    const url = S.base.replace(/^http/, 'ws')
+      + '/api/client/v1/chat/ws?token=' + encodeURIComponent(S.token);
     const ws = new WebSocket(url);
     S.ws = ws;
 

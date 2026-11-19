@@ -1,10 +1,28 @@
 # 02 — Giao thức WebSocket
 
-## 1. Kết nối & xác thực
+Có **hai đường vào**, cùng một hub, cùng một event — chỉ khác hình dạng JSON:
+
+| | `/ws` | `/api/client/v1/chat/ws` |
+|---|---|---|
+| Dùng cho | công cụ nội bộ (`make ws`, Postman, service khác) | **FE theo hợp đồng CMS** |
+| Token | JWT nào service xác thực được | **chính access token của CMS** (giống REST `/api/client/v1/chat/*`) |
+| Envelope | `event_id`, `conversation_id` | `eventId`, `conversationId` |
+| Nội dung tin | `content` | `text` |
+| Thread | `thread_id` | `threadRootId` |
+| `sender` | cả `external_id`, `status`, `synced_at`, `is_designer`… | chỉ trường UI cần |
+| Frame `ready` | `conn_id`, `display_name`, `external_id` | `connId`, `name`, `actorId` |
 
 ```
-GET ws://HOST/ws?token=<JWT>
+GET ws://HOST/ws?token=<JWT>                       # bản gốc, snake_case
+GET ws://HOST/api/client/v1/chat/ws?token=<JWT>    # hợp đồng CMS, camelCase
 ```
+
+FE **không có token riêng cho WebSocket**: dùng lại đúng access token đang gọi REST.
+Nhờ đường thứ hai, field đọc được từ WebSocket trùng tên với field REST trả về — FE
+không phải viết hàm đổi tên khoá.
+
+Hình dạng này do `internal/transport/httpserver/clientview` dựng, và **REST cũng gọi
+đúng package đó**, nên hai đường không thể lệch nhau.
 
 Server nhận token theo thứ tự **`?token=` → `Sec-WebSocket-Protocol` → header `Authorization`**
 (REST thì ngược lại: header trước). Lý do ưu tiên query ở WebSocket: browser không set được header
@@ -143,6 +161,8 @@ Lấy `conversation_id`: tạo nhóm bằng `POST /api/v1/conversations`, hoặc
 và user phải **là thành viên** của hội thoại đó mới gửi/nhận được.
 
 **Cách 2 — Postman.** New → WebSocket → dán `ws://localhost:8080/ws?token=<JWT>` → **Connect**.
+Muốn xem đúng hình dạng FE nhận được thì dùng request *Chat realtime — bề mặt FE (hợp đồng CMS)*
+trong collection (URL `{{ws_client_url}}`, token `{{cms_token}}`).
 Mỗi người mở một tab riêng (Ctrl/Cmd+N), các tab giữ kết nối song song.
 Token phải là JWT thật (chạy `make token SUB=an NAME=An ROLE=order`), không phải chữ `<TOKEN_AN>`.
 

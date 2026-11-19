@@ -1,9 +1,0 @@
-$kind: http-request
-description: "Xếp hạng: người **không OFF** trước, rồi **ít việc đang mở nhất** (`open_tasks`), rồi theo tên. FE hiển thị gợi ý nhưng vẫn cho đổi người."
-url: "{{base_url}}/api/v1/teams/{{team_id}}/suggest"
-method: GET
-scripts:
-  - type: afterResponse
-    code: pm.test("200/201 OK", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));
-    language: text/javascript
-order: 4000

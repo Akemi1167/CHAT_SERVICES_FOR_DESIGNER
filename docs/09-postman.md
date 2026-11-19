@@ -1,17 +1,19 @@
 # 09 — Postman
 
-Thư mục `postman/` có 2 dạng, cùng nội dung REST nhưng dùng cho 2 việc khác nhau:
+Thư mục `internal/postman/` chỉ có **2 file**:
 
-| File / thư mục | Dùng để | Có WebSocket & gRPC? |
-|---|---|---|
-| `internal/postman/chat-service.postman_collection.json` | **Import vào app Postman** (Import → File) | Không — Postman không export được 2 protocol này ra v2.1 |
-| `internal/postman/chat-service.local.postman_environment.json` | Import environment đi kèm | — |
-| `internal/postman/collections/chat-service/` | Chạy bằng **Postman CLI** / review trong Git (định dạng v3) | Có (folder `08 · WebSocket`, `09 · gRPC`) |
-| `postman/environments/Chat Service Local.environment.yaml` | Environment cho CLI | — |
+| File | Dùng để |
+|---|---|
+| `chat-service.postman_collection.json` | Import vào app Postman (Import → File) |
+| `chat-service.local.postman_environment.json` | Environment đi kèm |
 
-Cả hai được sinh từ `scripts/gen_postman.py` (`make postman`): sửa API thì sửa script rồi chạy lại,
-đừng sửa tay file JSON. Script cũng tự dịch sang bản v3 và **giữ nguyên** 2 folder WebSocket/gRPC
-(viết tay, vì v2.1 không chứa được).
+Cả hai sinh từ `scripts/gen_postman.py` (`make postman`). **Sửa API thì sửa script rồi chạy
+lại, đừng sửa tay file JSON** — `make postman-lint` sẽ báo nếu file trên đĩa lệch với script.
+
+> Trước đây còn một cây `internal/postman/collections/` định dạng v3 (mỗi request một file
+> YAML) cho Postman CLI. Đã **xoá**: hai định dạng song song cho cùng một bộ API là trùng lặp.
+> Mẫu WebSocket/gRPC — thứ duy nhất v2.1 không chứa được — giờ nằm trong folder
+> **`10 · WebSocket & gRPC (mẫu frame)`** của chính file JSON, đọc ở tab Documentation.
 
 ## 1. Import và dùng (3 bước)
 
@@ -24,27 +26,74 @@ Cả hai được sinh từ `scripts/gen_postman.py` (`make postman`): sửa API
 make token SUB=user-001 NAME="Nguyen Van A" ROLE=designer
 ```
 
-Chạy lần lượt folder `00` → `06`. Mỗi request tự lưu id cần thiết vào collection variable
-(`user_id`, `conversation_id`, `message_id`, `thread_id`, `team_id`, `task_id`, `task_code`,
-`assignment_id`, `revision_id`) nên folder sau dùng được ngay, không phải copy id bằng tay.
+**Mới dùng thì chạy folder `FLOW` trước** — 16 bước đánh số theo đúng thứ tự thật của hệ
+thống (xem mục 3). Muốn tra cứu từng endpoint thì dùng các folder `00` → `09`.
+
+Mỗi request tự lưu id cần thiết vào collection variable (`user_id`, `group_id`, `message_id`,
+`thread_id`, `team_id`, `task_id`, `task_code`, `assignment_id`, `revision_id`) nên bước sau
+dùng được ngay, không phải copy id bằng tay.
 
 Muốn thử phân công 2 người (chia task, đổi người phụ trách, chat riêng): tạo token thứ 2
 (`make token SUB=user-002 ROLE=order`), gọi `GET /api/v1/me` bằng token đó, rồi dán `user_id`
 nhận được vào biến `user_id_2`.
 
-## 2. Nội dung collection (56 request / 9 folder)
+## 2. Ba định danh dễ nhầm
+
+Trước đây collection có `conversation_id`, `chat_id` và `team_id`. Hai cái đầu là **cùng một
+nhóm chat**, chỉ khác dạng id — đã gộp thành **`group_id`**:
+
+| Biến | Là gì | Dạng giá trị | Dùng ở |
+|---|---|---|---|
+| `group_id` | **nhóm chat** | UUID nội bộ **hoặc** `wg_<hex>` | cả 3 bề mặt: `/api/v1`, `/bot/v1`, `/api/client/v1` |
+| `cms_chat_id` | chatId mà **CMS** muốn tạo | bắt buộc `wg_<hex>` | chỉ `PUT /bot/v1/groups/:id` |
+| `team_id` | **tổ** của module task nội bộ | UUID | `/api/v1/teams/*` |
+
+- `group_id` dùng được ở mọi nơi vì route hội thoại của `/api/v1` nhận **cả hai dạng id**
+  (`convIDParam` trong `internal/transport/httpserver/handler/conversation.go`): là UUID thì
+  dùng luôn, không phải UUID thì tra `conversations.external_id`.
+- `cms_chat_id` phải tách riêng vì tham số URL của `PUT /bot/v1/groups/:id` **chính là** chatId
+  cần tạo — truyền UUID vào sẽ đẻ ra một nhóm có `external_id` là chuỗi UUID đó.
+- `team_id` là **thực thể khác hẳn** (bảng `teams`), không gộp được. Cũng đừng nhầm với `teamId`
+  trong body `POST /forms/create_task/submit` — đó là **tổ của CMS**, dạng số (`"27"`), Chat
+  chuyển nguyên sang CMS chứ không diễn giải.
+
+Hệ quả: `GET /api/v1/conversations/<chuỗi-bất-kỳ>` không còn trả `400 invalid_uuid` mà trả
+`404 conversation_not_found` — vì chuỗi đó giờ được hiểu là một `external_id` có thể có.
+
+## 3. Folder FLOW — chạy từ trên xuống để hiểu luồng
+
+16 bước đánh số; hai bước **cùng cấp** thì `1.1`, `1.2`…
+
+| Giai đoạn | Bước |
+|---|---|
+| 1 · chuẩn bị | `1.1` healthz · `1.2` `/me` (lưu `user_id`) |
+| 2 · nhóm & thành viên | `2.1` tạo nhóm (lưu `group_id`) · `2.2` CMS đẩy nhóm sang · `2.3` xem thành viên (lưu `actor_id`) · `2.4` bootstrap của FE |
+| 3 · tin nhắn | `3.1` gửi · `3.2` trả lời thread · `3.3` đọc lịch sử · `3.4` đánh dấu đã đọc |
+| 4 · card & form | `4.1` CMS gửi card · `4.2` FE gửi form sang CMS |
+| 5 · thông báo | `5.1` CMS tạo · `5.2` xem chưa đọc · `5.3` đánh dấu đã đọc |
+| 6 · dọn dẹp | `6.1` xoá tin nhắn |
+
+**Dừng ở một bước để xem kỹ**: đặt biến `stop_at` = số bước rồi Run collection.
+
+```bash
+make postman-flow TOKEN=$(make -s token SUB=demo-an) KEY=$CHAT_SERVICE_KEY STOP=2.3
+# chạy 1.1 → 2.3 rồi dừng, in: "DUNG tai buoc 2.3 (stop_at). Doi stop_at de di tiep."
+```
+
+Để trống `STOP` thì chạy hết 16 bước. Bước `2.2` cố ý **không** đổi `group_id`: nhóm CMS đẩy
+sang chỉ có thành viên do CMS khai, token của bạn không ở trong đó nên các bước `3.x` sẽ 403.
+
+## 4. Nội dung collection (78 request / 9 folder)
 
 | Folder | Nội dung |
 |---|---|
+| `FLOW` | 16 bước đánh số, chạy tuần tự — xem mục 3 |
 | `00 · Bắt đầu` | healthz, readyz, `/me` (lưu `user_id`) |
 | `01 · Hội thoại` | tạo nhóm / chat riêng, danh sách, chi tiết, thêm thành viên |
 | `02 · Tin nhắn` | gửi text / ảnh / trong thread, lịch sử, tìm kiếm, đã đọc, ai đã xem, xoá |
-| `03 · Tổ & gợi ý` | danh sách tổ, thêm thành viên, **gợi ý người phụ trách** |
 | `04 · Bot @bot & gửi mẫu` | schema mẫu, `@bot` help, `@bot yeu_cau`, submit mẫu từ form, mẫu đã lưu |
-| `05 · Task` | tạo, danh sách, **chờ nhận**, nhận (định mức+số lượng), tạm dừng/tiếp tục/treo/hoàn thành, chia task, đổi người, điều chỉnh, lịch sử |
-| `06 · Phiếu sửa` | tạo phiếu, danh sách, hoàn thành từng phiếu, hoàn thành card |
-| `07 · Lỗi & quyền` | 401 thiếu token, 400 UUID sai, 403 không phải thành viên, 404 route sai, 400 tin nhắn rỗng |
-| `99 · Dọn dẹp` | huỷ task, rời nhóm, bỏ khỏi tổ (chạy sau cùng) |
+| `07 · Lỗi & quyền` | 401 thiếu token, 404 id nhóm không có, 403 không phải thành viên, 404 route sai, 400 tin nhắn rỗng |
+| `99 · Dọn dẹp` | rời nhóm / xoá thành viên (chạy sau cùng) |
 | `08 · CMS → Chat (Bot API)` | CMS gọi sang Chat: resolve user, gửi/sửa card, thread, thông báo, đẩy nhóm |
 | `09 · API cho FE (hợp đồng CMS)` | `/api/client/v1/chat/*`: bootstrap, tin nhắn, bấm nút card, gửi form, thông báo |
 
@@ -52,75 +101,69 @@ Mỗi folder cần cấu hình khác nhau:
 
 | Folder | Cần gì |
 |---|---|
-| `00`–`04`, `07`, `99` | chạy với cấu hình mặc định |
-| `05`, `06` (task nội bộ) | `TASK_ENGINE_ENABLED=true` (stack dev đã bật sẵn) |
-| `08`, `09` (CMS) | `CMS_ENABLED=true` + biến `service_key`, `cms_token`, `chat_id` — xem [10-cms-integration.md](10-cms-integration.md) |
+| `FLOW`, `00`–`04`, `07`, `99` | chạy với cấu hình mặc định |
+| `08`, `09` (CMS) | `CMS_ENABLED=true` + biến `service_key`, `cms_token`, `group_id` — xem [10-cms-integration.md](10-cms-integration.md) |
 
 ```bash
+make postman-flow TOKEN=$(make -s token) KEY=$CHAT_SERVICE_KEY [STOP=2.3]   # folder FLOW
 make postman-run TOKEN=$(make -s token)                 # tất cả trừ folder CMS
 make postman-run-cms TOKEN=<access token CMS> KEY=<CHAT_SERVICE_KEY> CHAT_ID=wg_...
 ```
 
+### Đã lược bỏ: module task nội bộ
+
+27 request của `03 · Tổ`, `05 · Task`, `06 · Phiếu sửa` đã **xoá khỏi collection và khỏi
+`scripts/gen_postman.py`**. Lý do: các route `/api/v1/tasks/*`, `/api/v1/teams/*`,
+`/api/v1/revisions/*` chỉ được đăng ký khi `TASK_ENGINE_ENABLED=true` (`router.go`
+`registerTaskRoutes`), còn khi tích hợp CMS thì đơn/task do CMS sở hữu — `.env` để `false`
+nên chúng luôn trả `404 route_not_found`.
+
+Code Go của module task **vẫn còn** (xem [07-task.md](07-task.md)); chỉ phần Postman bị bỏ.
+Nếu bật lại `TASK_ENGINE_ENABLED=true` thì phải viết lại các request đó.
+
+Các biến chỉ dùng cho module này cũng đã bỏ: `team_id`, `task_id`, `task_code`,
+`assignment_id`, `revision_id`.
+
 Mỗi request có mô tả (ràng buộc, mã lỗi có thể gặp) và test script kiểm tra status + trường quan trọng.
 
-## 3. Chạy tự động (CI)
+## 5. Chạy tự động (CI)
 
 ```bash
 make postman-run TOKEN=$(make -s token) USER2=<uuid-nguoi-thu-2>
 ```
 
-Kết quả lần chạy mới nhất trên stack dev: **56 request, 82 assertion, 0 fail**.
+Kết quả lần chạy mới nhất trên stack dev: FLOW **17/17**, folder thường **50/50**,
+folder CMS **37/37** — 0 fail.
 
-Bản v3 chạy được cả WebSocket/gRPC nhưng Postman CLI **yêu cầu đăng nhập** khi collection có
-request gRPC (`postman login`), nên lệnh trên dùng file v2.1 (REST) để chạy offline.
-Lint bản v3: `make postman-lint`.
+`make postman-lint` kiểm file JSON: request trùng tên, thiếu method/URL, body không phải JSON
+hợp lệ, và **file trên đĩa lệch với script sinh ra nó** (sửa tay trong app rồi quên cập nhật
+script là lỗi hay gặp nhất).
 
-## 4. WebSocket & gRPC trong app Postman
+## 6. WebSocket & gRPC trong app Postman
 
-Postman không export 2 loại này ra file v2.1
+Định dạng v2.1 không chứa được 2 protocol này
 ([tài liệu Postman](https://learning.postman.com/docs/getting-started/importing-and-exporting/exporting-data)),
-nên sau khi import bạn tự tạo (mỗi cái 1 phút):
+nên mẫu nằm trong **mô tả** của folder `10 · WebSocket & gRPC (mẫu frame)`: mở folder trong
+Postman → tab **Documentation** → copy khối JSON cần dùng.
 
-**WebSocket**: New → WebSocket → URL `ws://localhost:8080/ws?token=<JWT>` → Connect.
-Dán frame để gửi, ví dụ:
+Trong đó có sẵn:
 
-```json
-{"id":"1","type":"message.send","payload":{"conversation_id":"<id>","content":"hello","client_msg_id":"c1"}}
-```
+- **2 URL WebSocket** và khác nhau ở đâu (`/api/client/v1/chat/ws` cho FE, `/ws` cho công cụ nội bộ)
+- **8 frame gửi lên** có body đầy đủ: `ping`, `message.send` (text / thread / kèm tệp),
+  `message.read`, `typing`, `message.delete`, `template.send`
+- **frame nhận về**: `ready`, `ack`, `message`, và bảng 7 event còn lại
+- **bảng 13 trường hợp hay gặp**: thiếu token, token hết hạn, không phải thành viên,
+  `clientMsgId` trùng, JSON sai, frame lạ, ping/pong timeout, mất kết nối…
+- **5 message mẫu cho gRPC** + cách gắn metadata `authorization`
 
-Các frame khác (`template.send`, `message.read`, `typing`, `message.delete`, `ping`) đã viết sẵn trong
-`postman/collections/chat-service/08 · WebSocket/.resources/ws-chat.resources/messages/` — copy nội dung
-`content` sang Postman là dùng được. Giao thức đầy đủ: [02-websocket.md](02-websocket.md).
+Giao thức đầy đủ: [02-websocket.md](02-websocket.md).
 
-**gRPC**: New → gRPC → URL `localhost:9090` → Postman tự lấy service qua **server reflection**
-(`GRPC_REFLECTION=true`) → chọn method → tab **Metadata** thêm `authorization: Bearer <JWT>`.
-Message mẫu cho 9 RPC hay dùng nằm trong `postman/collections/chat-service/09 · gRPC/*.request.yaml`.
-Nếu prod tắt reflection thì nạp proto từ `api/proto/chat/v1/`.
-
-## 5. Khi API đổi
+## 7. Khi API đổi
 
 1. Sửa `scripts/gen_postman.py` (thêm/sửa request, mô tả, assertion).
-2. `make postman` → sinh lại cả 2 dạng.
+2. `make postman` → sinh lại 2 file JSON.
 3. `make postman-lint` và `make postman-run TOKEN=...` để chắc chắn còn chạy đúng.
 
 
 
 ---
-
-## Hai định dạng, dùng khi nào
-
-| Định dạng | Đường dẫn | Dùng để |
-|---|---|---|
-| v2.1 (JSON) | `internal/postman/chat-service.postman_collection.json` | **Import vào app Postman** |
-| v3 (YAML) | `internal/postman/collections/chat-service/` | `postman collection run` (CLI) + review từng file trong Git |
-
-`scripts/gen_postman.py` sinh file JSON trước, rồi `postman collection migrate` dịch sang v3.
-Hai folder **`08 · WebSocket`** và **`09 · gRPC`** viết tay và **không bị ghi đè** — định dạng v2.1
-không chứa được hai protocol này, nên chúng chỉ tồn tại ở bản v3.
-
-`make postman-lint` chạy hai bước:
-
-1. `postman collection lint` trên cây v3 — bắt lỗi cấu trúc của từng request.
-2. `gen_postman.py --check` trên file JSON — bắt request trùng tên, thiếu method/URL, body không
-   phải JSON hợp lệ, và **file trên đĩa lệch với script sinh ra nó** (sửa tay trong app rồi quên
-   cập nhật script là lỗi hay gặp nhất).

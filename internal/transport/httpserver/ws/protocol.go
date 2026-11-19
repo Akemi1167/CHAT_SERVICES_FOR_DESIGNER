@@ -55,16 +55,50 @@ type errorPayload struct {
 }
 
 // ---- payload cua tung loai frame ----
+//
+// Moi payload nhan CA HAI cach dat ten khoa:
+//
+//	snake_case  conversation_id, client_msg_id, thread_id, reply_to_id, content
+//	camelCase   conversationId,  clientMsgId,  threadRootId, replyToId,  text
+//
+// Ly do: /ws (cong cu noi bo) dung snake_case, con /api/client/v1/chat/ws dung
+// camelCase giong REST cua be mat do. Mot struct nhan ca hai de FE khong phai
+// doi ten khoa khi chuyen duong, va de mau cu khong vo.
+// Khoa camelCase thang khi ca hai cung xuat hien.
 
 type sendMessagePayload struct {
-	ConversationID string              `json:"conversation_id"`
-	Type           string              `json:"type"`
-	Content        string              `json:"content"`
-	ThreadID       string              `json:"thread_id"`
-	ReplyToID      string              `json:"reply_to_id"`
-	Metadata       domain.JSONMap      `json:"metadata"`
-	Attachments    []attachmentPayload `json:"attachments"`
-	ClientMsgID    string              `json:"client_msg_id"`
+	ConversationID  string              `json:"conversation_id"`
+	ConversationID2 string              `json:"conversationId"`
+	GroupID         string              `json:"groupId"`
+	Type            string              `json:"type"`
+	Content         string              `json:"content"`
+	Text            string              `json:"text"`
+	ThreadID        string              `json:"thread_id"`
+	ThreadRootID    string              `json:"threadRootId"`
+	ReplyToID       string              `json:"reply_to_id"`
+	ReplyToID2      string              `json:"replyToId"`
+	Metadata        domain.JSONMap      `json:"metadata"`
+	Attachments     []attachmentPayload `json:"attachments"`
+	ClientMsgID     string              `json:"client_msg_id"`
+	ClientMsgID2    string              `json:"clientMsgId"`
+}
+
+// normalize gop 2 cach dat ten ve 1 field duy nhat.
+func (p *sendMessagePayload) normalize() {
+	p.ConversationID = firstNonEmpty(p.GroupID, p.ConversationID2, p.ConversationID)
+	p.Content = firstNonEmpty(p.Text, p.Content)
+	p.ThreadID = firstNonEmpty(p.ThreadRootID, p.ThreadID)
+	p.ReplyToID = firstNonEmpty(p.ReplyToID2, p.ReplyToID)
+	p.ClientMsgID = firstNonEmpty(p.ClientMsgID2, p.ClientMsgID)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 type attachmentPayload struct {
@@ -79,25 +113,54 @@ type attachmentPayload struct {
 }
 
 type templateSendPayload struct {
-	ConversationID string         `json:"conversation_id"`
-	ThreadID       string         `json:"thread_id"`
-	BotSlug        string         `json:"bot_slug"`
-	TemplateCode   string         `json:"template_code"`
-	Payload        domain.JSONMap `json:"payload"`
-	RawText        string         `json:"raw_text"`
-	ClientMsgID    string         `json:"client_msg_id"`
+	ConversationID  string         `json:"conversation_id"`
+	ConversationID2 string         `json:"conversationId"`
+	GroupID         string         `json:"groupId"`
+	ThreadID        string         `json:"thread_id"`
+	ThreadRootID    string         `json:"threadRootId"`
+	BotSlug         string         `json:"bot_slug"`
+	TemplateCode    string         `json:"template_code"`
+	Payload         domain.JSONMap `json:"payload"`
+	RawText         string         `json:"raw_text"`
+	ClientMsgID     string         `json:"client_msg_id"`
+	ClientMsgID2    string         `json:"clientMsgId"`
+}
+
+func (p *templateSendPayload) normalize() {
+	p.ConversationID = firstNonEmpty(p.GroupID, p.ConversationID2, p.ConversationID)
+	p.ThreadID = firstNonEmpty(p.ThreadRootID, p.ThreadID)
+	p.ClientMsgID = firstNonEmpty(p.ClientMsgID2, p.ClientMsgID)
 }
 
 type markReadPayload struct {
-	ConversationID string `json:"conversation_id"`
-	MessageID      string `json:"message_id"`
+	ConversationID  string `json:"conversation_id"`
+	ConversationID2 string `json:"conversationId"`
+	GroupID         string `json:"groupId"`
+	MessageID       string `json:"message_id"`
+	MessageID2      string `json:"messageId"`
+}
+
+func (p *markReadPayload) normalize() {
+	p.ConversationID = firstNonEmpty(p.GroupID, p.ConversationID2, p.ConversationID)
+	p.MessageID = firstNonEmpty(p.MessageID2, p.MessageID)
 }
 
 type deletePayload struct {
-	MessageID string `json:"message_id"`
+	MessageID  string `json:"message_id"`
+	MessageID2 string `json:"messageId"`
+}
+
+func (p *deletePayload) normalize() {
+	p.MessageID = firstNonEmpty(p.MessageID2, p.MessageID)
 }
 
 type typingPayload struct {
-	ConversationID string `json:"conversation_id"`
-	Typing         bool   `json:"typing"`
+	ConversationID  string `json:"conversation_id"`
+	ConversationID2 string `json:"conversationId"`
+	GroupID         string `json:"groupId"`
+	Typing          bool   `json:"typing"`
+}
+
+func (p *typingPayload) normalize() {
+	p.ConversationID = firstNonEmpty(p.GroupID, p.ConversationID2, p.ConversationID)
 }

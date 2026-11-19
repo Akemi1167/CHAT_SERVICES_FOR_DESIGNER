@@ -52,6 +52,8 @@ func (b *RedisBroker) Subscribe(ctx context.Context) (<-chan Event, error) {
 				slog.Error("realtime: unmarshal event", "err", err)
 				continue
 			}
+			// JSON lam mat kieu cua Payload -> doc lai theo ev.Type.
+			ev.RestorePayload()
 			select {
 			case out <- ev:
 			case <-ctx.Done():

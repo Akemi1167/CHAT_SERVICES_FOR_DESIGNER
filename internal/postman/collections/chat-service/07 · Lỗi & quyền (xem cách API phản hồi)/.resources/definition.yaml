@@ -1,3 +1,0 @@
-$kind: collection
-description: Mọi lỗi trả về `{"error":{"code","message","details"}}` với `code` ổn định để FE bắt.
-order: 8000

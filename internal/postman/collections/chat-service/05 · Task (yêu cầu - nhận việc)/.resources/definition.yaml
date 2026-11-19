@@ -1,9 +1,0 @@
-$kind: collection
-name: 05 · Task (yêu cầu / nhận việc)
-description: |-
-  Vòng đời card của từng người. Trạng thái task tổng được **suy ra** từ các card.
-
-  Chạy theo thứ tự: Tạo → Danh sách (lưu `task_id`) → Nhận → Tạm dừng → Tiếp tục → Hoàn thành.
-
-  ⚠️ Cần `TASK_ENGINE_ENABLED=true`. Khi tích hợp CMS thì tắt module này (CMS sở hữu đơn/task) và folder này sẽ trả 404 — dùng `make postman-run-task` để chạy riêng.
-order: 6000

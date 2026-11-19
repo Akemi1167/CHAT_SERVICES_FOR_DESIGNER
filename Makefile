@@ -161,7 +161,7 @@ mforce: migrate-force     ## = migrate-force: make mforce version=1
 
 # ---------- postman ----------
 .PHONY: postman
-postman: ## Sinh lai Postman collection (file v2.1 de import + ban v3 cho CLI)
+postman: ## Sinh lai 2 file Postman JSON (collection + environment)
 	python3 scripts/gen_postman.py
 
 .PHONY: postman-run
@@ -173,15 +173,6 @@ postman-run: ## Chay cac folder luon dung duoc (chat, tin nhan, loi): make postm
 	  -i "00 · Bắt đầu" -i "01 · Hội thoại" -i "02 · Tin nhắn" \
 	  -i "07 · Lỗi & quyền (xem cách API phản hồi)" -i "99 · Dọn dẹp (chạy cuối, tuỳ ý)"
 
-.PHONY: postman-run-task
-postman-run-task: ## Chay folder task noi bo (can TASK_ENGINE_ENABLED=true): make postman-run-task TOKEN=<jwt>
-	@test -n "$(TOKEN)" || (echo "Thieu TOKEN"; exit 1)
-	postman collection run internal/postman/chat-service.postman_collection.json \
-	  -e internal/postman/chat-service.local.postman_environment.json \
-	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" --env-var "token=$(TOKEN)" \
-	  -i "00 · Bắt đầu" -i "01 · Hội thoại" -i "03 · Tổ & gợi ý người phụ trách" \
-	  -i "04 · Bot @bot & gửi mẫu" -i "05 · Task (yêu cầu / nhận việc)" -i "06 · Phiếu sửa"
-
 .PHONY: postman-run-cms
 postman-run-cms: ## Chay 2 folder CMS (can CMS_ENABLED=true): make postman-run-cms TOKEN=<cms jwt> KEY=<service key> CHAT_ID=wg_...
 	@test -n "$(TOKEN)" || (echo "Thieu TOKEN (access token do CMS phat)"; exit 1)
@@ -190,12 +181,22 @@ postman-run-cms: ## Chay 2 folder CMS (can CMS_ENABLED=true): make postman-run-c
 	  -e internal/postman/chat-service.local.postman_environment.json \
 	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" \
 	  --env-var "token=$(TOKEN)" --env-var "cms_token=$(TOKEN)" \
-	  --env-var "service_key=$(KEY)" --env-var "chat_id=$(CHAT_ID)" \
+	  --env-var "service_key=$(KEY)" \
+	  --env-var "group_id=$(CHAT_ID)" --env-var "cms_chat_id=$(CHAT_ID)" \
 	  -i "08 · CMS → Chat (Bot API)" -i "09 · API cho FE (hợp đồng CMS)"
 
+.PHONY: postman-flow
+postman-flow: ## Chay folder FLOW theo thu tu: make postman-flow TOKEN=<jwt> [KEY=<service key>] [STOP=2.3]
+	@test -n "$(TOKEN)" || (echo 'Thieu TOKEN (vd: make postman-flow TOKEN=$$(make -s token SUB=demo-an))'; exit 1)
+	postman collection run internal/postman/chat-service.postman_collection.json \
+	  -e internal/postman/chat-service.local.postman_environment.json \
+	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" \
+	  --env-var "token=$(TOKEN)" --env-var "cms_token=$(or $(CMS_TOKEN),$(TOKEN))" \
+	  --env-var "service_key=$(KEY)" --env-var "stop_at=$(STOP)" \
+	  -i "FLOW · Chạy từ trên xuống để hiểu luồng"
+
 .PHONY: postman-lint
-postman-lint: ## Lint ban v3 (gom ca request WebSocket/gRPC)
-	postman collection lint "internal/postman/collections/chat-service"
+postman-lint: ## Kiem tra file collection JSON (cau truc + khong lech voi generator)
 	python3 scripts/gen_postman.py --check
 
 # ---------- docker ----------

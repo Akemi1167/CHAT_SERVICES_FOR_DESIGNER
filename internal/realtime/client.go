@@ -12,6 +12,11 @@ type Client struct {
 	ID     string
 	UserID uuid.UUID
 
+	// Dialect quyet dinh hinh dang JSON cua frame day xuong ket noi nay.
+	// ActorID (u_68) chi can cho DialectClient, de loc card theo nguoi xem.
+	Dialect Dialect
+	ActorID string
+
 	send      chan []byte
 	closed    chan struct{}
 	closeOnce sync.Once
@@ -22,10 +27,11 @@ func NewClient(userID uuid.UUID, buffer int) *Client {
 		buffer = 256
 	}
 	return &Client{
-		ID:     uuid.NewString(),
-		UserID: userID,
-		send:   make(chan []byte, buffer),
-		closed: make(chan struct{}),
+		ID:      uuid.NewString(),
+		UserID:  userID,
+		Dialect: DialectInternal,
+		send:    make(chan []byte, buffer),
+		closed:  make(chan struct{}),
 	}
 }
 

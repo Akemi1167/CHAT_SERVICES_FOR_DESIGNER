@@ -60,6 +60,18 @@ Lần đầu gặp `cmsUserId`: Chat tạo user local, sinh `actor_id = u_<cmsUs
 
 - Poll `GET /workspace/groups` lúc khởi động + mỗi `CMS_SYNC_INTERVAL`.
 - CMS đẩy ngay qua `PUT /bot/v1/groups/:chatId`.
+
+**Khi nào Chat bắn event `reload`**: chỉ khi có thay đổi thật, so sánh danh sách thành viên
+trước/sau (`cmssync.diff`) và tên/`cms_info` (`UpsertFromCMS` trả thêm `changed`):
+
+| Thay đổi | `reason` | Gửi cho ai |
+|---|---|---|
+| thêm / bớt thành viên | `group.members_changed` | thành viên hiện tại **∪** người vừa bị gỡ |
+| đổi tên nhóm hoặc `cms_info` | `group.updated` | thành viên hiện tại |
+| không đổi gì | *(không bắn)* | — |
+
+`synced_at` đổi mỗi chu kỳ đồng bộ nên **không** tính là thay đổi — nếu tính thì vòng poll
+60 giây sẽ bắn `reload` cho cả nhóm mãi mãi dù chẳng có gì mới.
 - `conversations.external_id` = `chatId` (`wg_…`), `source = cms`; mọi API nhận **cả `wg_…` lẫn UUID nội bộ**.
 - `ReplaceMembers` đặt danh sách thành viên **đúng bằng** danh sách CMS trả: ai không còn trong danh
   sách bị `left_at` → mất quyền xem nhóm ngay (đã kiểm chứng: trả `403 NOT_CONVERSATION_MEMBER`).
@@ -94,8 +106,10 @@ Chữ ký: `hex(HMAC_SHA256(CHAT_SERVICE_KEY, "<timestamp>.<rawBody>"))` tính t
 `POST /bot/v1/users/resolve` · `POST /bot/v1/messages` · `PATCH /bot/v1/messages/:id` ·
 `POST /bot/v1/messages/:id/thread` · `POST /bot/v1/messages/:id/pin` · `POST /bot/v1/notifications` ·
 `PUT /bot/v1/presence` · `PUT /bot/v1/groups/:id` · `GET /bot/v1/groups/:id/members` ·
-`GET /bot/v1/attachments/:id` · `GET /bot/v1/groups` · `GET /bot/v1/groups/:id` ·
+`GET /bot/v1/attachments/:id` · `GET /bot/v1/groups?q=&source=` · `GET /bot/v1/groups/:id` ·
 `GET /bot/v1/users/:id` · `POST /bot/v1/users/batch`
+
+Realtime cho FE: `GET /api/client/v1/chat/ws?token=<access token CMS>` — đúng mục 9 của spec ("SSE hoặc WebSocket"), payload cùng hình dạng với REST của bề mặt này.
 
 → **Đủ toàn bộ mục 7 của `CHAT_SERVICE_INTEGRATION.md`, kể cả 7.7 (phần CMS "chưa dùng").**
 `GET /users/:id` nhận cả `actorId` (`u_6`), `openId` hay UUID nội bộ; `POST /users/batch` nhận

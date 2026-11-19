@@ -1,3 +1,0 @@
-$kind: collection
-description: Chat nhóm và chat riêng. `Tạo nhóm` lưu `conversation_id` — mọi folder sau đều dùng biến này.
-order: 2000

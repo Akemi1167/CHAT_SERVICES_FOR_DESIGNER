@@ -1,9 +1,0 @@
-$kind: http-request
-description: Người gửi hoặc owner/admin nhóm. Xoá **tin trả lời** vừa tạo ở trên, không xoá `message_id` để các folder sau còn dùng được.
-url: "{{base_url}}/api/v1/messages/{{reply_message_id}}"
-method: DELETE
-scripts:
-  - type: afterResponse
-    code: pm.test("200 hoặc 403", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));
-    language: text/javascript
-order: 15000

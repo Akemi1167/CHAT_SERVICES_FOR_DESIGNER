@@ -1,6 +1,0 @@
-$kind: collection
-description: |-
-  Kiểm tra service sống và lấy `user_id` từ token. **Chạy `Me` trước tiên** — các request sau dùng `{{user_id}}`.
-
-  Lấy token dev: `make token SUB=user-001 NAME="Nguyen Van A" ROLE=designer` rồi dán vào biến `token` của environment.
-order: 1000

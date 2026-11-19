@@ -116,7 +116,7 @@ func (s *Service) applyGroup(ctx context.Context, g cms.Group) (*domain.Conversa
 	}
 
 	chatID := g.ChatID
-	conv, err := s.store.Conversations().UpsertFromCMS(ctx, &domain.Conversation{
+	conv, metaChanged, err := s.store.Conversations().UpsertFromCMS(ctx, &domain.Conversation{
 		ExternalID: &chatID,
 		Type:       domain.ConversationGroup,
 		Name:       g.Name,
@@ -144,10 +144,46 @@ func (s *Service) applyGroup(ctx context.Context, g cms.Group) (*domain.Conversa
 	for _, m := range members {
 		after = append(after, m.UserID)
 	}
-	// Ai vua vao hoac vua bi go deu can tai lai danh sach nhom.
-	s.publishReload(ctx, conv, union(before, after))
+
+	// Chi ban `reload` khi CO thay doi that. Truoc day ban vo dieu kien nen moi
+	// chu ky dong bo (60s) ca nhom deu nhan 1 frame reload va tai lai danh sach
+	// nhom ma khong co gi moi.
+	added, removed := diff(before, after)
+	switch {
+	case len(added) > 0 || len(removed) > 0:
+		// Ai vua vao hoac vua bi go deu can tai lai; nguoi dang o trong nhom
+		// cung can cap nhat danh sach thanh vien.
+		s.log.Info("thanh vien nhom doi", "chat_id", chatID,
+			"them", len(added), "bo", len(removed))
+		s.publishReload(ctx, conv, union(before, after), "group.members_changed")
+	case metaChanged:
+		// Doi ten nhom / cms_info: chi thanh vien hien tai can biet.
+		s.log.Info("thong tin nhom doi", "chat_id", chatID)
+		s.publishReload(ctx, conv, after, "group.updated")
+	}
 
 	return conv, nil
+}
+
+// diff tra ve id co trong after ma khong co trong before (them), va nguoc lai (bo).
+func diff(before, after []uuid.UUID) (added, removed []uuid.UUID) {
+	inBefore := make(map[uuid.UUID]struct{}, len(before))
+	for _, id := range before {
+		inBefore[id] = struct{}{}
+	}
+	inAfter := make(map[uuid.UUID]struct{}, len(after))
+	for _, id := range after {
+		inAfter[id] = struct{}{}
+		if _, ok := inBefore[id]; !ok {
+			added = append(added, id)
+		}
+	}
+	for _, id := range before {
+		if _, ok := inAfter[id]; !ok {
+			removed = append(removed, id)
+		}
+	}
+	return added, removed
 }
 
 // resolveMembers doi danh sach thanh vien CMS sang thanh vien Chat (tao user neu chua co).
@@ -382,7 +418,7 @@ func (s *Service) systemUserID(ctx context.Context) (uuid.UUID, error) {
 	return s.systemID, nil
 }
 
-func (s *Service) publishReload(ctx context.Context, conv *domain.Conversation, recipients []uuid.UUID) {
+func (s *Service) publishReload(ctx context.Context, conv *domain.Conversation, recipients []uuid.UUID, reason string) {
 	if s.hub == nil || len(recipients) == 0 {
 		return
 	}
@@ -391,7 +427,7 @@ func (s *Service) publishReload(ctx context.Context, conv *domain.Conversation, 
 		external = *conv.ExternalID
 	}
 	s.hub.Publish(ctx, realtime.NewEvent(realtime.EventReload, conv.ID.String(), recipients, map[string]any{
-		"reason":          "group.members_changed",
+		"reason":          reason,
 		"conversation_id": conv.ID,
 		"chat_id":         external,
 	}))

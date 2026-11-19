@@ -20,6 +20,10 @@ type Hub struct {
 	broker   Broker
 	presence PresenceHook
 	log      *slog.Logger
+
+	// clientRender: doi payload sang hinh dang be mat client (xem dialect.go).
+	// Chi set 1 lan luc wiring nen khong can lock.
+	clientRender ClientRenderer
 }
 
 func NewHub(broker Broker) *Hub {
@@ -158,6 +162,32 @@ func (h *Hub) OnlineUserIDs() []uuid.UUID {
 	return out
 }
 
+// frameInternal: hinh dang cu cua /ws — snake_case, payload nguyen ban.
+func (h *Hub) frameInternal(ev Event) ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"type":            string(ev.Type),
+		"event_id":        ev.ID,
+		"conversation_id": ev.ConversationID,
+		"payload":         ev.Payload,
+		"ts":              ev.CreatedAt,
+	})
+}
+
+// frameClient: hinh dang cua /api/client/v1/chat/ws — camelCase, payload da doi
+// qua clientview. Chua tiem renderer thi roi ve frame cu (khong mat event).
+func (h *Hub) frameClient(ev Event, actorID string) ([]byte, error) {
+	if h.clientRender == nil {
+		return h.frameInternal(ev)
+	}
+	return json.Marshal(map[string]any{
+		"type":           string(ev.Type),
+		"eventId":        ev.ID,
+		"conversationId": ev.ConversationID,
+		"payload":        h.clientRender(ev.Payload, actorID),
+		"ts":             ev.CreatedAt,
+	})
+}
+
 // SendToClient day 1 frame cho dung 1 ket noi (dung cho ACK/error cua chinh request do).
 func (h *Hub) SendToClient(c *Client, frame any) {
 	raw, err := json.Marshal(frame)
@@ -172,18 +202,14 @@ func (h *Hub) SendToClient(c *Client, frame any) {
 }
 
 func (h *Hub) deliver(ev Event) {
-	frame := map[string]any{
-		"type":            string(ev.Type),
-		"event_id":        ev.ID,
-		"conversation_id": ev.ConversationID,
-		"payload":         ev.Payload,
-		"ts":              ev.CreatedAt,
-	}
-	raw, err := json.Marshal(frame)
+	raw, err := h.frameInternal(ev)
 	if err != nil {
 		h.log.Error("marshal event failed", "type", ev.Type, "err", err)
 		return
 	}
+	// Frame cho be mat client dung rieng theo tung actorId (card loc theo nguoi
+	// xem), nen dung lai trong 1 lan deliver thay vi marshal lai moi ket noi.
+	clientFrames := map[string][]byte{}
 
 	delivered, offline := 0, make([]string, 0, len(ev.Recipients))
 	for _, uid := range ev.Recipients {
@@ -205,7 +231,21 @@ func (h *Hub) deliver(ev Event) {
 			continue
 		}
 		for _, c := range targets {
-			if !c.push(raw) {
+			out := raw
+			if c.Dialect == DialectClient {
+				b, ok := clientFrames[c.ActorID]
+				if !ok {
+					var cerr error
+					if b, cerr = h.frameClient(ev, c.ActorID); cerr != nil {
+						h.log.Error("marshal event (client) failed",
+							"type", ev.Type, "actor_id", c.ActorID, "err", cerr)
+						continue
+					}
+					clientFrames[c.ActorID] = b
+				}
+				out = b
+			}
+			if !c.push(out) {
 				h.log.Warn("drop slow client", "user_id", uid, "conn_id", c.ID)
 				c.Close()
 				continue

@@ -48,8 +48,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Notificat
 	return n, nil
 }
 
-func (s *Service) List(ctx context.Context, userID uuid.UUID, p paging.Page) ([]domain.Notification, paging.PageInfo, error) {
-	rows, err := s.store.Notifications().ListByUser(ctx, userID, p)
+// List tra thong bao cua userID. NotificationFilter zero = khong loc gi.
+func (s *Service) List(ctx context.Context, userID uuid.UUID, f repository.NotificationFilter, p paging.Page) ([]domain.Notification, paging.PageInfo, error) {
+	rows, err := s.store.Notifications().ListByUser(ctx, userID, f, p)
 	if err != nil {
 		return nil, paging.PageInfo{}, err
 	}
