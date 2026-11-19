@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os/signal"
 	"syscall"
@@ -47,10 +48,19 @@ type App struct {
 
 	cmsSync *cmssync.Service
 	outbox  *outbox.Service
+
+	logFile io.Closer // file LOG_FILE (noop khi khong ghi file)
 }
 
 func New(cfg *config.Config) (*App, error) {
-	logger.Setup(cfg.Log.Level, cfg.Log.Format, cfg.App.Name, cfg.App.Env)
+	_, logFile := logger.Setup(logger.Options{
+		Level:   cfg.Log.Level,
+		Format:  cfg.Log.Format,
+		File:    cfg.Log.File,
+		Stdout:  cfg.Log.Stdout,
+		Service: cfg.App.Name,
+		Env:     cfg.App.Env,
+	})
 	for _, w := range cfg.WarnProd() {
 		slog.Warn("canh bao cau hinh prod", "van_de", w)
 	}
@@ -187,6 +197,7 @@ func New(cfg *config.Config) (*App, error) {
 		cfg: cfg, db: db, rdb: rdb, hub: hub,
 		http: httpSrv, grpc: grpcSrv,
 		cmsSync: syncSvc, outbox: outboxSvc,
+		logFile: logFile,
 	}, nil
 }
 
@@ -233,4 +244,8 @@ func (a *App) close() {
 		_ = a.rdb.Close()
 	}
 	slog.Info("da dong tat ca ket noi")
+	// Dong file log cuoi cung: moi dong tren van phai ghi duoc.
+	if a.logFile != nil {
+		_ = a.logFile.Close()
+	}
 }

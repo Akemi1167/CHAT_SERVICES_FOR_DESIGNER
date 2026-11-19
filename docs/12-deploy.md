@@ -22,6 +22,7 @@ git clone <repo> /opt/chat-service && cd /opt/chat-service
 cp .env.production.example .env
 openssl rand -base64 48            # dùng cho JWT_SECRET
 openssl rand -base64 24            # dùng cho POSTGRES_PASSWORD
+openssl rand -base64 24            # dùng cho REDIS_PASSWORD
 nano .env
 
 # 3. Chạy (tự build image, tự chạy migration rồi mới khởi động app)
@@ -123,6 +124,25 @@ Khôi phục: `docker compose -f docker-compose.prod.yml exec -T postgres psql -
 `REDIS_ENABLED=true` (prod compose bật sẵn) nên scale ngang được mà không cần sticky session:
 bỏ `ports` cố định của app, thêm `--scale app=3` và để nginx cân tải. Mỗi instance tự nhận event
 qua Redis — đã kiểm chứng ở [01-architecture.md](01-architecture.md) §3.
+
+**Redis phải có mật khẩu.** `REDIS_PASSWORD` dùng cho cả hai phía: compose truyền vào
+`redis-server --requirepass`, và app dùng để kết nối. Prod bắt buộc — thiếu biến thì
+`make prod-up` dừng ngay với thông báo `required variable REDIS_PASSWORD is missing a value`,
+app không khởi động với Redis trần.
+
+```bash
+openssl rand -base64 24    # đặt vào REDIS_PASSWORD trong .env
+make prod-up
+```
+
+Sai mật khẩu thì app chết lúc boot chứ không chạy ngầm rồi hỏng lặng lẽ:
+
+```
+bootstrap error: app: redis ping: WRONGPASS invalid username-password pair or user is disabled.
+```
+
+Prod compose **không** publish cổng 6379 ra host — Redis chỉ nghe trong network docker.
+Mật khẩu là lớp thứ hai, phòng khi có container khác bị chiếm trong cùng network.
 
 ## 8. Ba cái bẫy gặp thật khi thử stack này
 

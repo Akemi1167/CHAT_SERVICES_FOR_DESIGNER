@@ -193,6 +193,19 @@ func (r *UserRepo) ListByOpenIDs(ctx context.Context, openIDs []string) ([]domai
 	return users, nil
 }
 
+// ListByCMSUserIDs tra ve user theo nhieu cmsUserId trong MOT cau query.
+// Dung cho cmssync: dong bo nhom co hang chuc thanh vien, hoi tung nguoi la N+1.
+func (r *UserRepo) ListByCMSUserIDs(ctx context.Context, ids []int64) ([]domain.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var users []domain.User
+	if err := r.db(ctx).Where("cms_user_id IN ?", ids).Find(&users).Error; err != nil {
+		return nil, wrap(err, "user.listByCMSUserIDs")
+	}
+	return users, nil
+}
+
 func (r *UserRepo) ListByActorIDs(ctx context.Context, actorIDs []string) ([]domain.User, error) {
 	if len(actorIDs) == 0 {
 		return nil, nil

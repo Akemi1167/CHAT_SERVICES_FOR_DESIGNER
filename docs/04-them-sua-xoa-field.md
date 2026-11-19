@@ -96,3 +96,44 @@ Nghiệp vụ **luôn** đặt ở `internal/service/...` để cả 3 transport
 - Mọi lỗi trả về FE phải là `apperr` (có `code` ổn định để FE bắt), không trả lỗi GORM thô.
 - Query timeline phải dùng cursor (`paging.Page`), đừng dùng `OFFSET`.
 - Sau khi sửa `.proto`: `make proto` rồi `make test` — mapper không khớp sẽ fail compile ngay.
+
+## G. Migrate có mất dữ liệu không?
+
+**Chiều lên (`make mu` / `make migrate-up`): không.** Toàn bộ `*.up.sql` trong repo chỉ có
+`CREATE TABLE` / `ADD COLUMN` / `CREATE INDEX` / `INSERT` (seed bot). Ngoại lệ duy nhất là
+`000005_fix_cms_unique_empty.up.sql`: nó `DROP INDEX` rồi tạo lại ngay (index không chứa dữ liệu),
+và `UPDATE users SET open_id = NULL WHERE open_id = ''` — sửa giá trị rác, không xoá hàng.
+
+Kiểm lại bất cứ lúc nào:
+
+```bash
+grep -nE "^\s*(DROP|TRUNCATE|DELETE)" migrations/*.up.sql
+```
+
+**Chiều xuống (`make mdown` / `make migrate-down`): CÓ, mất thật.**
+`DROP COLUMN` của Postgres không undo được. Rollback rồi migrate lên lại thì cột quay về
+nhưng **rỗng**.
+
+| Lùi từ → đến | File chạy | Mất gì |
+|---|---|---|
+| 6 → 5 | `000006.down` | cột `messages.pinned`, `pinned_at`, `pinned_by`, `users.presence_reason` |
+| 5 → 4 | `000005.down` | chỉ đổi index — **không mất dữ liệu** |
+| 4 → 3 | `000004.down` | **bảng** `notifications`, `webhook_outbox`, `idempotency_keys` + 13 cột CMS (`card`, `cms_profile`, `external_id`…) |
+| 3 → 2 | `000003.down` | **bảng** `tasks`, `task_events`, `task_revisions`, `teams`, `team_members` |
+| 2 → 1 | `000002.down` | bản ghi seed bot `@bot` |
+| 1 → 0 | `000001.down` | **toàn bộ schema**: `messages`, `conversations`, `users`… |
+
+Quy tắc:
+
+- **Local**: `mdown` thoải mái, dữ liệu chỉ là seed (`make seed` dựng lại được).
+- **Prod**: coi `mdown` như lệnh cấm. Sửa sai thì viết migration **mới** đi tiếp lên, đừng lùi.
+  Bắt buộc lùi thì backup trước: `make prod-backup OUT=/backup/truoc-rollback.sql`.
+
+**Hai lệnh mất nhiều hơn cả `mdown`**, dễ nhầm là của migrate:
+
+```bash
+make down-v        # docker compose down -v -> xoá luôn volume, mất sạch database
+make dev-down-v    # tương tự cho stack dev
+```
+
+`make down` (không `-v`) thì an toàn — chỉ dừng container, volume còn nguyên.

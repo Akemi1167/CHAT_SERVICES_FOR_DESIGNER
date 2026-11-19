@@ -57,6 +57,10 @@ func (usersRepo) GetByActorID(_ context.Context, _ string) (*domain.User, error)
 	return nil, errNotImplemented
 }
 
+func (usersRepo) ListByCMSUserIDs(_ context.Context, _ []int64) ([]domain.User, error) {
+	return nil, errNotImplemented
+}
+
 func (usersRepo) ListByOpenIDs(_ context.Context, _ []string) ([]domain.User, error) {
 	return nil, nil
 }

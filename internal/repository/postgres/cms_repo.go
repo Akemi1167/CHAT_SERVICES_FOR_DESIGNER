@@ -44,6 +44,11 @@ func (r *ConversationRepo) GetByExternalID(ctx context.Context, externalID strin
 	return &c, nil
 }
 
+// UpsertFromCMS tao/cap nhat nhom theo du lieu CMS.
+//
+// Tra ve nhom MOC: KHONG preload Members/Members.User. Caller duy nhat
+// (cmssync.applyGroup) thay danh sach thanh vien ngay sau do, nen members doc
+// o day vua ton 2 query vua lac hau. Ai can danh sach day du thi goi GetByID.
 func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Conversation) (*domain.Conversation, error) {
 	if in.ExternalID == nil || *in.ExternalID == "" {
 		return nil, apperr.Invalid("missing_external_id", "Nhom CMS phai co chatId")
@@ -66,7 +71,17 @@ func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Convers
 			Where("id = ?", existing.ID).Updates(fields).Error; uerr != nil {
 			return nil, wrap(uerr, "conversation.upsertFromCMS.update")
 		}
-		return r.GetByID(ctx, existing.ID)
+		// Phan anh dung cac field vua ghi, khoi doc lai row.
+		existing.SyncedAt = &now
+		existing.Source = domain.SourceCMS
+		existing.UpdatedAt = now
+		if in.Name != "" {
+			existing.Name = in.Name
+		}
+		if in.CMSInfo != nil {
+			existing.CMSInfo = in.CMSInfo
+		}
+		return &existing, nil
 
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		if in.ID == uuid.Nil {
@@ -80,7 +95,8 @@ func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Convers
 		if cerr := r.db(ctx).Omit("Members").Create(in).Error; cerr != nil {
 			return nil, wrap(cerr, "conversation.upsertFromCMS.create")
 		}
-		return r.GetByID(ctx, in.ID)
+		// Vua tao xong nen `in` chinh la trang thai trong DB; chua co thanh vien.
+		return in, nil
 
 	default:
 		return nil, wrap(err, "conversation.upsertFromCMS.lookup")

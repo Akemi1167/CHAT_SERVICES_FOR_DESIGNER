@@ -149,6 +149,16 @@ migrate-force: ## Go co dirty: make migrate-force version=1
 	@test -n "$(version)" || (echo "Thieu version"; exit 1)
 	migrate -path $(MIGRATE_DIR) -database "$(POSTGRES_DSN)" force $(version)
 
+# --- phim tat cho migration (ten dai o tren van dung duoc) ---
+# Co y KHONG lam tat 1 ky tu cho rollback: `md` canh `mu` tren ban phim,
+# go lech 1 phim la mat du lieu.
+.PHONY: mu ms mn mdown mforce
+mu: migrate-up            ## = migrate-up (chay migration len moi nhat)
+ms: migrate-status        ## = migrate-status (xem version hien tai)
+mn: migrate-create        ## = migrate-create (migration moi): make mn name=add_field_x
+mdown: migrate-down       ## = migrate-down (rollback 1 buoc)
+mforce: migrate-force     ## = migrate-force: make mforce version=1
+
 # ---------- postman ----------
 .PHONY: postman
 postman: ## Sinh lai Postman collection (file v2.1 de import + ban v3 cho CLI)
@@ -269,6 +279,39 @@ down-v: ## Dung stack + xoa volume (mat du lieu)
 .PHONY: logs
 logs: ## Xem log app
 	docker compose logs -f app
+
+.PHONY: log-file
+log-file: ## Theo doi LOG_FILE o local: make log-file [FILE=./logs/app.log]
+	@f="$(or $(FILE),./logs/app.log)"; \
+	test -f "$$f" || { echo "Chua co $$f. Dat LOG_FILE=./logs/app.log trong .env roi chay lai app."; exit 1; }; \
+	tail -f "$$f"
+
+.PHONY: log-grep
+log-grep: ## Tim trong LOG_FILE: make log-grep Q=groups/refresh [FILE=./logs/app.log]
+	@test -n "$(Q)" || { echo 'Dung: make log-grep Q=groups/refresh'; exit 1; }
+	@f="$(or $(FILE),./logs/app.log)"; \
+	test -f "$$f" || { echo "Chua co $$f."; exit 1; }; \
+	grep --color=always -- "$(Q)" "$$f" | tail -50
+
+.PHONY: sql-on
+sql-on: ## Bat in cau SQL ra console docker (sua .env roi nap lai app dev)
+	@./scripts/env-set.sh POSTGRES_LOG_SQL true
+	@# Phai truyen thang gia tri: Makefile co `include .env` + `export` nen compose
+	@# se uu tien bien da export TU LUC make khoi dong, tuc gia tri CU.
+	@POSTGRES_LOG_SQL=true docker compose -f docker-compose.dev.yml up -d --force-recreate --wait app >/dev/null
+	@echo "SQL log: BAT. Xem bang: make dev-logs"
+
+.PHONY: sql-off
+sql-off: ## Tat in cau SQL, console tro lai sach
+	@./scripts/env-set.sh POSTGRES_LOG_SQL false
+	@# Phai truyen thang gia tri: Makefile co `include .env` + `export` nen compose
+	@# se uu tien bien da export TU LUC make khoi dong, tuc gia tri CU.
+	@POSTGRES_LOG_SQL=false docker compose -f docker-compose.dev.yml up -d --force-recreate --wait app >/dev/null
+	@echo "SQL log: TAT."
+
+.PHONY: redis-cli
+redis-cli: ## Mo redis-cli (tu dung REDIS_PASSWORD trong .env neu co)
+	docker compose exec redis sh -c 'redis-cli $${REDIS_PASSWORD:+-a "$$REDIS_PASSWORD"}'
 
 .PHONY: psql
 psql: ## Mo psql trong container postgres

@@ -74,8 +74,7 @@ func (r *ConversationRepo) ListByUser(ctx context.Context, userID uuid.UUID, p p
 	}
 
 	var out []domain.Conversation
-	err := q.Debug().
-		Preload("Members", func(db *gorm.DB) *gorm.DB { return db.Where("left_at IS NULL") }).
+	err := q.Preload("Members", func(db *gorm.DB) *gorm.DB { return db.Where("left_at IS NULL") }).
 		Preload("Members.User").
 		Order("COALESCE(conversations.last_message_at, conversations.created_at) DESC, conversations.id DESC").
 		Limit(p.FetchLimit()).

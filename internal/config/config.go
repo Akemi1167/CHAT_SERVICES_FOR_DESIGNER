@@ -119,6 +119,12 @@ type CMS struct {
 type Log struct {
 	Level  string // debug | info | warn | error
 	Format string // json | text
+	// File: ghi log ra file (vd ./logs/app.log). Chi dung o local de grep lai;
+	// prod de trong, log do docker/k8s thu gom tu stdout.
+	File string
+	// Stdout=false (can co File): khong in log ra console nua. Dung o local khi
+	// muon console docker sach, chi con thu minh chu dong in (vd SQL pretty log).
+	Stdout bool
 }
 
 // Load doc .env (neu co) roi doc env var. Tra loi neu thieu config bat buoc.
@@ -196,6 +202,8 @@ func Load() (*Config, error) {
 		Log: Log{
 			Level:  str("LOG_LEVEL", "info"),
 			Format: str("LOG_FORMAT", "json"),
+			File:   str("LOG_FILE", ""),
+			Stdout: boolean("LOG_STDOUT", true),
 		},
 	}
 
@@ -276,6 +284,15 @@ func (c *Config) WarnProd() []string {
 	if c.Log.Level == "debug" {
 		warns = append(warns, "LOG_LEVEL=debug : nhieu log va co the lo du lieu")
 	}
+	if c.Redis.Enabled && c.Redis.Password == "" {
+		warns = append(warns, "REDIS_ENABLED=true nhung REDIS_PASSWORD rong : Redis khong co mat khau, ai vao duoc mang noi bo deu doc/ghi duoc event chat")
+	}
+	if c.Log.File != "" {
+		warns = append(warns, "LOG_FILE=... : chi dung o local; prod de trong de docker/k8s thu gom stdout (file se phinh, khong tu rotate)")
+	}
+	if !c.Log.Stdout {
+		warns = append(warns, "LOG_STDOUT=false : prod phai de true, neu khong docker/k8s khong thu duoc log nao")
+	}
 	if c.Postgres.LogSQL {
 		warns = append(warns, "POSTGRES_LOG_SQL=true : khong nen bat o prod")
 	}
@@ -286,14 +303,20 @@ func (c *Config) WarnProd() []string {
 }
 
 func str(key, def string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+	if v := env(key); v != "" {
 		return v
 	}
 	return def
 }
 
+// env doc bien moi truong va CAT KHOANG TRANG hai dau.
+// Bat buoc phai cat: docker compose truyen gia tri cua `.env` kem khoang trang
+// dem truoc dau `#` (vd "true        "), ParseBool/Atoi se loi va am tham rot
+// ve gia tri mac dinh — cau hinh coi nhu bi bo qua ma khong bao gi.
+func env(key string) string { return strings.TrimSpace(os.Getenv(key)) }
+
 func num(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
+	if v := env(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
@@ -302,7 +325,7 @@ func num(key string, def int) int {
 }
 
 func boolean(key string, def bool) bool {
-	if v := os.Getenv(key); v != "" {
+	if v := env(key); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
 		}
@@ -311,7 +334,7 @@ func boolean(key string, def bool) bool {
 }
 
 func dur(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
+	if v := env(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
 		}

@@ -78,6 +78,7 @@ type UserRepository interface {
 	GetByOpenID(ctx context.Context, openID string) (*domain.User, error)
 	GetByActorID(ctx context.Context, actorID string) (*domain.User, error)
 	ListByOpenIDs(ctx context.Context, openIDs []string) ([]domain.User, error)
+	ListByCMSUserIDs(ctx context.Context, ids []int64) ([]domain.User, error)
 	ListByActorIDs(ctx context.Context, actorIDs []string) ([]domain.User, error)
 }
 

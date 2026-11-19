@@ -33,9 +33,15 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    # Prod BAT BUOC co mat khau: thieu REDIS_PASSWORD la compose dung ngay.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD bat buoc o prod (xem docs/12-deploy.md)}
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly no --save "" --requirepass "$$REDIS_PASSWORD"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -70,6 +76,7 @@ services:
       POSTGRES_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       REDIS_ENABLED: "true"
       REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD bat buoc o prod}
       POSTGRES_AUTO_MIGRATE: "false"
       AUTH_ALLOW_DEV_TOKEN: "false"
       WEB_DEMO_DIR: ""           # tat trang thu tay o production

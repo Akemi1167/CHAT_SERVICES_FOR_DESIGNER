@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,12 @@ type Service struct {
 	hub      *realtime.Hub
 	interval time.Duration
 	log      *slog.Logger
+
+	// Nho id cua user he thong "system:cms": no khong bao gio doi trong mot lan
+	// chay, trong khi ApplyGroup can no cho TUNG nhom. Co mutex vi ApplyGroup
+	// chay ca o vong dong bo lan o Bot API (PUT /bot/v1/groups/:id).
+	systemMu sync.Mutex
+	systemID uuid.UUID
 }
 
 func New(client *cms.Client, store repository.Store, hub *realtime.Hub, interval time.Duration) *Service {
@@ -78,15 +85,27 @@ func (s *Service) SyncAll(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	for _, g := range groups {
-		if _, err := s.ApplyGroup(ctx, g); err != nil {
+		// Dung applyGroup (chu thuong): vong dong bo khong doc ket qua nen
+		// khong can nap lai nhom kem Members/Members.User.
+		if _, err := s.applyGroup(ctx, g); err != nil {
 			s.log.Error("ap dung nhom that bai", "chat_id", g.ChatID, "err", err)
 		}
 	}
 	return len(groups), nil
 }
 
-// ApplyGroup tao/cap nhat nhom va dat lai danh sach thanh vien dung bang CMS.
+// ApplyGroup tao/cap nhat nhom va dat lai danh sach thanh vien dung bang CMS,
+// roi tra ve nhom da nap day du (kem Members + User) cho caller dung ngay.
 func (s *Service) ApplyGroup(ctx context.Context, g cms.Group) (*domain.Conversation, error) {
+	conv, err := s.applyGroup(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.Conversations().GetByID(ctx, conv.ID)
+}
+
+// applyGroup lam toan bo viec ghi; tra ve nhom MOC (chua preload Members).
+func (s *Service) applyGroup(ctx context.Context, g cms.Group) (*domain.Conversation, error) {
 	if strings.TrimSpace(g.ChatID) == "" {
 		return nil, fmt.Errorf("cmssync: thieu chatId")
 	}
@@ -128,7 +147,7 @@ func (s *Service) ApplyGroup(ctx context.Context, g cms.Group) (*domain.Conversa
 	// Ai vua vao hoac vua bi go deu can tai lai danh sach nhom.
 	s.publishReload(ctx, conv, union(before, after))
 
-	return s.store.Conversations().GetByID(ctx, conv.ID)
+	return conv, nil
 }
 
 // resolveMembers doi danh sach thanh vien CMS sang thanh vien Chat (tao user neu chua co).
@@ -189,8 +208,11 @@ func (s *Service) ResolveUsers(ctx context.Context, people []cms.Person) ([]doma
 	var missingOpenIDs []string
 	missingIdx := map[string]cms.Person{}
 
+	// Tra ca danh sach bang 2 cau IN (...) thay vi 1-2 cau moi nguoi.
+	known := s.lookupAll(ctx, people)
+
 	for _, p := range people {
-		if u := s.lookup(ctx, p); u != nil {
+		if u := known.get(p); u != nil {
 			out = append(out, *u)
 			continue
 		}
@@ -234,18 +256,67 @@ func (s *Service) ResolveUsers(ctx context.Context, people []cms.Person) ([]doma
 	return out, nil
 }
 
-func (s *Service) lookup(ctx context.Context, p cms.Person) *domain.User {
+// userIndex: ket qua tra hang loat, tra cuu lai trong bo nho.
+type userIndex struct {
+	byCMSID map[int64]domain.User
+	byOpen  map[string]domain.User
+}
+
+// get giu dung thu tu uu tien cu: cmsUserId truoc, roi moi den openId.
+func (ix userIndex) get(p cms.Person) *domain.User {
 	if p.CMSUserID > 0 {
-		if u, err := s.store.Users().GetByCMSUserID(ctx, p.CMSUserID); err == nil {
-			return u
+		if u, ok := ix.byCMSID[p.CMSUserID]; ok {
+			return &u
 		}
 	}
 	if p.OpenID != "" {
-		if u, err := s.store.Users().GetByOpenID(ctx, p.OpenID); err == nil {
-			return u
+		if u, ok := ix.byOpen[p.OpenID]; ok {
+			return &u
 		}
 	}
 	return nil
+}
+
+// lookupAll doi N nguoi lay TOI DA 2 cau query (truoc day la toi 2N cau).
+// Loi DB khong lam hong dong bo: index rong => coi nhu chua co, di tiep nhanh
+// tao moi (UpsertFromCMS van chong trung bang unique index).
+func (s *Service) lookupAll(ctx context.Context, people []cms.Person) userIndex {
+	ix := userIndex{byCMSID: map[int64]domain.User{}, byOpen: map[string]domain.User{}}
+
+	var (
+		cmsIDs  []int64
+		openIDs []string
+		seenID  = map[int64]bool{}
+		seenOpn = map[string]bool{}
+	)
+	for _, p := range people {
+		if p.CMSUserID > 0 && !seenID[p.CMSUserID] {
+			seenID[p.CMSUserID] = true
+			cmsIDs = append(cmsIDs, p.CMSUserID)
+		}
+		if p.OpenID != "" && !seenOpn[p.OpenID] {
+			seenOpn[p.OpenID] = true
+			openIDs = append(openIDs, p.OpenID)
+		}
+	}
+
+	if users, err := s.store.Users().ListByCMSUserIDs(ctx, cmsIDs); err != nil {
+		s.log.Warn("tra user theo cmsUserId that bai", "err", err)
+	} else {
+		for _, u := range users {
+			if u.CMSUserID != nil {
+				ix.byCMSID[*u.CMSUserID] = u
+			}
+		}
+	}
+	if users, err := s.store.Users().ListByOpenIDs(ctx, openIDs); err != nil {
+		s.log.Warn("tra user theo openId that bai", "err", err)
+	} else {
+		for _, u := range users {
+			ix.byOpen[u.OpenID] = u
+		}
+	}
+	return ix
 }
 
 func (s *Service) createFromPerson(ctx context.Context, p cms.Person, profile *domain.User) (*domain.User, error) {
@@ -292,6 +363,12 @@ func ActorIDFor(cmsUserID *int64, openID string) string {
 }
 
 func (s *Service) systemUserID(ctx context.Context) (uuid.UUID, error) {
+	s.systemMu.Lock()
+	defer s.systemMu.Unlock()
+	if s.systemID != uuid.Nil {
+		return s.systemID, nil
+	}
+
 	u, err := s.store.Users().UpsertByExternalID(ctx, &domain.User{
 		ExternalID:  systemExternalID,
 		DisplayName: "CMS",
@@ -301,7 +378,8 @@ func (s *Service) systemUserID(ctx context.Context) (uuid.UUID, error) {
 	if err != nil {
 		return uuid.Nil, err
 	}
-	return u.ID, nil
+	s.systemID = u.ID
+	return s.systemID, nil
 }
 
 func (s *Service) publishReload(ctx context.Context, conv *domain.Conversation, recipients []uuid.UUID) {

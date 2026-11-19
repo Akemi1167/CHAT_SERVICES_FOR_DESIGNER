@@ -520,10 +520,12 @@ func (h *Handler) BatchUsers(c *fiber.Ctx) error {
 		}
 		add(users)
 	}
-	for _, id := range req.CMSUserIDs {
-		if u, err := h.store.Users().GetByCMSUserID(ctx, id); err == nil {
-			add([]domain.User{*u})
+	if len(req.CMSUserIDs) > 0 {
+		users, err := h.store.Users().ListByCMSUserIDs(ctx, req.CMSUserIDs)
+		if err != nil {
+			return fail(c, err)
 		}
+		add(users)
 	}
 	return c.JSON(fiber.Map{"items": items})
 }

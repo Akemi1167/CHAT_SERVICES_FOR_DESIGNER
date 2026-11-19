@@ -22,11 +22,18 @@ services:
   redis:
     image: redis:7-alpine
     container_name: chat-redis
-    command: ["redis-server", "--appendonly", "no"]
+    # Co REDIS_PASSWORD trong .env thi bat --requirepass; de trong thi chay nhu cu.
+    # $${...} = shell trong container tu dien, $${} khong bi compose nuot.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly no $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'redis-cli $${REDIS_PASSWORD:+-a "$$REDIS_PASSWORD"} ping | grep -q PONG']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -62,6 +69,7 @@ services:
       POSTGRES_DSN: "postgres://chat:chat@postgres:5432/chat?sslmode=disable"
       REDIS_ENABLED: "true"
       REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}   # service app khong doc .env nen phai truyen tay
       JWT_SECRET: "doi-secret-nay-trong-moi-truong-that"
       LOG_LEVEL: "debug"
       LOG_FORMAT: "text"

@@ -94,5 +94,11 @@ Mỗi client có buffer gửi (`WS_SEND_BUFFER`). Client quá chậm làm đầy
 - Log JSON có `request_id` (REST: header `X-Request-ID`, gRPC: metadata `x-request-id`).
 - Bật SQL log: `POSTGRES_LOG_SQL=true`, cảnh báo query chậm: `POSTGRES_SLOW_QUERY=300ms`.
 - `LOG_LEVEL=debug LOG_FORMAT=text` khi chạy local cho dễ đọc.
+- Ghi log ra file để grep lại: `LOG_FILE=./logs/app.log` (append, `logs/` đã trong `.gitignore`).
+  Xem: `make log-file`, tìm: `make log-grep Q=groups/refresh`.
+- `LOG_STDOUT=false` (cần có `LOG_FILE`): console sạch hẳn, log chỉ vào file.
+  Khi đó bật SQL bằng `make sql-on` thì `make dev-logs` **chỉ còn** câu SQL — xem rất dễ.
+  `make sql-off` để tắt. **Chỉ dùng ở local**; prod phải `LOG_STDOUT=true` và `LOG_FILE` trống
+  (file không tự rotate, docker/k8s thu gom log từ stdout).
 - gRPC có reflection: `grpcurl -plaintext localhost:9090 list` (tắt ở prod bằng `GRPC_REFLECTION=false`).
 - Health: `GET /healthz` (sống), `GET /readyz` (ping được DB).

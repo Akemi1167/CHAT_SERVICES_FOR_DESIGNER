@@ -28,11 +28,18 @@ services:
   redis:
     image: redis:7-alpine
     container_name: chat-redis-dev
-    command: ["redis-server", "--appendonly", "no"]
+    # Co REDIS_PASSWORD trong .env thi bat --requirepass; de trong thi chay nhu cu.
+    # $${...} = shell trong container tu dien, $${} khong bi compose nuot.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly no $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'redis-cli $${REDIS_PASSWORD:+-a "$$REDIS_PASSWORD"} ping | grep -q PONG']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -68,14 +75,18 @@ services:
       HTTP_ADDR: ":8080"
       GRPC_ADDR: ":9090"
       POSTGRES_DSN: "postgres://chat:chat@postgres:5432/chat?sslmode=disable"
-      POSTGRES_LOG_SQL: "false"
-      POSTGRES_LOG_PRETTY: "true" # SQL log nhieu dong + mau, chi dev
+      # Cac cong tac debug: lay tu .env neu co, khong thi dung mac dinh cua dev.
+      # (environment: de GIA TRI CO DINH se de len env_file, sua .env se khong an.)
+      POSTGRES_LOG_SQL: "${POSTGRES_LOG_SQL:-false}"    # bat khi can xem cau SQL
+      POSTGRES_LOG_PRETTY: "${POSTGRES_LOG_PRETTY:-true}" # SQL nhieu dong + mau, chi dev
       REDIS_ENABLED: "true"
       REDIS_ADDR: "redis:6379"
       JWT_SECRET: "doi-secret-nay-trong-moi-truong-that"
-      LOG_LEVEL: "debug"
-      LOG_FORMAT: "text"
+      LOG_LEVEL: "${LOG_LEVEL:-debug}"
+      LOG_FORMAT: "${LOG_FORMAT:-text}"
+      # LOG_FILE / LOG_STDOUT lay tu .env (xem docs/08-docker.md muc 3).
       # TASK_ENGINE_ENABLED / CMS_* lay tu .env (xem docs/15-cms-cutover.md).
+    tty: true                       # cap TTY => SQL pretty log co mau trong `make dev-logs`
     ports:
       - "8080:8080"
       - "9090:9090"

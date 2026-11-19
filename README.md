@@ -187,8 +187,12 @@ make dev-up / dev-logs / dev-test / dev-sh / dev-down     # stack dev trong dock
 make proto           # sinh lại code gRPC sau khi sửa .proto
 make migrate-create name=add_pinned_to_messages
 make migrate-up / migrate-down / migrate-status
+make mu / ms / mn name=... / mdown / mforce version=...   # phím tắt của 5 lệnh migrate
 make test / lint / fmt
 make up / down / logs / psql
+make redis-cli       # redis-cli, tự dùng REDIS_PASSWORD trong .env
+make sql-on / sql-off   # bật/tắt in câu SQL ra console docker
+make log-file / log-grep Q=...   # xem log đã ghi ra ./logs/app.log
 make seed            # dựng dữ liệu demo + in token/ID để test ngay
 make token SUB=user-002 ROLE=order
 make postman         # sinh lại collection Postman sau khi đổi API
