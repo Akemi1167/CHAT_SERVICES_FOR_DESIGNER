@@ -44,6 +44,13 @@ func registerRoutes(app *fiber.App, cfg *config.Config, d Deps) {
 		app.Static("/demo", cfg.HTTP.WebDemoDir, fiber.Static{Browse: true})
 	}
 
+	// --- Tai lieu: tra docs/FLOW.md cho trang doc ben ngoai (khoa rieng tren header) ---
+	// Chi mo khi co DOCS_API_KEY; khong co thi route khong ton tai (404).
+	if cfg.HTTP.DocsKey != "" {
+		app.Get("/docs/flow", middleware.RequestID(), middleware.AccessLog(),
+			docsKeyAuth(cfg.HTTP.DocsKey), flowDoc)
+	}
+
 	// --- WebSocket ---
 	// Hai duong vao, CUNG mot handler va cung mot hub, khac nhau hinh dang frame:
 	//

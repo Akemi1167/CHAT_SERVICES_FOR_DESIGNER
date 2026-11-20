@@ -286,7 +286,7 @@ Tám event phát theo nhóm/người (envelope `{type, eventId, conversationId, 
 | `read` | ai đó đánh dấu đã đọc | `conversationId`, `userId`, `messageId`, `seenAt` |
 | `typing` | ai đó đang nhập | `conversationId`, `userId`, `typing` |
 | `presence` | người chung nhóm đổi trạng thái | `actorId`, `presence`, `online`, `reason` |
-| `notification` | có thông báo cho mình | `id`, `text`, `read`, `createdAt`, `messageId` |
+| `notification` | có thông báo cho mình | `id`, `text`, `read`, `createdAt`, `messageId`, `conversationId`, `groupId`, `threadRootId` (chỉ có khi tin nằm trong thread) |
 | `user` | hồ sơ người dùng đổi | hồ sơ rút gọn |
 | `reload` | nhóm đổi → tải lại danh sách | `reason`, `conversationId`, `chatId` |
 
@@ -320,8 +320,32 @@ Chat chỉ đọc khoá `action` trong card để biết "nút này tên gì" v�
 (`accept_task`, `submit_work`, `pause`, …) là hợp đồng **CMS ↔ FE**.
 
 ```json
-{"type":"button","text":"Nhận việc","action":"accept_task","visibleTo":["u_6"]}
+{"type":"actions","items":[
+  {"action":"accept_task","label":"Nhận task","placement":"primary","visibleTo":["u_6"],
+   "confirm":{"title":"Nhận phần 2/3?"}}]}
 ```
+
+Đây là cấu trúc CMS đang gửi. Chat **không phụ thuộc hình dạng**: nó duyệt sâu toàn bộ card,
+object nào có khoá `action` là một nút — nằm trong `actions.items[]`, hay kiểu cũ
+`{"type":"button","text":…,"action":…}`, đều được.
+
+**Lọc theo `visibleTo` chỉ bỏ đúng một thứ**: object có `visibleTo` không chứa người xem. Mọi
+phần tử / khoá Chat không nhận ra (`parts`, `links`, `form.rows`, trường form kiểu `parts`…) và
+giá trị `null` được giữ **nguyên**. `parts.items[].assignee.actor` là dữ liệu hiển thị, không
+phải `visibleTo` — Chat không lọc theo nó.
+
+`values` của action là **JSON tuỳ ý** (lồng nhau được, vd `split_task` gửi `values.parts` là
+mảng object) — Chat chuyển nguyên sang CMS. FE bỏ hẳn `values` thì CMS nhận `{}`.
+
+Action CMS đang dùng (cập nhật 20/11/2026) — Chat không cần biết danh sách này, ghi lại để tra:
+
+| `action` | Ai thấy | `values` |
+|---|---|---|
+| `reassign_task` | admin, trợ lý | `assigneeOpenId`, `note` |
+| `adjust_status` | admin, trợ lý | `status`, `note` (bắt buộc khi `held`) |
+| `split_task` | admin, trợ lý | `parts[]` |
+| `sync_delivery_drive` | người nhận, admin, trợ lý | không có |
+| `accept_task` trên card phần 2..N | người nhận phần đó | `{}` (nút confirm, không có form) |
 
 > ⚠️ Khoá là **`action`**, KHÔNG phải `actionId`. Sai tên thì card vẫn tạo được nhưng bấm nút trả
 > `403 action_not_allowed`.
@@ -340,6 +364,7 @@ FE không tự đoán: mỗi tin nhắn có card đều kèm `actions[]` = đún
 | Tạo đơn mới | `POST /bot/v1/messages` (kèm `card`) | **có** — không gọi thì nhóm không thấy đơn |
 | Đơn đổi trạng thái | `PATCH /bot/v1/messages/:id` (gộp card + thread + notify) | **có** |
 | Giao việc cho ai | nằm trong `notify` của `PATCH` ở trên, hoặc `POST /bot/v1/notifications` | nên |
+| Chia task thành N phần | `POST /bot/v1/messages/:cardGốc/thread` kèm `card` × (N−1) + `PATCH` card gốc — xem [Luồng G](#chia-task-card-nằm-trong-thread) | **có** |
 | Nhóm / thành viên đổi | `PUT /bot/v1/groups/:chatId` | không bắt buộc — Chat tự đồng bộ mỗi 60s, gọi để **nhanh hơn** |
 | Cần `actorId` của người chưa vào Chat | `POST /bot/v1/users/resolve` | khi cần điền `visibleTo` |
 | Lịch OFF / hết ca | `PUT /bot/v1/presence` | tuỳ chọn |
@@ -653,6 +678,34 @@ curl -s -X PATCH "$BASE/bot/v1/messages/$CARD" \
 | `thread.bot` | không | `{id, name}` — người gửi dòng đó |
 | `notify[]` | không | `{actorId, text, messageId?}` — `messageId` trống thì tự trỏ về card này |
 
+### Chia task: card nằm trong thread
+
+Chia đơn thành N phần: phần 1 giữ card gốc, card của phần 2..N nằm **trong thread của card gốc**.
+
+```bash
+curl -s -X POST "$BASE/bot/v1/messages/$CARD/thread" \
+  -H "X-Chat-Service-Key: $KEY" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'Content-Type: application/json' \
+  -d '{"bot":{"id":1,"name":"Designer Bot"},
+       "card":{"schema":"abc.card/v1",
+               "header":{"code":"WEB-20261120-0003-P2","title":"Banner Tết · Phần 2/3"},
+               "elements":[{"type":"actions","items":[
+                 {"action":"accept_task","label":"Nhận task","visibleTo":["u_6"]}]}]}}'
+# → {"messageId":"…","cardVersion":1,"threadRootId":"<id card gốc>"}
+```
+
+| Câu hỏi | Trả lời |
+|---|---|
+| `/thread` nhận `card`? | **Có.** Body cần `text` **hoặc** `card` (cả hai cũng được). Không gửi `cardVersion` thì card bắt đầu từ `1`; response trả `messageId` + `cardVersion`. |
+| `PATCH /bot/v1/messages/:id` với tin trong thread? | **Có**, y như card ở timeline (cùng luật `cardVersion`). Field `thread` của PATCH ghi dòng vào **thread của card gốc**, `notify[].messageId` bỏ trống thì trỏ về chính card phần. |
+| FE bấm nút trên card trong thread? | `POST …/messages/:id/actions` với `:id` = tin trong thread: Chat kiểm `visibleTo` rồi gửi `card.action` với `messageId` = **id của tin trong thread**. |
+| FE đọc card trong thread? | `GET …/groups/:id/messages?threadRootId=` và `GET …/messages/:id/replies?mode=thread` trả `card` + `cardVersion` + `actions[]` đã lọc theo người xem. Event realtime `message` của tin này có `threadRootId`. |
+| Đường khác? | `POST /bot/v1/messages` kèm `threadRootId` + `card` cũng chạy, trả `{messageId, cardVersion}`. |
+| Gọi `/thread` với `:id` là card phần? | Tin mới vẫn vào thread của card gốc — thread chỉ có một cấp. |
+
+Chat **không có rate limit** trên `/bot/v1/*`: N lần `PATCH` liên tiếp cho N card phần chạy bình
+thường. Mỗi request nên có `Idempotency-Key` riêng.
+
 ### `cardVersion` — chống ghi đè ngược
 
 Gửi lại số **không lớn hơn**:
@@ -765,6 +818,18 @@ curl -s -X POST "$BASE/api/client/v1/chat/notifications/read" \
 `actorId` | ai nhận |
 `text` | nội dung |
 `messageId` | để FE bấm vào là nhảy tới đúng card |
+
+Thông báo FE nhận (REST lẫn realtime, cùng tên trường):
+
+```json
+{"id":"894dcb7d-…","text":"Bạn được giao phần 2/3","read":false,"createdAt":"2026-11-20T06:19:29Z",
+ "messageId":"34030601-…","conversationId":"e1a636e9-…","groupId":"wg_…",
+ "threadRootId":"a8e203f3-…"}
+```
+
+`messageId` có thể là card phần nằm **trong thread**. Chat tự tra vị trí của tin: FE mở nhóm
+`conversationId`; **có `threadRootId`** thì mở thread đó rồi cuộn tới `messageId`, **không có** thì
+cuộn trong timeline nhóm. `groupId` (chatId của CMS) vắng mặt với nhóm tạo trong Chat.
 
 `element.unread` là **tổng** số chưa đọc — dùng cho badge, **không đổi** theo filter `unread=true`.
 

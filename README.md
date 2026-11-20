@@ -202,7 +202,7 @@ Có **3 bản** — gửi cho ai thì import bản của người đó:
 |---|---|---|
 | `chat-service-fe.postman_collection.json` | **đội FE** | `FLOW · Luồng của FE` (12 bước) + `/api/client/v1/chat/*` + mẫu WebSocket |
 | `chat-service-cms.postman_collection.json` | **đội CMS** | `FLOW · Luồng của CMS` (12 bước) + `/bot/v1/*` |
-| `chat-service.postman_collection.json` | nội bộ | bản đầy đủ: 81 request, 10 folder, cả `/api/v1` và lỗi/quyền |
+| `chat-service.postman_collection.json` | nội bộ | bản đầy đủ: 83 request, 10 folder, cả `/api/v1` và lỗi/quyền |
 ⚠️ Khi `CMS_ENABLED=true`, bước gửi form **tạo đơn thật** bên CMS.
   Folder **`10 · WebSocket & gRPC`** chứa mẫu frame WS (body + các trường hợp xảy ra) trong tab Documentation.
 - `internal/postman/chat-service.local.postman_environment.json` — environment `Chat Service · Local`

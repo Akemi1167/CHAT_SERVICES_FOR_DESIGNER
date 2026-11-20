@@ -42,36 +42,47 @@ func FilterForViewer(c domain.JSONMap, actorID string) domain.JSONMap {
 	if c == nil {
 		return nil
 	}
-	filtered, ok := filterValue(map[string]any(c), actorID).(map[string]any)
+	v, keep := filterValue(map[string]any(c), actorID)
+	if !keep {
+		return nil
+	}
+	filtered, ok := v.(map[string]any)
 	if !ok {
 		return nil
 	}
 	return domain.JSONMap(filtered)
 }
 
-func filterValue(v any, actorID string) any {
+// filterValue chi bo DUNG MOT thu: object co visibleTo khong chua nguoi xem.
+// Moi thu khac giu nguyen — ke ca phan tu / khoa Chat khong nhan ra (parts,
+// links, form.rows...) va gia tri null (vd "default": null, "brief": null):
+// card la cua CMS, FE moi la ben hieu no.
+//
+// keep=false nghia la "bo node nay khoi cha"; khong dung nil lam tin hieu vi
+// nil cung la gia tri JSON null hop le.
+func filterValue(v any, actorID string) (out any, keep bool) {
 	switch node := v.(type) {
 	case map[string]any:
 		if !Visible(node, actorID) {
-			return nil
+			return nil, false
 		}
-		out := make(map[string]any, len(node))
+		m := make(map[string]any, len(node))
 		for k, val := range node {
-			if fv := filterValue(val, actorID); fv != nil {
-				out[k] = fv
+			if fv, ok := filterValue(val, actorID); ok {
+				m[k] = fv
 			}
 		}
-		return out
+		return m, true
 	case []any:
-		out := make([]any, 0, len(node))
+		list := make([]any, 0, len(node))
 		for _, item := range node {
-			if fv := filterValue(item, actorID); fv != nil {
-				out = append(out, fv)
+			if fv, ok := filterValue(item, actorID); ok {
+				list = append(list, fv)
 			}
 		}
-		return out
+		return list, true
 	default:
-		return v
+		return v, true
 	}
 }
 

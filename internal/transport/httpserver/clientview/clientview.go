@@ -115,6 +115,17 @@ func Notification(n *domain.Notification) map[string]any {
 	if n.MessageID != nil {
 		view["messageId"] = n.MessageID.String()
 	}
+	// Vi tri cua tin: FE mo nhom conversationId; co threadRootId thi mo thread
+	// do roi cuon toi messageId (card cua mot phan nam trong thread card goc).
+	if n.ConversationID != nil {
+		view["conversationId"] = n.ConversationID.String()
+	}
+	if n.GroupID != "" {
+		view["groupId"] = n.GroupID
+	}
+	if n.ThreadRootID != nil {
+		view["threadRootId"] = n.ThreadRootID.String()
+	}
 	if n.Payload != nil {
 		view["payload"] = map[string]any(n.Payload)
 	}
@@ -122,6 +133,15 @@ func Notification(n *domain.Notification) map[string]any {
 		view["readAt"] = *n.ReadAt
 	}
 	return view
+}
+
+// Notifications: danh sach thong bao, cung goc nhin.
+func Notifications(items []domain.Notification) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for i := range items {
+		out = append(out, Notification(&items[i]))
+	}
+	return out
 }
 
 // Page: pageInfo cua be mat nay.

@@ -17,6 +17,13 @@ type Notification struct {
 	Read      bool       `gorm:"default:false" json:"read"`
 	ReadAt    *time.Time `json:"read_at,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
+
+	// Vi tri cua tin ma thong bao tro toi — KHONG luu DB, dien luc doc tu chinh
+	// tin nhan (xem notification.Service). FE can de mo dung nhom / dung thread:
+	// card cua mot phan (chia task) nam trong thread cua card goc.
+	ConversationID *uuid.UUID `gorm:"-" json:"conversation_id,omitempty"`
+	GroupID        string     `gorm:"-" json:"group_id,omitempty"`       // chatId cua CMS (wg_...), rong neu nhom noi bo
+	ThreadRootID   *uuid.UUID `gorm:"-" json:"thread_root_id,omitempty"` // nil = tin nam o timeline nhom
 }
 
 func (Notification) TableName() string { return "notifications" }

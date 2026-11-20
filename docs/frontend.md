@@ -266,7 +266,7 @@ Upload tệp là service khác: FE upload xong lấy URL rồi gửi URL trong `
 | Ghim / bỏ ghim | `POST /api/v1/messages/:message_id/pin` (`{"pinned":false}` để bỏ) | — |
 | Danh sách ghim | `GET /api/v1/conversations/:id/pinned` | — |
 | Thông tin tệp đính kèm | `GET /api/v1/messages/:message_id/attachments/:attachment_id` (`?redirect=true` → 302) | — |
-| Thông báo | — | `GET …/chat/notifications?unread=true&cursor=&limit=`, `POST …/chat/notifications/read` |
+| Thông báo | — | `GET …/chat/notifications?unread=true&cursor=&limit=`, `POST …/chat/notifications/read` — mỗi thông báo cùng hình dạng với frame `notification` (camelCase) |
 | Realtime | `ws://…/ws?token=` | `ws://…/api/client/v1/chat/ws?token=` — **cùng access token, field trùng tên với REST** |
 
 ---
@@ -377,7 +377,7 @@ Nhận `ready` là kết nối thành công — **frame này nói rõ tab đang 
 | `read` | ai đó đã đọc tới tin nào |
 | `typing` | người khác đang nhập (không gửi lại cho chính mình) |
 | `presence` | `{user_id, actor_id, presence: "online"\|"offline"\|"off_duty", reason, online}` — `off_duty` là nghỉ theo lịch (hiện chữ OFF cạnh tên), kèm `reason` |
-| `notification` | thông báo riêng cho mình |
+| `notification` | thông báo riêng cho mình: `{id, text, read, createdAt, messageId, conversationId, groupId, threadRootId}` — có `threadRootId` thì mở thread đó rồi cuộn tới `messageId` (card của một phần khi chia task) |
 | `reload` | cần gọi lại `bootstrap`/danh sách nhóm (được thêm/gỡ khỏi nhóm) |
 
 Luồng gửi lạc quan chuẩn:

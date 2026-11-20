@@ -2,7 +2,10 @@ bin/
 .git/
 .env
 *.md
-docs/
+# docs/ khong vao image, TRU file duoc nhung vao binary (docs/embed.go).
+docs/*
+!docs/embed.go
+!docs/FLOW.md
 coverage.*
 tmp/
 scratch/

@@ -33,6 +33,7 @@ Response có dạng `{"data": ..., "meta": {...}}` hoặc `{"error":{"code","mes
 | Method | Path | Mô tả |
 |---|---|---|
 | GET | `/healthz` | liveness |
+| GET | `/docs/flow` | trả nguyên văn [FLOW.md](FLOW.md) (`text/markdown`) để dựng trang tài liệu. Header `X-Docs-Key` = `DOCS_API_KEY` (sinh bằng `openssl rand -hex 16`); sai khoá → `401 invalid_docs_key`; không đặt `DOCS_API_KEY` → route không tồn tại. File được nhúng vào binary lúc build — sửa `FLOW.md` phải build lại |
 | GET | `/readyz` | readiness (ping DB) |
 | GET | `/ws?token=` | WebSocket, hình dạng nội bộ (snake_case) |
 | GET | `/api/client/v1/chat/ws?token=` | WebSocket cho FE — **cùng access token CMS với REST**, field camelCase trùng REST (xem [Giao thức WebSocket](frontend.md#giao-thức-websocket)) |
@@ -260,6 +261,10 @@ Ba endpoint tài liệu ghi "chưa dùng / tuỳ chọn" nay đã có:
 - Mọi request ghi nhận `Idempotency-Key`: gặp lại key trả **nguyên kết quả cũ** (bảng `idempotency_keys`).
 - `PATCH` chỉ áp dụng khi `cardVersion` **lớn hơn** bản đang lưu, nhỏ hơn/bằng → `{"ok":true,"ignored":true}`.
 - Lỗi: `{code, message, retryable}` — `retryable=true` khi lỗi hệ thống (5xx).
+- `POST /bot/v1/messages/:id/thread` nhận `text` **hoặc** `card` (card của từng phần khi chia task);
+  card trong thread được `PATCH`, lọc `visibleTo` và bấm nút y như card ở timeline —
+  xem [FLOW.md](FLOW.md#chia-task-card-nằm-trong-thread).
+- Thông báo trả cho FE kèm `conversationId` / `groupId` / `threadRootId` của tin mà `messageId` trỏ tới.
 
 ### 9. API cho FE
 
@@ -566,7 +571,7 @@ Thư mục `internal/postman/` có **4 file**:
 |---|---|
 | `chat-service-fe.postman_collection.json` | **đội FE** — `FLOW · Luồng của FE` + `/api/client/v1/chat/*` + mẫu WebSocket |
 | `chat-service-cms.postman_collection.json` | **đội CMS** — `FLOW · Luồng của CMS` + `/bot/v1/*` |
-| `chat-service.postman_collection.json` | nội bộ — bản đầy đủ (81 request, 10 folder) |
+| `chat-service.postman_collection.json` | nội bộ — bản đầy đủ (83 request, 10 folder) |
 | `chat-service.local.postman_environment.json` | environment dùng chung cho cả 3 |
 
 Hai bản tách **dùng lại đúng các request của bản đầy đủ** (`gen_postman.py --check` đối chiếu, báo
@@ -654,12 +659,12 @@ make postman-flow TOKEN=$(make -s token SUB=demo-an) KEY=$CHAT_SERVICE_KEY STOP=
 Để trống `STOP` thì chạy hết 16 bước. Bước `2.2` cố ý **không** đổi `group_id`: nhóm CMS đẩy
 sang chỉ có thành viên do CMS khai, token của bạn không ở trong đó nên các bước `3.x` sẽ 403.
 
-### 4. Nội dung collection (81 request / 10 folder)
+### 4. Nội dung collection (83 request / 10 folder)
 
 | Folder | Nội dung |
 |---|---|
 | `FLOW` | 17 bước đánh số, chạy tuần tự (gồm vòng đời một đơn) — xem mục 3 |
-| `00 · Bắt đầu` | healthz, readyz, `/me` (lưu `user_id`) |
+| `00 · Bắt đầu` | healthz, readyz, `/docs/flow` (biến `docs_key`), `/me` (lưu `user_id`) |
 | `01 · Hội thoại` | tạo nhóm / chat riêng, danh sách, chi tiết, thêm thành viên |
 | `02 · Tin nhắn` | gửi text / ảnh / trong thread, lịch sử, tìm kiếm, đã đọc, ai đã xem, xoá |
 | `04 · Bot @bot & gửi mẫu` | schema mẫu, `@bot` help, `@bot yeu_cau`, submit mẫu từ form, mẫu đã lưu |

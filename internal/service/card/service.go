@@ -124,11 +124,19 @@ func (s *Service) RunAction(ctx context.Context, in ActionInput) (*Result, error
 			WithDetail("action", in.Action)
 	}
 
+	// values la JSON tuy y (co the long nhau, vd split_task gui values.parts la
+	// mang object) — chuyen NGUYEN sang CMS. Nut confirm khong co form thi FE
+	// co the bo han values: gui {} thay vi null de CMS khong phai xu ly 2 dang.
+	values := map[string]any(in.Values)
+	if values == nil {
+		values = map[string]any{}
+	}
+
 	fields := map[string]any{
 		"botId":       botIDOf(conv),
 		"messageId":   msg.ID.String(),
 		"action":      in.Action,
-		"values":      map[string]any(in.Values),
+		"values":      values,
 		"actor":       cms.Actor(actor.ActorID, actor.OpenID, actor.CMSUserID, actor.DisplayName),
 		"group":       map[string]any{"id": groupID(conv)},
 		"cardVersion": msg.CardVersion,
