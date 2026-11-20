@@ -24,10 +24,13 @@ type Service struct {
 	store repository.Store
 	hub   *realtime.Hub
 	log   *slog.Logger
+
+	// heartbeat: chu ky lam tuoi last_seen_at cho nguoi dang noi vao instance nay.
+	heartbeat time.Duration
 }
 
 func New(store repository.Store, hub *realtime.Hub) *Service {
-	return &Service{store: store, hub: hub, log: slog.Default().With("component", "service.presence")}
+	return &Service{store: store, hub: hub, heartbeat: domain.DefaultPresenceHeartbeat, log: slog.Default().With("component", "service.presence")}
 }
 
 // SetOnline goi khi WebSocket mo/dong. Online thi xoa ly do OFF.
@@ -122,4 +125,41 @@ func (s *Service) publish(ctx context.Context, userID uuid.UUID, status domain.P
 		"reason":   reason,
 		"online":   status == domain.PresenceOnline,
 	}))
+}
+
+// SetHeartbeat doi chu ky lam tuoi (chi goi luc wiring). <=0 => tat heartbeat.
+func (s *Service) SetHeartbeat(d time.Duration) { s.heartbeat = d }
+
+// Run lam tuoi last_seen_at cho nhung nguoi dang mo WebSocket tren instance nay.
+//
+// Khong co job nay thi khi process bi kill, cot presence mac ket o "online"
+// vinh vien (hook dong ket noi khong chay). Co job nay thi last_seen_at ngung
+// moi va User.LivePresence() tu tra offline sau domain.PresenceTTL().
+func (s *Service) Run(ctx context.Context) error {
+	if s.hub == nil || s.heartbeat <= 0 {
+		s.log.Info("presence heartbeat: tat")
+		<-ctx.Done()
+		return nil
+	}
+	s.log.Info("presence heartbeat", "chu_ky", s.heartbeat, "het_han_sau", domain.PresenceTTL())
+
+	t := time.NewTicker(s.heartbeat)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			ids := s.hub.OnlineUserIDs()
+			if len(ids) == 0 {
+				continue
+			}
+			n, err := s.store.Users().TouchLastSeen(ctx, ids, time.Now().UTC())
+			if err != nil {
+				s.log.Error("presence heartbeat that bai", "err", err)
+				continue
+			}
+			s.log.Debug("presence heartbeat", "ket_noi", len(ids), "dong_cap_nhat", n)
+		}
+	}
 }

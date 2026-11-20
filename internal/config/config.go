@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+
+	"github.com/abc-workspace/chat-service/internal/domain"
 )
 
 type Config struct {
@@ -21,6 +23,7 @@ type Config struct {
 	Auth     Auth
 	CMS      CMS
 	Log      Log
+	Presence Presence
 }
 
 type App struct {
@@ -73,6 +76,15 @@ type Redis struct {
 	// Enabled = false -> dung broker in-memory (1 instance). Bat khi scale >1 pod.
 	Enabled bool
 	Channel string
+}
+
+// Presence: chong "online mac ket" khi process bi kill (xem internal/domain/presence.go).
+type Presence struct {
+	// Heartbeat: chu ky lam tuoi last_seen_at cho nguoi dang mo WebSocket.
+	Heartbeat time.Duration
+	// TTL: online ma last_seen_at cu hon nguong nay thi coi la offline.
+	// Nen >= 3 lan Heartbeat. <=0 = tat (luon tin cot presence).
+	TTL time.Duration
 }
 
 type Auth struct {
@@ -199,6 +211,10 @@ func Load() (*Config, error) {
 			OutboxInterval:   dur("CMS_OUTBOX_INTERVAL", 10*time.Second),
 			OutboxMaxRetry:   num("CMS_OUTBOX_MAX_RETRY", 8),
 		},
+		Presence: Presence{
+			Heartbeat: dur("PRESENCE_HEARTBEAT", domain.DefaultPresenceHeartbeat),
+			TTL:       dur("PRESENCE_TTL", domain.DefaultPresenceTTL),
+		},
 		Log: Log{
 			Level:  str("LOG_LEVEL", "info"),
 			Format: str("LOG_FORMAT", "json"),
@@ -289,6 +305,9 @@ func (c *Config) WarnProd() []string {
 	}
 	if c.Log.File != "" {
 		warns = append(warns, "LOG_FILE=... : chi dung o local; prod de trong de docker/k8s thu gom stdout (file se phinh, khong tu rotate)")
+	}
+	if c.Presence.TTL > 0 && c.Presence.Heartbeat > 0 && c.Presence.TTL < 2*c.Presence.Heartbeat {
+		warns = append(warns, "PRESENCE_TTL < 2x PRESENCE_HEARTBEAT : mat 1 nhip heartbeat la nguoi dang online bi coi la offline")
 	}
 	if !c.Log.Stdout {
 		warns = append(warns, "LOG_STDOUT=false : prod phai de true, neu khong docker/k8s khong thu duoc log nao")

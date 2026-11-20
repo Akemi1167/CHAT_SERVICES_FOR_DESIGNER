@@ -10,15 +10,20 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Chi sinh 2 file JSON (collection v2.1 + environment). KHONG sinh cay v3
-# `collections/` nua — xem docs/09-postman.md.
+# `collections/` nua — xem docs/backend.md#postman.
 OUT_DIR = ROOT / "internal" / "postman"
 COLLECTION_FILE = OUT_DIR / "chat-service.postman_collection.json"
 ENV_FILE = OUT_DIR / "chat-service.local.postman_environment.json"
+# Hai ban tach de gui cho tung doi: moi ban chi co phan ben do goi + FLOW rieng.
+FE_FILE = OUT_DIR / "chat-service-fe.postman_collection.json"
+CMS_FILE = OUT_DIR / "chat-service-cms.postman_collection.json"
 
 SCHEMA = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 # ID on dinh de import nhieu lan khong tao ban trung.
 COLLECTION_ID = "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e1001"
 ENV_ID = "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e2001"
+FE_ID = "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e1002"
+CMS_ID = "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e1003"
 
 
 def js(*lines):
@@ -330,7 +335,7 @@ cms_bot = folder(
     "08 · CMS → Chat (Bot API)",
     "Các API **CMS gọi sang Chat**. Auth: header `X-Chat-Service-Key` (biến `service_key`), "
     "không dùng JWT. Mọi request ghi nên có `Idempotency-Key` — gặp lại key trả nguyên kết quả cũ.\n\n"
-    "Chỉ bật khi `CMS_ENABLED=true`. Chi tiết: `docs/10-cms-integration.md`.",
+    "Chỉ bật khi `CMS_ENABLED=true`. Chi tiết: `docs/backend.md#tích-hợp-cms-designer-bot`.",
     [
         req("Resolve user (openId → actorId)", "POST", "/bot/v1/users/resolve",
             body={"items": [{"openId": "local:designer-1", "cmsUserId": 68, "name": "Trần Designer"}]},
@@ -359,9 +364,40 @@ cms_bot = folder(
                                       "status": {"text": "Đang làm", "tone": "info"}},
                            "elements": [{"type": "button", "text": "Nộp bài", "action": "submit_work"}]},
                   "cardVersion": 2},
-            desc="Chỉ áp dụng khi `cardVersion` **lớn hơn** bản đang lưu; nhỏ hơn/bằng → `{\"ok\":true,\"ignored\":true}`.",
+            desc="Chỉ áp dụng khi `cardVersion` **lớn hơn** bản đang lưu; nhỏ hơn/bằng → `{\"ok\":true,\"ignored\":true}`.\n\n"
+                 "Gộp được 3 việc trong 1 request — xem request kế tiếp.",
             auth={"type": "noauth"},
             tests=(OK, 'pm.test("ok", () => pm.expect(pm.response.json().ok).to.be.true);')),
+        req("Sửa card + thread + thông báo (gộp 1 request)", "PATCH",
+            "/bot/v1/messages/{{card_message_id}}",
+            body={"card": {"schema": "abc.card/v1",
+                           "header": {"code": "WEB-20261118-0006", "title": "Banner Tết 2027",
+                                      "status": {"text": "Đã nộp bài", "tone": "success"}},
+                           "elements": [{"type": "text", "text": "Chờ duyệt"}]},
+                  "cardVersion": 3,
+                  "thread": {"text": "Trần Designer đã nộp bài · Chờ duyệt",
+                             "bot": {"id": 1, "name": "Demo Designer Bot"}},
+                  "notify": [{"actorId": "{{actor_id}}",
+                              "text": "Đơn WEB-20261118-0006 đã nộp bài"}]},
+            desc="**Dùng cái này cho mỗi lần đơn đổi trạng thái** — thay vì gọi 3 request "
+                 "(`PATCH` card + `POST .../thread` + `POST /notifications`).\n\n"
+                 "`thread` và `notify` đều **tuỳ chọn**; không gửi thì hành vi y như request ở trên.\n"
+                 "`notify[].messageId` bỏ trống thì tự trỏ về chính card này.\n\n"
+                 "**Quy ước lỗi** (đã kiểm chứng):\n"
+                 "- `cardVersion` không lớn hơn → `{ok, ignored:true}` và **bỏ qua cả** `thread`/`notify` "
+                 "(đang gửi trạng thái cũ thì không được ghi thêm dòng diễn biến cũ).\n"
+                 "- `thread`/`notify` lỗi → vẫn `200`, card đã đổi xong, lỗi báo theo từng phần: "
+                 "`{\"thread\":{\"error\":{\"code\":\"text_required\"}}}`. Không trả 5xx vì CMS retry "
+                 "sẽ gặp `ignored:true` (cardVersion không tăng nữa) và mất luôn thread/notify.\n"
+                 "- Một `Idempotency-Key` cho cả 3 việc.",
+            auth={"type": "noauth"},
+            tests=(OK,
+                   'const d = pm.response.json();',
+                   'pm.test("co cardVersion", () => pm.expect(d).to.have.property("cardVersion"));',
+                   'pm.test("ignored thi khong co thread/notify", () => {',
+                   '  if (d.ignored) { pm.expect(d).to.not.have.property("thread");',
+                   '                   pm.expect(d).to.not.have.property("notify"); }',
+                   '});')),
         req("Trả lời trong thread", "POST", "/bot/v1/messages/{{card_message_id}}/thread",
             body={"text": "Đã giao Trần Designer · Chờ nhận task.", "bot": {"id": 1, "name": "Demo Designer Bot"}},
             auth={"type": "noauth"},
@@ -560,29 +596,17 @@ Phân trang: cursor (`?cursor=<meta.next_cursor>&limit=30`), **không** dùng of
 Folder `08 · CMS → Chat (Bot API)` và `09 · API cho FE (hợp đồng CMS)` chỉ chạy khi service bật
 `CMS_ENABLED=true`. Điền 2 biến environment: `service_key` (= `CHAT_SERVICE_KEY`) và `cms_token`
 (access token do CMS phát). Header `X-Chat-Service-Key` + `Idempotency-Key` được gắn tự động cho
-mọi request `/bot/v1`. Chi tiết: `docs/10-cms-integration.md`.
+mọi request `/bot/v1`. Chi tiết: `docs/backend.md#tích-hợp-cms-designer-bot`.
 
 ## WebSocket & gRPC
 
-Postman **không** cho export 2 loại request này trong file v2.1 (giới hạn của Postman),
-nên chúng không có trong file import này. Hai cách dùng:
+Định dạng v2.1 của Postman không chứa được 2 loại request này, nên **mẫu nằm trong mô tả của
+folder `10 · WebSocket & gRPC (mẫu frame)`**: mở folder → tab Documentation → copy khối JSON.
 
-- **WebSocket**: New → WebSocket → `ws://localhost:8080/ws?token=<JWT>` → Connect.
-  Kiểm tra frame `ready` xem `display_name` có đúng người không (token trong URL luôn thắng
-  header `Authorization` mà Postman có thể tự gắn).
-  Gửi frame: `{"id":"1","type":"message.send","payload":{"conversation_id":"...","content":"hello"}}`.
-  Lưu ý: nếu thêm `client_msg_id` thì giá trị phải **khác nhau mỗi lần gửi** — trùng giá trị cũ sẽ
-  bị coi là retry (`ack` trả `"duplicated": true`) và **không broadcast cho ai cả**.
-  Các frame khác: `template.send`, `message.read`, `message.delete`, `typing`, `ping`.
-  Server đẩy xuống: `ready`, `ack`, `error`, `message.new`, `message.read`, `typing`,
-  `presence.update`, `task.created`, `task.updated`, `bot.submission.stored`.
-  Chi tiết: `docs/02-websocket.md`.
-- **gRPC**: New → gRPC → `localhost:9090` → chọn service (server reflection đang bật) →
-  thêm metadata `authorization: Bearer <JWT>`. Có `ChatService`, `BotService`, `TaskService`.
-  Chi tiết: `docs/05-api.md`.
+Trong đó có: 2 URL WebSocket và khác nhau ở đâu, 8 frame gửi lên kèm body đầy đủ, các frame
+nhận về, bảng 13 trường hợp hay gặp, và 5 message mẫu cho gRPC.
 
-Hai loại request này **không nằm trong file JSON** (định dạng v2.1 của Postman không chứa được),
-chạy bằng Postman CLI: `postman collection run "postman/collections/Chat Service"`.
+Giao thức đầy đủ: `docs/frontend.md#giao-thức-websocket`. Danh sách RPC: `docs/backend.md#danh-sách-api`.
 """
 
 
@@ -614,133 +638,234 @@ CMS_AUTH = {"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}
 
 flow = folder(
     "FLOW · Chạy từ trên xuống để hiểu luồng",
-    "Toàn bộ vòng đời một nhóm chat, theo đúng thứ tự thật. **Chạy lần lượt từ 1.1**.\n\n"
+    "Toàn bộ vòng đời một nhóm chat và một đơn hàng, theo đúng thứ tự thật. **Chạy lần lượt từ 1.1**.\n\n"
     "### Dừng ở một bước\n"
-    "Đặt biến `stop_at` = số bước (vd `2.3`) rồi **Run collection** → chạy tới bước đó thì dừng. "
+    "Đặt biến `stop_at` = số bước (vd `3.2`) rồi **Run collection** → chạy tới bước đó thì dừng. "
     "Xem response, đổi `stop_at` sang bước sau để đi tiếp. Để trống = chạy hết.\n\n"
+    "```bash\nmake postman-flow TOKEN=$(make -s token-cms CMS_USER=6) KEY=$CHAT_SERVICE_KEY [STOP=3.2]\n```\n\n"
     "### Đánh số\n"
-    "`1.1`, `1.2`… = các bước **cùng cấp** trong một giai đoạn. Giai đoạn:\n"
-    "1 · chuẩn bị · 2 · nhóm & thành viên · 3 · tin nhắn · 4 · card và form (CMS) · "
-    "5 · thông báo · 6 · dọn dẹp.\n\n"
+    "`1.1`, `1.2`… = các bước **cùng cấp** trong một giai đoạn:\n\n"
+    "| | Giai đoạn | Ai gọi |\n|---|---|---|\n"
+    "| 1 | chuẩn bị | — |\n"
+    "| 2 | nhóm & thành viên | FE + CMS |\n"
+    "| 3 | tin nhắn | FE |\n"
+    "| 4 | **vòng đời một đơn** | FE → CMS → Chat |\n"
+    "| 5 | thông báo | CMS + FE |\n"
+    "| 6 | dọn dẹp | — |\n\n"
+    "### Điều quan trọng nhất về giai đoạn 4\n"
+    "`POST /forms/create_task/submit` **không tạo tin nhắn nào trong Chat**. Nó chỉ ký HMAC rồi "
+    "chuyển sang CMS. Card đơn chỉ xuất hiện khi **CMS gọi ngược** vào `POST /bot/v1/messages`.\n\n"
+    "Ở local CMS không gọi tới được `localhost` của bạn, nên bước **4.3 đóng vai CMS** (dùng "
+    "`service_key`) để bạn thấy đủ vòng. Trên môi trường thật, bước đó do CMS tự làm.\n\n"
     "### Cần gì trước\n"
-    "- `token` — `make token SUB=demo-an NAME=\"An\" ROLE=order`\n"
-    "- `service_key` — = `CHAT_SERVICE_KEY` trong `.env` (chỉ cho bước 2.x, 4.x)\n"
-    "- `cms_token` — token của người **thuộc nhóm**; thiếu thì để bằng `token`\n\n"
-    "Biến `group_id` được bước 2.1 lưu lại, các bước sau dùng chung — không phải điền tay.",
+    "- `token` + `cms_token` — `make token-cms CMS_USER=6` (người thật trong nhóm CMS)\n"
+    "- `service_key` — `CHAT_SERVICE_KEY` trong `.env`, cho các bước `/bot/v1`\n\n"
+    "`group_id` do bước 2.1 lưu, `card_message_id` do 4.3 lưu — không phải điền tay.",
     [
         # ---- 1 · chuan bi ----
         step("1.1", "Service còn sống?", "GET", "/healthz",
              desc="Chưa 200 thì không cần đi tiếp: `make dev-up` rồi `make dev-logs`.",
              tests=(OK, 'pm.test("status ok", () => pm.expect(pm.response.json().data.status).to.eql("ok"));')),
-        step("1.2", "Tôi là ai", "GET", "/api/v1/me",
-             desc="Xác minh `token` hợp lệ và lấy `user_id`. 401 ở đây = token sai hoặc "
-                  "`JWT_SECRET` của app khác với lúc sinh token.",
-             tests=(OK, *save("user_id", "_d.user_id"))),
+        step("1.2", "Tôi là ai (bề mặt FE)", "GET", "/api/client/v1/chat/auth/me",
+             auth=CMS_AUTH,
+             desc="Xác minh `cms_token` hợp lệ. 401 ở đây = token sai, hết hạn, hoặc `JWT_SECRET` "
+                  "của app khác với lúc sinh token (bẫy hay gặp: `environment:` trong compose ghi "
+                  "cứng `JWT_SECRET` sẽ đè `env_file`).",
+             tests=(OK, 'const me = pm.response.json().element.me;',
+                    'pm.test("co actorId", () => pm.expect(me).to.have.property("actorId"));',
+                    'pm.collectionVariables.set("actor_id", me.actorId);',
+                    'console.log("actor_id =", me.actorId, "| webTeams =",'
+                    ' JSON.stringify((me.profile || {}).webTeams));')),
 
         # ---- 2 · nhom & thanh vien ----
-        step("2.1", "Tạo nhóm", "POST", "/api/v1/conversations",
-             body={"type": "group", "name": "FLOW · nhóm thử", "member_user_ids": []},
-             desc="Lưu **`group_id`** — biến dùng xuyên suốt cả 3 bề mặt API.\n\n"
-                  "Đang có CMS thật? Bỏ qua bước này, chạy 2.2 để CMS đẩy nhóm sang.",
-             tests=(OK, *save("group_id", "_d.id"))),
-        step("2.2", "CMS đẩy nhóm + thành viên sang Chat", "PUT", "/bot/v1/groups/{{cms_chat_id}}",
+        step("2.1", "Mở app: bootstrap", "GET", "/api/client/v1/chat/bootstrap",
+             auth=CMS_AUTH,
+             desc="Tất cả thứ FE cần khi mở app: `me`, `groups` (**chỉ nhóm mình là thành viên**), "
+                  "`notifications`, `unreadNotifications`.\n\n"
+                  "Bước này lưu `group_id` = nhóm đầu tiên, và `team_id_cms` = tổ đầu tiên của nhóm đó "
+                  "(`groups[].cms.teams[].id`) — bước 4.1 cần đúng tổ **thuộc nhóm này**.",
+             tests=(OK, 'const el = pm.response.json().element;',
+                    'pm.test("co me + groups", () => pm.expect(el).to.have.keys('
+                    '["me","groups","notifications","unreadNotifications"]));',
+                    'const g = (el.groups || [])[0];',
+                    'if (g) {',
+                    '  pm.collectionVariables.set("group_id", g.chatId || g.id);',
+                    '  const t = ((g.cms || {}).teams || [])[0];',
+                    '  if (t) pm.collectionVariables.set("team_id_cms", String(t.id));',
+                    '  console.log("group_id =", g.chatId || g.id, "| teams =", JSON.stringify((g.cms||{}).teams));',
+                    '}')),
+        step("2.2", "Nhóm này có những ai?", "GET", "/bot/v1/groups/{{group_id}}/members",
+             auth={"type": "noauth"},
+             desc="**Điểm dừng hay dùng**: xác nhận thành viên trước khi gửi gì.\n\n"
+                  "`id` trả về là **actorId** (`u_6`) — định danh Chat cấp cho CMS, không phải UUID. "
+                  "Dùng giá trị này cho `visibleTo` của nút trên card và cho `notify[].actorId`.",
+             tests=(OK, 'const items = pm.response.json().items || [];',
+                    'pm.test("co thanh vien", () => pm.expect(items.length).to.be.above(0));',
+                    'console.log("thanh vien =", items.map(i => i.id).join(", "));')),
+        step("2.3", "CMS đẩy nhóm + thành viên", "PUT", "/bot/v1/groups/{{cms_chat_id}}",
              body={"name": "FLOW · nhóm từ CMS",
                    "members": [{"openId": "local:flow-1", "cmsUserId": 9001, "name": "Flow User",
                                 "sources": ["team"], "teamCodes": ["DESIGN"]}]},
              auth={"type": "noauth"},
-             desc="Đây là **chiều CMS → Chat**. Tham số URL là `cms_chat_id` (dạng `wg_<hex>`), "
-                  "KHÔNG phải `group_id` — vì nó chính là chatId mà CMS muốn tạo.\n\n"
+             desc="Chiều **CMS → Chat**. Tham số URL là `cms_chat_id` (dạng `wg_<hex>`), KHÔNG phải "
+                  "`group_id` — vì nó chính là chatId mà CMS muốn tạo.\n\n"
                   "**Thay thế toàn bộ** danh sách thành viên: ai không có trong `members` mất quyền xem ngay.\n\n"
-                  "Cần `service_key`. Chưa bật CMS (`CMS_ENABLED=false`) thì bước này 404 — bỏ qua.\n\n"
-                  "Bước này **không** đổi `group_id`: nhóm vừa đẩy chỉ có thành viên do CMS "
-                  "khai, token của bạn không nằm trong đó nên các bước 3.x sẽ bị 403. "
-                  "Nhóm ở 2.1 (bạn là owner) mới là nhóm dùng xuyên suốt.",
+                  "Chat chỉ bắn event `reload` khi **thật sự** có thay đổi — gọi lại y nguyên payload "
+                  "thì không ai nhận gì (chạy 2 lần sẽ thấy).\n\n"
+                  "Bước này **không** đổi `group_id`: nhóm vừa đẩy chỉ có thành viên do CMS khai, "
+                  "token của bạn không nằm trong đó nên các bước sau sẽ 403.",
              tests=('pm.test("200 (da bat CMS) / 404 (CMS_ENABLED=false)",'
                     ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',)),
-        step("2.3", "Nhóm vừa đẩy có những ai?", "GET", "/bot/v1/groups/{{cms_chat_id}}/members",
-             auth={"type": "noauth"},
-             desc="**Điểm dừng hay dùng**: xác nhận CMS đẩy thành viên sang đúng chưa.\n\n"
-                  "`id` trả về là **actorId** (`u_9001`) — định danh Chat cấp cho CMS, không phải UUID. "
-                  "Bước này lưu `actor_id` cho 5.1.\n\n"
-                  "Muốn xem thành viên nhóm của 2.1 thì đổi URL sang `{{group_id}}` — cùng endpoint, "
-                  "cả hai dạng id đều nhận.",
-             tests=('pm.test("200 / 404 (chua bat CMS)",'
-                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',
-                    'const _it = pm.response.code === 200 && pm.response.json().items[0];',
-                    'if (_it) pm.collectionVariables.set("actor_id", _it.id);')),
-        step("2.4", "Nhóm của tôi (bề mặt FE)", "GET", "/api/client/v1/chat/bootstrap",
-             auth=CMS_AUTH,
-             desc="Tất cả thứ FE cần khi mở app. `groups` **chỉ gồm nhóm mình là thành viên** — "
-                  "không thấy nhóm vừa tạo ở 2.2 là đúng, vì bạn không nằm trong `members` của nó.",
-             tests=(OK,)),
 
         # ---- 3 · tin nhan ----
-        step("3.1", "Gửi tin nhắn", "POST", "/api/v1/conversations/{{group_id}}/messages",
-             body={"content": "FLOW: tin nhắn đầu tiên", "client_msg_id": "{{$guid}}"},
-             desc="`client_msg_id` giúp chống gửi trùng khi mạng chập chờn.",
-             tests=(OK, *save("message_id", "_d.message.id"))),
-        step("3.2", "Trả lời trong thread", "POST", "/api/v1/conversations/{{group_id}}/messages",
-             body={"content": "FLOW: trả lời", "reply_to_id": "{{message_id}}", "client_msg_id": "{{$guid}}"},
-             desc="`reply_to_id` tạo thread. Tin gốc giữ nguyên, tin này có `thread_id` = id tin gốc.",
-             tests=(OK, *save("reply_message_id", "_d.message.id"))),
-        step("3.3", "Đọc lịch sử", "GET", "/api/v1/conversations/{{group_id}}/messages",
-             query=[("limit", "30"), ("only_root", "true", True)],
-             desc="Mới nhất trước, phân trang bằng `cursor`. Bật `only_root=true` để ẩn tin trong thread.",
+        step("3.1", "Gửi tin nhắn", "POST", "/api/client/v1/chat/groups/{{group_id}}/messages",
+             body={"text": "FLOW: tin nhắn đầu tiên", "clientMsgId": "{{$guid}}"},
+             auth=CMS_AUTH,
+             desc="`clientMsgId` chống gửi trùng khi mạng chập chờn — gửi lại cùng giá trị thì "
+                  "server trả tin cũ chứ không tạo thêm.\n\n"
+                  "Chat đồng thời ghi event `message.created` vào **outbox** để gửi sang CMS (có retry), "
+                  "khác với `form.submit` ở 4.1 là gọi đồng bộ.",
+             tests=(OK, 'const el = pm.response.json().element;',
+                    'pm.collectionVariables.set("message_id", el.message.id);')),
+        step("3.2", "Trả lời trong thread", "POST", "/api/client/v1/chat/groups/{{group_id}}/messages",
+             body={"text": "FLOW: trả lời", "replyToId": "{{message_id}}", "clientMsgId": "{{$guid}}"},
+             auth=CMS_AUTH,
+             desc="`replyToId` tạo thread. Tin gốc giữ nguyên, tin này có `threadRootId` = id tin gốc.",
              tests=(OK,)),
-        step("3.4", "Đánh dấu đã đọc", "POST", "/api/v1/conversations/{{group_id}}/read",
-             body={"message_id": "{{message_id}}"},
-             desc="Trả `unread_count` mới. Realtime phát event `read` cho người khác trong nhóm.",
+        step("3.3", "Đọc lịch sử", "GET", "/api/client/v1/chat/groups/{{group_id}}/messages",
+             query=[("limit", "30")], auth=CMS_AUTH,
+             desc="Mới nhất trước, phân trang bằng `pageInfo.nextCursor`. Card trong danh sách **đã "
+                  "lọc nút theo `visibleTo`** của chính người gọi.",
+             tests=(OK,)),
+        step("3.4", "Đánh dấu đã đọc", "POST", "/api/client/v1/chat/groups/{{group_id}}/read",
+             body={"messageId": "{{message_id}}"}, auth=CMS_AUTH,
+             desc="Trả `unreadCount` mới. Realtime phát event `read` cho người khác trong nhóm.",
              tests=(OK,)),
 
-        # ---- 4 · card & form (CMS) ----
-        step("4.1", "CMS gửi card vào nhóm", "POST", "/bot/v1/messages",
-             body={"groupId": "{{group_id}}", "card": {
-                 "schema": "abc.card/v1", "title": "FLOW · Đơn thử",
-                 "elements": [{"type": "text", "text": "Nội dung đơn"},
-                              {"type": "button", "text": "Nhận việc", "action": "accept_task"}]}},
-             auth={"type": "noauth"},
-             desc="Chiều **CMS → Chat**. Card theo schema `abc.card/v1`.\n\n"
-                  "⚠️ Khoá của nút là **`action`**, KHÔNG phải `actionId` — dùng sai tên thì "
-                  "`POST /messages/:id/actions` trả `403 action_not_allowed`.\n\n"
-                  "Nút có `visibleTo` được lọc theo từng người xem.",
-             tests=('pm.test("200 / 404 (chua bat CMS)",'
-                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',
-                    'if (pm.response.code === 200) pm.collectionVariables.set("card_message_id",'
-                    ' pm.response.json().messageId);')),
-        step("4.2", "FE gửi form tạo yêu cầu", "POST", "/api/client/v1/chat/forms/create_task/submit",
-             body={"values": {"kind": "task", "title": "FLOW · Banner", "teamId": "27", "useAI": False},
+        # ---- 4 · vong doi mot don ----
+        step("4.1", "FE gửi form tạo đơn", "POST", "/api/client/v1/chat/forms/create_task/submit",
+             body={"values": {"kind": "task", "title": "FLOW · Banner Tết",
+                              "teamId": "{{team_id_cms}}", "useAI": False},
                    "context": {"groupId": "{{group_id}}"}},
              auth=CMS_AUTH,
-             desc="Chiều **FE → Chat → CMS**. Chat **không diễn giải** `values`, chỉ ký HMAC rồi "
-                  "chuyển nguyên sang CMS.\n\n"
-                  "⚠️ `teamId` ở đây là **tổ của CMS**, dạng số (vd `27`) — không phải UUID, và không "
-                  "liên quan gì tới bảng `teams` của module task nội bộ.",
+             desc="Chiều **FE → Chat → CMS**, gọi **đồng bộ** (chờ CMS trả lời) vì UI cần kết quả ngay.\n\n"
+                  "Chat **không đọc `values`** — chỉ ký HMAC rồi chuyển nguyên sang CMS. Thêm trường mới "
+                  "vào form thì không phải sửa Chat.\n\n"
+                  "⚠️ **`statusCode: 200` và `ok: true` KHÔNG có nghĩa là tạo được đơn.** Chúng chỉ nói "
+                  "\"Chat chuyển sang CMS được\" và \"CMS xử lý được request\". Kết quả nghiệp vụ nằm ở "
+                  "`toast.type` và `closeForm`:\n\n"
+                  "- `toast.type: \"success\"` + `closeForm: true` → đơn đã tạo\n"
+                  "- `toast.type: \"error\"` + `closeForm: false` → CMS từ chối, giữ form để sửa\n\n"
+                  "Lỗi hay gặp: `\"Chọn tổ thực hiện thuộc nhóm này\"` — `teamId` không thuộc nhóm. "
+                  "Bước 2.1 đã lấy đúng tổ vào `team_id_cms`; nếu nhóm không có tổ nào thì biến rỗng "
+                  "và bước này sẽ bị từ chối.\n\n"
+                  "**Bước này không tạo tin nhắn nào trong Chat.** Card đơn đến từ 4.3.",
              tests=('pm.test("200 / 400 (chua bat CMS) / 403 (khong thuoc nhom)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',
+                    'if (pm.response.code === 200) {',
+                    '  const el = pm.response.json().element;',
+                    '  console.log("toast =", JSON.stringify(el.toast), "| closeForm =", el.closeForm);',
+                    '  pm.test("doc toast, khong chi doc ok", () => pm.expect(el).to.have.property("closeForm"));',
+                    '}')),
+        step("4.2", "Chat đã gửi event sang CMS chưa?", "GET", "/api/client/v1/chat/notifications",
+             query=[("limit", "1")], auth=CMS_AUTH,
+             desc="Bước kiểm tạm (API này chỉ để request không rỗng).\n\n"
+                  "Thứ cần xem là **outbox** — chạy lệnh này ở terminal:\n\n"
+                  "```bash\nmake dev-psql\n"
+                  "SELECT event_type, status, attempts, last_error FROM webhook_outbox\n"
+                  "  ORDER BY created_at DESC LIMIT 5;\n```\n\n"
+                  "`status=sent` là CMS đã nhận. `form.submit` **không** qua outbox (gọi đồng bộ), "
+                  "chỉ `message.created` đi qua đây.",
+             tests=(OK,)),
+        step("4.3", "CMS đẩy card đơn vào nhóm", "POST", "/bot/v1/messages",
+             body={"groupId": "{{group_id}}",
+                   "bot": {"id": 1, "name": "Designer Bot"},
+                   "card": {"schema": "abc.card/v1",
+                            "header": {"code": "WEB-20261118-0006", "title": "FLOW · Banner Tết",
+                                       "status": {"text": "Chưa nhận", "tone": "warning"}},
+                            "elements": [{"type": "field", "label": "Số lượng", "value": "3"},
+                                         {"type": "button", "text": "Nhận việc",
+                                          "action": "accept_task", "visibleTo": ["{{actor_id}}"]}]}},
+             auth={"type": "noauth"},
+             desc="**Đây là bước làm card hiện ra trong nhóm** — chiều CMS → Chat.\n\n"
+                  "Trên môi trường thật, CMS tự gọi bước này ngay sau khi tạo đơn ở 4.1. Ở local CMS "
+                  "không gọi tới được `localhost` của bạn, nên request này **đóng vai CMS** bằng "
+                  "`service_key`. Đó là lý do submit ở 4.1 thành công mà nhóm vẫn trống.\n\n"
+                  "⚠️ Khoá của nút là **`action`**, KHÔNG phải `actionId` — sai tên thì card vẫn tạo "
+                  "được nhưng bấm nút trả `403 action_not_allowed`.\n\n"
+                  "`visibleTo` = danh sách `actorId` được thấy nút đó. Chat lọc nút theo **từng người xem** "
+                  "trước khi gửi xuống UI, mỗi người nhận một bản card riêng kể cả qua realtime.",
+             tests=('pm.test("200 / 404 (chua bat CMS)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',
+                    'if (pm.response.code === 200) {',
+                    '  const d = pm.response.json();',
+                    '  pm.collectionVariables.set("card_message_id", d.messageId);',
+                    '  pm.test("co cardVersion", () => pm.expect(d).to.have.property("cardVersion"));',
+                    '}')),
+        step("4.4", "FE bấm nút trên card", "POST",
+             "/api/client/v1/chat/messages/{{card_message_id}}/actions",
+             body={"action": "accept_task", "values": {"normItemId": "996802", "quantity": 2}},
+             auth=CMS_AUTH,
+             desc="Chat kiểm **trước khi gọi CMS**: action có trong card? người bấm có trong `visibleTo`? "
+                  "Không thì `403 action_not_allowed` và **không** gọi CMS.\n\n"
+                  "Qua được thì Chat gửi webhook `card.action` sang CMS; CMS trả card mới, Chat thay card "
+                  "theo `cardVersion` rồi phát realtime cho cả nhóm.",
+             tests=('pm.test("200 / 403 (khong trong visibleTo) / 400",'
                     ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
+        step("4.5", "CMS cập nhật đơn — gộp 3 việc 1 request", "PATCH",
+             "/bot/v1/messages/{{card_message_id}}",
+             body={"card": {"schema": "abc.card/v1",
+                            "header": {"code": "WEB-20261118-0006", "title": "FLOW · Banner Tết",
+                                       "status": {"text": "Đã nộp bài", "tone": "success"}},
+                            "elements": [{"type": "text", "text": "Chờ duyệt"}]},
+                   "cardVersion": 2,
+                   "thread": {"text": "Flow User đã nộp bài · Chờ duyệt",
+                              "bot": {"id": 1, "name": "Designer Bot"}},
+                   "notify": [{"actorId": "{{actor_id}}",
+                               "text": "Đơn WEB-20261118-0006 đã nộp bài"}]},
+             auth={"type": "noauth"},
+             desc="**Mỗi lần đơn đổi trạng thái thì dùng request này** — thay cho 3 request riêng "
+                  "(`PATCH` card + `POST .../thread` + `POST /notifications`). Một `Idempotency-Key`, "
+                  "một chỗ xử lý lỗi.\n\n"
+                  "`thread` và `notify` **tuỳ chọn**; không gửi thì hành vi y như trước.\n\n"
+                  "**Quy ước đã kiểm chứng:**\n"
+                  "- `cardVersion` không lớn hơn bản đang lưu → `{ok, ignored:true}` và **bỏ qua cả** "
+                  "`thread`/`notify` (đang gửi trạng thái cũ thì không được ghi thêm dòng diễn biến cũ)\n"
+                  "- `thread`/`notify` lỗi → vẫn `200`, card đã đổi xong, lỗi báo theo từng phần: "
+                  "`{\"thread\":{\"error\":{\"code\":\"text_required\"}}}`\n\n"
+                  "Chạy lại request này lần nữa sẽ thấy `ignored: true` — vì `cardVersion` vẫn là 2.",
+             tests=('pm.test("200 / 404", () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));',
+                    'if (pm.response.code === 200) {',
+                    '  const d = pm.response.json();',
+                    '  console.log("ignored =", d.ignored, "| thread =", JSON.stringify(d.thread));',
+                    '  pm.test("ignored thi khong co thread/notify", () => {',
+                    '    if (d.ignored) { pm.expect(d).to.not.have.property("thread");',
+                    '                     pm.expect(d).to.not.have.property("notify"); }',
+                    '  });',
+                    '}')),
 
         # ---- 5 · thong bao ----
-        step("5.1", "CMS tạo thông báo cho 1 người", "POST", "/bot/v1/notifications",
-             body={"actorId": "{{actor_id}}", "text": "FLOW: bạn có việc mới"},
-             auth={"type": "noauth"},
-             desc="Cần `actor_id`. Chưa có thì lấy ở 2.3 (`items[].id`).",
-             tests=('pm.test("200 / 400 / 404", () => pm.expect(pm.response.code)'
-                    '.to.be.oneOf([200, 400, 404]));',)),
-        step("5.2", "Thông báo chưa đọc của tôi", "GET", "/api/client/v1/chat/notifications",
-             query=[("unread", "true")],
-             auth=CMS_AUTH,
-             desc="`element.unread` là **tổng** số chưa đọc (cho badge), không đổi theo filter.",
-             tests=(OK,)),
-        step("5.3", "Đánh dấu đã đọc hết", "POST", "/api/client/v1/chat/notifications/read",
+        step("5.1", "Thông báo chưa đọc của tôi", "GET", "/api/client/v1/chat/notifications",
+             query=[("unread", "true")], auth=CMS_AUTH,
+             desc="Bước 4.5 vừa tạo một thông báo qua field `notify` — nó phải xuất hiện ở đây.\n\n"
+                  "`element.unread` là **tổng** số chưa đọc (cho badge), không đổi theo filter.",
+             tests=(OK, 'const el = pm.response.json().element;',
+                    'console.log("so thong bao chua doc =", el.unread);')),
+        step("5.2", "Đánh dấu đã đọc hết", "POST", "/api/client/v1/chat/notifications/read",
              body={"all": True}, auth=CMS_AUTH,
-             desc="Trả số dòng vừa đánh dấu.", tests=(OK,)),
+             desc="Trả số dòng vừa đánh dấu. `{\"ids\": [...]}` để đánh dấu từng cái.",
+             tests=(OK,)),
 
         # ---- 6 · don dep ----
-        step("6.1", "Xoá tin nhắn vừa gửi", "DELETE", "/api/v1/messages/{{message_id}}",
-             desc="Xoá mềm: tin còn trong DB nhưng FE không hiện. Bỏ qua nếu muốn giữ để xem tiếp.",
+        step("6.1", "Xoá tin nhắn đã gửi ở 3.1", "DELETE", "/api/v1/messages/{{message_id}}",
+             desc="Xoá mềm: tin còn trong DB nhưng FE không hiện, và phát event `message.deleted`. "
+                  "Bỏ qua nếu muốn giữ để xem tiếp.\n\n"
+                  "Card ở 4.3 thì để lại — xoá nhóm/dữ liệu test bằng `make dev-down-v` nếu cần sạch hẳn.",
              tests=('pm.test("200 / 403 / 404", () => pm.expect(pm.response.code)'
                     '.to.be.oneOf([200, 403, 404]));',)),
     ],
 )
+
 
 # ---------------------------------------------------------------- WebSocket / gRPC
 # v2.1 JSON khong co kieu request WebSocket/gRPC. Giu mau o day duoi dang tai
@@ -765,7 +890,7 @@ Token di qua `?token=` vi browser khong set duoc header khi mo WebSocket. Thu tu
 
 Khong co token rieng cho WebSocket: **dung lai dung access token dang goi REST**.
 
-## 2. Frame gui len (client -> server)
+## 2. Frame gui len (client -> server) — 7 loai
 
 Moi frame la 1 JSON object. `id` do client tu dat, server tra lai trong `ref` cua `ack`/`error`
 de biet ack cua frame nao.
@@ -844,7 +969,25 @@ lan snake_case (`conversationId` = `conversation_id`, `text` = `content`).
 }
 ```
 
-### 2.6 typing - dang nhap
+### 2.6 presence.list - ai dang online
+
+```json
+{"id":"p1","type":"presence.list"}
+```
+
+Khong truyen gi = moi nguoi dung chung it nhat 1 nhom voi minh. Gioi han trong 1 nhom:
+
+```json
+{"id":"p2","type":"presence.list","payload":{"groupId":"{{group_id}}"}}
+```
+
+Tra ve `ack` voi `{count, items:[{userId, actorId, name, presence, online, reason?, lastSeenAt?}]}`.
+`presence`: `online` | `offline` | `off_duty`.
+
+Event `presence` chi ban KHI DOI, nen frame nay dung luc moi mo tab de lay anh chup hien tai.
+Doc tu bang `users` nen chay nhieu pod van dung.
+
+### 2.7 typing - dang nhap
 
 ```json
 {
@@ -855,13 +998,13 @@ lan snake_case (`conversationId` = `conversation_id`, `text` = `content`).
 ```
 Khong luu DB, **khong co ack**. Chi nhung nguoi khac trong nhom nhan event `typing`.
 
-### 2.7 message.delete - xoa mem
+### 2.8 message.delete - xoa mem
 
 ```json
 {"id":"c6","type":"message.delete","payload":{"messageId":"{{message_id}}"}}
 ```
 
-### 2.8 template.send - gui mau cho bot
+### 2.9 template.send - gui mau cho bot
 
 ```json
 {
@@ -1030,6 +1173,10 @@ collection = {
         {"key": "group_id", "value": "", "type": "string"},
         {"key": "cms_chat_id", "value": "wg_postman_demo", "type": "string"},
         {"key": "stop_at", "value": "", "type": "string"},
+        # Tổ của CMS, do bước FLOW 2.1 lấy từ groups[].cms.teams[].id.
+        {"key": "team_id_cms", "value": "", "type": "string"},
+        # Ten action tren card, do FLOW [FE] buoc 3.1 lay tu actions[0].
+        {"key": "card_action", "value": "", "type": "string"},
         {"key": "actor_id", "value": "", "type": "string"},
         {"key": "card_message_id", "value": "", "type": "string"},
         {"key": "user_id", "value": "", "type": "string"},
@@ -1071,65 +1218,532 @@ environment = {
 }
 
 
+# ================================================================ BAN TACH
+# Hai collection rieng de gui cho tung doi. Dung lai chinh cac folder o tren,
+# chi them FLOW viet theo goc nhin cua ben do.
+
+flow_fe = folder(
+    "FLOW · Luồng của FE",
+    "Thứ tự FE gọi, từ lúc mở app tới lúc bấm nút trên card. **Chạy lần lượt từ 1.1**.\n\n"
+    "### Chuẩn bị\n"
+    "Điền **`cms_token`** = access token do CMS phát (`POST /api/client/v1/workspace/auth/login` "
+    "của CMS). Chat **không có login** và không phát token riêng.\n\n"
+    "Local test: `make token-cms CMS_USER=6` sinh token dev đóng vai một user CMS đã đồng bộ.\n\n"
+    "### Dừng ở một bước\n"
+    "Đặt `stop_at` = số bước (vd `3.2`) rồi Run collection.\n\n"
+    "### Realtime\n"
+    "Mở WebSocket **một lần** khi vào app và giữ suốt phiên:\n\n"
+    "```\nws://localhost:8080/api/client/v1/chat/ws?token=<cms_token>\n```\n\n"
+    "Cùng access token với REST, field trả về camelCase **trùng tên** với REST. Frame mẫu + "
+    "13 trường hợp hay gặp: folder `WebSocket (mẫu frame)`.",
+    [
+        step("1.1", "Service còn sống?", "GET", "/healthz",
+             auth={"type": "noauth"},
+             desc="Chưa 200 thì không cần đi tiếp.",
+             tests=(OK,)),
+        step("1.2", "Tôi là ai", "GET", "/api/client/v1/chat/auth/me",
+             auth=CMS_AUTH,
+             desc="Xác minh token và lấy hồ sơ. Lưu `actor_id` — dùng để biết nút nào trên card "
+                  "là của mình.\n\n401 ở đây = token sai hoặc hết hạn → gọi CMS "
+                  "`POST /workspace/auth/refresh` rồi thử lại.",
+             tests=(OK, 'const me = pm.response.json().element.me;',
+                    'pm.test("co actorId", () => pm.expect(me).to.have.property("actorId"));',
+                    'pm.collectionVariables.set("actor_id", me.actorId);')),
+        step("2.1", "Mở app: bootstrap", "GET", "/api/client/v1/chat/bootstrap",
+             auth=CMS_AUTH,
+             desc="**Một request là đủ để vẽ xong sidebar**: `me`, `groups` (chỉ nhóm mình là "
+                  "thành viên, kèm `unreadCount` + `members`), `notifications`, "
+                  "`unreadNotifications`.\n\n"
+                  "`groups[].cms.teams` là danh sách tổ của nhóm — dùng để dựng dropdown ở bước 4.1, "
+                  "**đừng hardcode**.\n\n"
+                  "Ngay sau bước này: mở WebSocket (xem mô tả folder).",
+             tests=(OK, 'const el = pm.response.json().element;',
+                    'pm.test("co 4 khoa", () => pm.expect(el).to.have.keys('
+                    '["me","groups","notifications","unreadNotifications"]));',
+                    'const g = (el.groups || [])[0];',
+                    'if (g) {',
+                    '  pm.collectionVariables.set("group_id", g.chatId || g.id);',
+                    '  const t = ((g.cms || {}).teams || [])[0];',
+                    '  if (t) pm.collectionVariables.set("team_id_cms", String(t.id));',
+                    '}')),
+        step("3.1", "Mở một nhóm: đọc lịch sử", "GET",
+             "/api/client/v1/chat/groups/{{group_id}}/messages",
+             query=[("limit", "30")], auth=CMS_AUTH,
+             desc="Mới nhất trước. Cuộn lên: thêm `cursor=<pageInfo.nextCursor>`.\n\n"
+                  "Card trong danh sách **đã lọc nút theo `visibleTo`** của chính bạn, và `actions` "
+                  "liệt kê action bạn được bấm — cứ render hết những gì nhận được.\n\n"
+                  "`{{group_id}}` nhận cả `wg_…` (chatId của CMS) lẫn UUID nhóm.",
+             tests=(OK, 'const el = pm.response.json().element;',
+                    'const m = (el.messages || [])[0];',
+                    'if (m) pm.collectionVariables.set("message_id", m.id);',
+                    '// Uu tien card mA NGUOI NAY duoc bam (actions khong rong) de buoc 4.2 chay that;',
+                    '// khong co thi lay card bat ky — buoc 4.2 se tra 403, van la ket qua dung.',
+                    'const msgs = el.messages || [];',
+                    'const card = msgs.find(x => x.card && (x.actions || []).length) || msgs.find(x => x.card);',
+                    'if (card) {',
+                    '  pm.collectionVariables.set("card_message_id", card.id);',
+                    '  // Lay LUON ten action dau tien de buoc 4.2 bam dung nut co that.',
+                    '  const a = (card.actions || [])[0];',
+                    '  if (a) pm.collectionVariables.set("card_action", a);',
+                    '  console.log("card =", card.id, "| actions =", JSON.stringify(card.actions || []));',
+                    '}')),
+        step("3.2", "Gửi tin nhắn", "POST",
+             "/api/client/v1/chat/groups/{{group_id}}/messages",
+             body={"text": "Xin chào cả nhóm", "clientMsgId": "{{$guid}}"},
+             auth=CMS_AUTH,
+             desc="`clientMsgId` do FE sinh (UUID) — gửi lại cùng giá trị thì server trả tin cũ "
+                  "chứ không tạo thêm. Đây là cách chống trùng khi mạng chập chờn.\n\n"
+                  "Gửi qua WebSocket (`message.send`) cũng được, cùng kết quả; dùng REST khi WS đứt.",
+             tests=(OK, 'pm.collectionVariables.set("message_id",'
+                    ' pm.response.json().element.message.id);')),
+        step("3.3", "Trả lời trong thread", "POST",
+             "/api/client/v1/chat/groups/{{group_id}}/messages",
+             body={"text": "Trả lời trong thread", "replyToId": "{{message_id}}",
+                   "clientMsgId": "{{$guid}}"},
+             auth=CMS_AUTH,
+             desc="`replyToId` = tin đang trả lời. Tin mới có `threadRootId` = id tin gốc; tin gốc "
+                  "giữ nguyên nhưng `replyCount`/`threadCount` tăng → vẽ badge.\n\n"
+                  "Mở cả thread: `GET /api/client/v1/chat/messages/{id}/replies?mode=thread`.",
+             tests=(OK,)),
+        step("3.4", "Đánh dấu đã đọc", "POST",
+             "/api/client/v1/chat/groups/{{group_id}}/read",
+             body={"messageId": "{{message_id}}"}, auth=CMS_AUTH,
+             desc="Gọi khi người dùng xem tới tin mới nhất. Trả `unreadCount` mới; người khác "
+                  "trong nhóm nhận event realtime `read` để cập nhật dấu đã xem.",
+             tests=(OK,)),
+        step("4.1", "Gửi form tạo đơn", "POST",
+             "/api/client/v1/chat/forms/create_task/submit",
+             body={"values": {"kind": "task", "title": "Banner Tết 2027",
+                              "teamId": "{{team_id_cms}}", "useAI": False},
+                   "context": {"groupId": "{{group_id}}"}},
+             auth=CMS_AUTH,
+             desc="`values` do **CMS** định nghĩa (spec mục 6.2), Chat chuyển nguyên không đọc. "
+                  "`teamId` phải là tổ **thuộc nhóm này** — lấy từ `groups[].cms.teams[].id` ở bước 2.1.\n\n"
+                  "⚠️ **`statusCode: 200` và `ok: true` KHÔNG có nghĩa là tạo được đơn.** Kết quả "
+                  "nghiệp vụ nằm ở `toast.type` và `closeForm`:\n\n"
+                  "```js\nif (el.toast) toast(el.toast.text, el.toast.type);\n"
+                  "if (el.closeForm) closeForm();   // false = chưa xong, giữ form để sửa\n```\n\n"
+                  "Gửi tổ không thuộc nhóm → `toast: {type:\"error\", text:\"Chọn tổ thực hiện "
+                  "thuộc nhóm này\"}`, `closeForm: false`.\n\n"
+                  "**Card đơn không đến từ response này.** Nó xuất hiện qua realtime khi CMS đẩy "
+                  "card vào nhóm — FE chỉ cần nghe event `message` và upsert theo `id`.",
+             tests=('pm.test("200 / 400 (chua bat CMS) / 403 (khong thuoc nhom)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',
+                    'if (pm.response.code === 200) {',
+                    '  const el = pm.response.json().element;',
+                    '  console.log("toast =", JSON.stringify(el.toast), "| closeForm =", el.closeForm);',
+                    '}')),
+        step("4.2", "Bấm nút trên card", "POST",
+             "/api/client/v1/chat/messages/{{card_message_id}}/actions",
+             body={"action": "{{card_action}}", "values": {"normItemId": "996802", "quantity": 2}},
+             auth=CMS_AUTH,
+             desc="`action` lấy từ `actions[]` của card — **chỉ hiện nút nào có trong đó**. "
+                  "Bước 3.1 đã tự điền `card_action` = action đầu tiên bạn được bấm.\n\n"
+                  "Người không được phép bấm → `403 ACTION_NOT_ALLOWED` (server chặn, không phụ "
+                  "thuộc UI).\n\n"
+                  "Trả `{ok, toast, closeForm, card, cardVersion}`: hiện `toast`; có `card` mới và "
+                  "`cardVersion` **lớn hơn** thì thay card tại chỗ.\n\n"
+                  "Lỗi nghiệp vụ: vẫn `200` nhưng `toast.type:\"error\"`, không có `card` → chỉ "
+                  "hiện toast, giữ card cũ.\n\n"
+                  "Cần `card_message_id` (bước 3.1 tự lấy tin có card đầu tiên).",
+             tests=('pm.test("200 / 400 / 403 / 404",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403, 404]));',)),
+        step("5.1", "Thông báo chưa đọc", "GET", "/api/client/v1/chat/notifications",
+             query=[("unread", "true"), ("limit", "20")], auth=CMS_AUTH,
+             desc="`element.unread` là **tổng** số chưa đọc — dùng cho badge, không đổi theo filter.\n\n"
+                  "Mỗi thông báo có `messageId` để bấm vào là nhảy tới đúng card.",
+             tests=(OK,)),
+        step("5.2", "Đánh dấu đã đọc", "POST", "/api/client/v1/chat/notifications/read",
+             body={"all": True}, auth=CMS_AUTH,
+             desc="`{\"all\": true}` đánh dấu hết; `{\"ids\": [...]}` đánh dấu từng cái.",
+             tests=(OK,)),
+        step("6.1", "Đồng bộ lại nhóm (sau khi vào link mời)", "POST",
+             "/api/client/v1/chat/groups/refresh", auth=CMS_AUTH,
+             desc="Gọi **ngay sau** khi người dùng vào nhóm bằng link mời (FE đã gọi CMS "
+                  "`POST /workspace/groups/join` trước đó) — để không phải chờ chu kỳ đồng bộ 60 giây.\n\n"
+                  "Trả `{synced, groups}`: `groups` cùng hình dạng với `bootstrap` nên vẽ lại sidebar "
+                  "được ngay. `synced` là tổng số nhóm CMS trả về, **không** phải số nhóm của bạn.\n\n"
+                  "Bình thường không cần gọi định kỳ: Chat tự đồng bộ 60s/lần và phát event `reload` "
+                  "khi nhóm có thay đổi thật.",
+             tests=('pm.test("200 / 400 (chua bat CMS)",'
+                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400]));',)),
+    ],
+)
+
+flow_cms = folder(
+    "FLOW · Luồng của CMS",
+    "Thứ tự CMS gọi vào Chat, từ lúc có nhóm tới khi đơn xong. **Chạy lần lượt từ 1.1**.\n\n"
+    "### Chuẩn bị\n"
+    "Điền **`service_key`** = `CHAT_SERVICE_KEY` (khoá dùng chung hai phía). Mọi request trong "
+    "collection này tự gắn header `X-Chat-Service-Key` + `Idempotency-Key` — không dùng JWT.\n\n"
+    "### Dừng ở một bước\n"
+    "Đặt `stop_at` = số bước (vd `3.1`) rồi Run collection.\n\n"
+    "### Hai điều quan trọng nhất\n"
+    "**1. `Idempotency-Key`** (UUID) cho mọi request ghi. Chat lưu `(key → kết quả)`; gặp lại key "
+    "cũ thì trả nguyên kết quả lần đầu, **không làm lại việc** — kể cả khi body lần hai khác. "
+    "Retry phải dùng **cùng key**.\n\n"
+    "**2. `cardVersion` phải tăng đơn điệu.** Chat chỉ áp card mới khi `cardVersion` **lớn hơn** "
+    "bản đang lưu; nhỏ hơn/bằng → `{ok, ignored:true}` và bỏ qua luôn `thread`/`notify`.\n\n"
+    "Hợp đồng đầy đủ: `docs/cms-goi-chat.md`.",
+    [
+        step("1.1", "Chat đang giữ những nhóm nào?", "GET", "/bot/v1/groups",
+             query=[("source", "cms"), ("q", "", True)],
+             auth={"type": "noauth"},
+             desc="Dùng để đối chiếu khi debug đồng bộ. `?q=` tìm theo tên, `?source=` = `cms` | `local`.\n\n"
+                  "`id` là `chatId` của CMS, `internalId` là UUID của Chat — endpoint nào cũng nhận "
+                  "cả hai dạng.",
+             tests=(OK, 'const items = pm.response.json().items || [];',
+                    'const g = items.find(x => String(x.id).startsWith("wg_")) || items[0];',
+                    'if (g) pm.collectionVariables.set("group_id", g.id);',
+                    'console.log("nhom =", items.map(i => i.id + " (" + i.memberCount + " nguoi)").join(", "));')),
+        step("1.2", "Nhóm này có những ai?", "GET", "/bot/v1/groups/{{group_id}}/members",
+             auth={"type": "noauth"},
+             desc="`id` trả về là **actorId** (`u_68`) — định danh Chat cấp. Dùng cho `visibleTo` của "
+                  "nút trên card và cho `notify[].actorId`.",
+             tests=(OK, 'const items = pm.response.json().items || [];',
+                    'if (items[0]) pm.collectionVariables.set("actor_id", items[0].id);',
+                    'console.log("thanh vien =", items.map(i => i.id).join(", "));')),
+        step("2.1", "openId → actorId", "POST", "/bot/v1/users/resolve",
+             body={"items": [{"openId": "local:flow-cms-1", "cmsUserId": 9400,
+                              "name": "Người mới"}]},
+             auth={"type": "noauth"},
+             desc="Gọi khi cần `actorId` mà chưa có. Người **chưa từng đăng nhập Chat** cũng dùng "
+                  "được: Chat tạo actor từ hồ sơ CMS.\n\n"
+                  "Một lần gọi nhiều người (Chat tra bằng 2 câu query chứ không phải N câu). "
+                  "`actorId` ổn định theo `cmsUserId` nên **CMS nên cache**, không cần gọi lại.\n\n"
+                  "Endpoint này **không cần** `Idempotency-Key` — nó vốn idempotent theo `openId`.",
+             tests=(OK, 'pm.test("co items", () => pm.expect(pm.response.json().items).to.be.an("array"));')),
+        step("2.2", "Đẩy nhóm + thành viên", "PUT", "/bot/v1/groups/{{cms_chat_id}}",
+             body={"name": "Nhóm Thiết kế Web",
+                   "members": [{"openId": "local:flow-cms-1", "cmsUserId": 9400,
+                                "name": "Người mới", "sources": ["team"],
+                                "teamCodes": ["DESIGN"]}]},
+             auth={"type": "noauth"},
+             desc="Tạo nhóm nếu chưa có, cập nhật tên, và **thay toàn bộ** danh sách thành viên: "
+                  "ai không còn trong `members` **mất quyền xem nhóm ngay**.\n\n"
+                  "Tham số URL phải là `chatId` dạng `wg_<hex>` — đây là id CMS muốn tạo, truyền UUID "
+                  "vào sẽ đẻ ra nhóm lạ.\n\n"
+                  "Chat chỉ bắn event `reload` khi **thật sự** có thay đổi:\n\n"
+                  "| Thay đổi | `reason` | Gửi cho ai |\n|---|---|---|\n"
+                  "| thêm/bớt thành viên | `group.members_changed` | thành viên hiện tại ∪ người vừa bị gỡ |\n"
+                  "| đổi tên nhóm | `group.updated` | thành viên hiện tại |\n"
+                  "| không đổi gì | *(không bắn)* | — |\n\n"
+                  "Chạy request này 2 lần liên tiếp để thấy: lần hai không ai nhận gì.\n\n"
+                  "Chat cũng tự `GET /workspace/groups` mỗi 60s nên nhóm cuối cùng vẫn khớp CMS kể cả "
+                  "khi `PUT` thất bại — `PUT` chỉ để **nhanh hơn**.",
+             tests=(OK, 'pm.test("co memberCount",'
+                    ' () => pm.expect(pm.response.json()).to.have.property("memberCount"));')),
+        step("3.1", "Đẩy card đơn vào nhóm", "POST", "/bot/v1/messages",
+             body={"groupId": "{{group_id}}",
+                   "bot": {"id": 1, "name": "Designer Bot"},
+                   "card": {"schema": "abc.card/v1",
+                            "header": {"code": "WEB-20261118-0006", "title": "Banner Tết 2027",
+                                       "status": {"text": "Chưa nhận", "tone": "warning"}},
+                            "elements": [{"type": "field", "label": "Số lượng", "value": "3"},
+                                         {"type": "button", "text": "Nhận việc",
+                                          "action": "accept_task",
+                                          "visibleTo": ["{{actor_id}}"]}]}},
+             auth={"type": "noauth"},
+             desc="**Gọi ngay sau khi tạo đơn.** Đây là bước làm card hiện ra trong nhóm — "
+                  "`form.submit` mà CMS nhận được từ Chat **không** tự sinh tin nhắn nào.\n\n"
+                  "⚠️ Khoá của nút là **`action`**, KHÔNG phải `actionId`. Sai tên thì card vẫn tạo "
+                  "được nhưng người bấm nhận `403 action_not_allowed`.\n\n"
+                  "`visibleTo` = danh sách `actorId` được thấy nút. Chat lọc nút theo **từng người xem** "
+                  "trước khi gửi xuống UI; để `null`/bỏ trống = ai cũng thấy.\n\n"
+                  "**Lưu `messageId` trả về, ghép với mã đơn** — không có nó thì không `PATCH` được "
+                  "card về sau.\n\n"
+                  "Body cũng nhận `{groupId, text}` cho tin nhắn thường, và `threadRootId` để gửi vào thread.",
+             tests=(OK, 'const d = pm.response.json();',
+                    'pm.test("co messageId + cardVersion",'
+                    ' () => pm.expect(d).to.include.keys("messageId", "cardVersion"));',
+                    'pm.collectionVariables.set("card_message_id", d.messageId);')),
+        step("3.2", "Ghi một dòng diễn biến", "POST",
+             "/bot/v1/messages/{{card_message_id}}/thread",
+             body={"text": "Đã giao Trần Designer · Chờ nhận task.",
+                   "bot": {"id": 1, "name": "Designer Bot"}},
+             auth={"type": "noauth"},
+             desc="Dùng cho lịch sử đơn khi **chỉ** cần ghi chữ, không đổi card. Nếu vừa đổi card "
+                  "vừa ghi dòng thì dùng bước 4.1 (gộp) thay vì gọi riêng.",
+             tests=(OK, 'pm.test("co messageId",'
+                    ' () => pm.expect(pm.response.json()).to.have.property("messageId"));')),
+        step("3.3", "Thông báo cho một người", "POST", "/bot/v1/notifications",
+             body={"actorId": "{{actor_id}}",
+                   "text": "Bạn có task mới: WEB-20261118-0006 · Banner Tết 2027",
+                   "messageId": "{{card_message_id}}"},
+             auth={"type": "noauth"},
+             desc="Chuông đỏ + badge của riêng người đó. `messageId` để FE bấm vào là nhảy tới đúng card.\n\n"
+                  "Người dùng tự đánh dấu đã đọc qua bề mặt FE — CMS không cần gọi gì thêm.",
+             tests=(OK, 'pm.test("co id", () => pm.expect(pm.response.json()).to.have.property("id"));')),
+        step("4.1", "Đơn đổi trạng thái — gộp 3 việc 1 request", "PATCH",
+             "/bot/v1/messages/{{card_message_id}}",
+             body={"card": {"schema": "abc.card/v1",
+                            "header": {"code": "WEB-20261118-0006", "title": "Banner Tết 2027",
+                                       "status": {"text": "Đã nộp bài", "tone": "success"}},
+                            "elements": [{"type": "text", "text": "Chờ duyệt"}]},
+                   "cardVersion": 2,
+                   "thread": {"text": "Trần Designer đã nộp bài · Chờ duyệt",
+                              "bot": {"id": 1, "name": "Designer Bot"}},
+                   "notify": [{"actorId": "{{actor_id}}",
+                               "text": "Đơn WEB-20261118-0006 đã nộp bài"}]},
+             auth={"type": "noauth"},
+             desc="**Dùng request này cho MỖI lần đơn đổi trạng thái** (nhận / tạm dừng / treo / "
+                  "nộp bài / xong / huỷ) — thay cho 3 request riêng. Một `Idempotency-Key`, một chỗ "
+                  "xử lý lỗi.\n\n"
+                  "`card` + `cardVersion` bắt buộc; `thread` và `notify` **tuỳ chọn** (không gửi thì "
+                  "response không có khoá đó). `notify` là mảng, gửi nhiều người một lần được; "
+                  "`notify[].messageId` bỏ trống thì tự trỏ về chính card này.\n\n"
+                  "**Quy ước lỗi:**\n"
+                  "- `cardVersion` không lớn hơn → `{ok, ignored:true}`, **bỏ qua cả** `thread`/`notify`\n"
+                  "- `thread`/`notify` lỗi → vẫn `200`, card đã đổi xong, lỗi theo từng phần: "
+                  "`{\"thread\":{\"error\":{\"code\":\"text_required\"}}}`\n\n"
+                  "Không trả 5xx cho phần phụ vì CMS retry sẽ gặp `ignored:true` (cardVersion không "
+                  "tăng nữa) và mất luôn thread/notify.",
+             tests=(OK, 'const d = pm.response.json();',
+                    'console.log("ignored =", d.ignored, "| thread =", JSON.stringify(d.thread),',
+                    '            "| notify =", JSON.stringify(d.notify));',
+                    'pm.test("ignored thi khong co thread/notify", () => {',
+                    '  if (d.ignored) { pm.expect(d).to.not.have.property("thread");',
+                    '                   pm.expect(d).to.not.have.property("notify"); }',
+                    '});')),
+        step("4.2", "Gửi lại cùng cardVersion → ignored", "PATCH",
+             "/bot/v1/messages/{{card_message_id}}",
+             body={"card": {"schema": "abc.card/v1",
+                            "header": {"title": "Bản cũ hơn"}, "elements": []},
+                   "cardVersion": 2,
+                   "thread": {"text": "Dòng này KHÔNG được xuất hiện"}},
+             auth={"type": "noauth"},
+             desc="Chứng minh cơ chế chống ghi đè ngược: `cardVersion` **bằng** bản đang lưu nên "
+                  "Chat bỏ qua, và `thread` cũng không được ghi.\n\n"
+                  "Response: `{ok: true, ignored: true, cardVersion: 2}` — **không** có khoá "
+                  "`thread`.\n\n"
+                  "`ignored: true` **không phải lỗi**: nghĩa là Chat đang giữ bản mới hơn. CMS đọc "
+                  "`cardVersion` trả về để biết trạng thái thật ở Chat.",
+             tests=(OK, 'const d = pm.response.json();',
+                    'pm.test("bi bo qua", () => pm.expect(d.ignored).to.be.true);',
+                    'pm.test("khong ghi thread", () => pm.expect(d).to.not.have.property("thread"));')),
+        step("5.1", "Ghim card quan trọng", "POST",
+             "/bot/v1/messages/{{card_message_id}}/pin", body={},
+             auth={"type": "noauth"},
+             desc="`{}` = ghim, `{\"pinned\": false}` = bỏ ghim. Card hiện ở mục đã ghim của nhóm.",
+             tests=(OK, 'pm.test("ok", () => pm.expect(pm.response.json().ok).to.be.true);')),
+        step("5.2", "Cập nhật presence (lịch OFF)", "PUT", "/bot/v1/presence",
+             body={"items": [{"actorId": "{{actor_id}}", "status": "off",
+                              "reason": "Lịch OFF ca chiều"}]},
+             auth={"type": "noauth"},
+             desc="| `status` | `reason` | Chat hiểu là |\n|---|---|---|\n"
+                  "| `on` | — | online |\n"
+                  "| `off` | **có** | `off_duty` → FE hiện chữ **OFF** cạnh tên |\n"
+                  "| `off` | không | offline |\n\n"
+                  "`actorId` không tồn tại thì **bị bỏ qua, không báo lỗi** — `updated` cho biết "
+                  "thực sự đổi được bao nhiêu.",
+             tests=(OK, 'pm.test("co updated",'
+                    ' () => pm.expect(pm.response.json().updated).to.be.a("number"));')),
+        step("6.1", "Tra cứu nhiều user một lần", "POST", "/bot/v1/users/batch",
+             body={"actorIds": ["{{actor_id}}"], "openIds": [], "cmsUserIds": []},
+             auth={"type": "noauth"},
+             desc="Mỗi loại id **một câu query** (không phải N câu). Dùng khi cần đối chiếu hồ sơ.\n\n"
+                  "Tra một người: `GET /bot/v1/users/{actorId|openId|UUID}`.",
+             tests=(OK, 'pm.test("co items",'
+                    ' () => pm.expect(pm.response.json()).to.have.property("items"));')),
+    ],
+)
+
+
+def make_collection(cid, name, desc, items):
+    """Dung mot collection dung chung prerequest/variable voi ban day du."""
+    return {
+        "info": {"_postman_id": cid, "name": name, "description": desc, "schema": SCHEMA},
+        "auth": collection["auth"],
+        "event": collection["event"],
+        "variable": collection["variable"],
+        "item": items,
+    }
+
+
+FE_DESC = """\
+# Chat Service — bản cho **FE**
+
+Chỉ gồm những API **web chat gọi**: `/api/client/v1/chat/*` + WebSocket.
+Phần CMS gọi sang Chat nằm ở bản `[CMS]`.
+
+## Chuẩn bị (2 bước)
+
+1. Chọn environment **Chat Service · Local**.
+2. Điền biến **`cms_token`** = access token do CMS phát.
+   Chat **không có login**, không phát token riêng — token lấy từ
+   `POST /api/client/v1/workspace/auth/login` của CMS.
+   Local: `make token-cms CMS_USER=6`.
+
+## Bắt đầu từ đâu
+
+Chạy folder **`FLOW · Luồng của FE`** từ `1.1` xuống — mỗi bước giải thích gọi khi nào và
+response nói gì. Đặt biến `stop_at` = số bước để dừng lại xem kỹ.
+
+## Hình dạng response
+
+```json
+{ "statusCode": 200, "code": "SUCCESS", "message": "Success", "element": { ... } }
+```
+
+Lỗi: `statusCode` ≠ 200 và `code` là mã ổn định (`NOT_CONVERSATION_MEMBER`,
+`ACTION_NOT_ALLOWED`…) — bắt theo `code`, đừng bắt theo `message`.
+
+Field dạng **camelCase**: `text`, `createdAt`, `threadRootId`, `clientMsgId`, `unreadCount`.
+WebSocket trả **cùng tên field** nên FE chỉ cần một cách đọc.
+
+Phân trang: cursor (`?cursor=<pageInfo.nextCursor>&limit=30`), **không** dùng offset.
+
+## Ba điều dễ sai nhất
+
+1. **`ok: true` không có nghĩa là thành công về nghiệp vụ.** Với form và card action, đọc
+   `toast.type` và `closeForm`.
+2. **Card đơn không đến từ response của form submit.** Nó tới qua realtime khi CMS đẩy card
+   vào nhóm — nghe event `message` và upsert theo `id`.
+3. **`{id}` của nhóm nhận cả `wg_…` lẫn UUID.** Dùng giá trị nào `bootstrap` trả về cũng được.
+"""
+
+CMS_DESC = """\
+# Chat Service — bản cho **CMS**
+
+Chỉ gồm những API **CMS gọi sang Chat** (`/bot/v1/*`). Phần web chat gọi nằm ở bản `[FE]`.
+
+## Chuẩn bị (1 bước)
+
+Chọn environment **Chat Service · Local** rồi điền **`service_key`** = `CHAT_SERVICE_KEY`
+(khoá dùng chung hai phía, cũng là khoá Chat dùng để ký webhook gửi sang CMS).
+
+Collection tự gắn `X-Chat-Service-Key` và `Idempotency-Key` cho mọi request `/bot/v1`.
+
+## Bắt đầu từ đâu
+
+Chạy folder **`FLOW · Luồng của CMS`** từ `1.1` xuống. Đặt `stop_at` = số bước để dừng xem kỹ.
+
+## Quy ước chung
+
+- **Không có envelope** — response là JSON phẳng (`{"messageId": "..."}`), khác bản `[FE]`.
+- **`Idempotency-Key`** (UUID) cho mọi request ghi: `POST /messages`, `PATCH /messages/:id`,
+  `POST /messages/:id/thread`, `POST /messages/:id/pin`, `POST /notifications`,
+  `PUT /presence`, `PUT /groups/:id`. Gặp lại key cũ → trả nguyên kết quả lần đầu.
+  Retry phải dùng **cùng key**.
+- **Lỗi**: `{"code", "message", "retryable"}`. `retryable: true` (5xx) thì thử lại một lần với
+  cùng key; `false` thì sửa payload.
+- **Id nhóm** nhận `wg_<hex>` hoặc UUID nội bộ. Ngoại lệ: `PUT /groups/:id` bắt buộc `wg_<hex>`
+  vì đó là chatId cần tạo.
+
+## Ba điều dễ sai nhất
+
+1. **`cardVersion` phải tăng đơn điệu.** Nhỏ hơn/bằng bản đang lưu → `{ok, ignored:true}`,
+   card không đổi và `thread`/`notify` bị bỏ qua.
+2. **Khoá của nút là `action`, không phải `actionId`.** Sai tên thì card tạo được nhưng người
+   bấm nhận `403 action_not_allowed`.
+3. **Lưu `messageId`** mà `POST /messages` trả về, ghép với mã đơn — không có nó thì không
+   `PATCH` được card về sau.
+
+Hợp đồng đầy đủ kèm ví dụ trọn vòng: `docs/cms-goi-chat.md`.
+"""
+
+collection_fe = make_collection(
+    FE_ID, "Chat Service · A Workspace [FE]", FE_DESC,
+    [flow_fe, cms_client, websocket, start, conversations, messages, errors],
+)
+
+collection_cms = make_collection(
+    CMS_ID, "Chat Service · A Workspace [CMS]", CMS_DESC,
+    [flow_cms, cms_bot],
+)
+
+
 def check():
-    """Kiem tra file JSON: cau truc hop le + khong lech so voi script sinh ra no.
+    """Kiem 3 file JSON: cau truc hop le + khong lech so voi script sinh ra no.
 
     Thay cho `postman collection lint` (lenh do chi doc duoc dinh dang v3,
     quet file v2.1 ra 0 ket qua nen khong noi len dieu gi)."""
     errs, warns = [], []
+    total_folders = total_reqs = 0
 
-    if not COLLECTION_FILE.exists():
-        print(f"✗ thieu {COLLECTION_FILE}")
-        return 1
-    on_disk = json.loads(COLLECTION_FILE.read_text(encoding="utf-8"))
+    for path, col in OUTPUTS:
+        label = col["info"]["name"]
+        if not path.exists():
+            errs.append(f"thieu {path.relative_to(ROOT)}")
+            continue
+        on_disk = json.loads(path.read_text(encoding="utf-8"))
 
-    # 1) cau truc
-    seen = set()
-    for folder in on_disk.get("item", []):
-        if not folder.get("name"):
-            errs.append("co folder khong ten")
-        for req in folder.get("item", []):
-            name = f"{folder['name']} / {req.get('name', '?')}"
-            if name in seen:
-                errs.append(f"trung ten request: {name}")
-            seen.add(name)
-            r = req.get("request") or {}
-            if not r.get("method"):
-                errs.append(f"{name}: thieu method")
-            raw = ((r.get("url") or {}).get("raw") or "")
-            if not raw:
-                errs.append(f"{name}: thieu URL")
-            elif "{{base_url}}" not in raw:
-                warns.append(f"{name}: URL khong dung {{{{base_url}}}}")
-            if r.get("method") in ("POST", "PUT", "PATCH") and (r.get("body") or {}).get("mode") == "raw":
-                try:
-                    json.loads(((r.get("body") or {}).get("raw") or "{}"))
-                except json.JSONDecodeError as e:
-                    errs.append(f"{name}: body khong phai JSON hop le ({e})")
+        # 1) cau truc
+        seen = set()
+        for folder_ in on_disk.get("item", []):
+            if not folder_.get("name"):
+                errs.append(f"[{label}] co folder khong ten")
+            total_folders += 1
+            for req_ in folder_.get("item", []):
+                total_reqs += 1
+                name = f"[{label}] {folder_['name']} / {req_.get('name', '?')}"
+                if name in seen:
+                    errs.append(f"trung ten request: {name}")
+                seen.add(name)
+                r = req_.get("request") or {}
+                if not r.get("method"):
+                    errs.append(f"{name}: thieu method")
+                raw = ((r.get("url") or {}).get("raw") or "")
+                if not raw:
+                    errs.append(f"{name}: thieu URL")
+                elif "{{base_url}}" not in raw and "{{ws_" not in raw:
+                    warns.append(f"{name}: URL khong dung {{{{base_url}}}}")
+                if r.get("method") in ("POST", "PUT", "PATCH") and (r.get("body") or {}).get("mode") == "raw":
+                    try:
+                        json.loads(((r.get("body") or {}).get("raw") or "{}"))
+                    except json.JSONDecodeError as e:
+                        errs.append(f"{name}: body khong phai JSON hop le ({e})")
 
-    # 2) lech voi script
-    fresh = json.dumps(collection, ensure_ascii=False, indent=2) + "\n"
-    if fresh != COLLECTION_FILE.read_text(encoding="utf-8"):
-        errs.append("file tren dia LECH voi scripts/gen_postman.py — chay `make postman` de sinh lai")
+        # 2) lech voi script
+        fresh = json.dumps(col, ensure_ascii=False, indent=2) + "\n"
+        if fresh != path.read_text(encoding="utf-8"):
+            errs.append(f"[{label}] file tren dia LECH voi scripts/gen_postman.py — "
+                        f"chay `make postman` de sinh lai")
 
-    n = sum(len(f["item"]) for f in on_disk.get("item", []))
-    print(f"  {len(on_disk.get('item', []))} folder, {n} request, {len(seen)} ten duy nhat")
+    # 3) hai ban tach phai la tap con cua ban day du (khong de request "mo coi")
+    full_names = {
+        f"{f['name']} / {r['name']}"
+        for f in collection["item"] for r in f["item"]
+    }
+    for _, col in OUTPUTS[1:]:
+        for f in col["item"]:
+            if f["name"].startswith("FLOW"):
+                continue  # FLOW cua ban tach viet rieng, co y khac
+            for r in f["item"]:
+                key = f"{f['name']} / {r['name']}"
+                if key not in full_names:
+                    errs.append(f"[{col['info']['name']}] request khong co trong ban day du: {key}")
+
     for w in warns:
-        print(f"  ! {w}")
+        print(f"! {w}")
     for e in errs:
-        print(f"  ✗ {e}")
-    print("✓ collection JSON hop le" if not errs else f"✗ {len(errs)} loi")
-    return 1 if errs else 0
+        print(f"✗ {e}")
+    if errs:
+        return 1
+    print(f"  {len(OUTPUTS)} file | {total_folders} folder | {total_reqs} request")
+    for _, col in OUTPUTS:
+        n = sum(len(f["item"]) for f in col["item"])
+        print(f"  - {col['info']['name']}: {len(col['item'])} folder, {n} request")
+    print("✓ ca 3 collection JSON hop le")
+    return 0
 
 
-# Folder viet tay trong ban v3 (v2.1 khong chua duoc 2 protocol nay) — khong ghi de.
+
+# (file, collection) — ban day du + 2 ban tach cho tung doi.
+OUTPUTS = [
+    (COLLECTION_FILE, collection),
+    (FE_FILE, collection_fe),
+    (CMS_FILE, collection_cms),
+]
+
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    COLLECTION_FILE.write_text(json.dumps(collection, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    for path, col in OUTPUTS:
+        path.write_text(json.dumps(col, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        n = sum(len(f["item"]) for f in col["item"])
+        print(f"✓ {path.relative_to(ROOT)} ({len(col['item'])} folder, {n} request) — {col['info']['name']}")
     ENV_FILE.write_text(json.dumps(environment, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    n = sum(len(f["item"]) for f in collection["item"])
-    print(f"✓ {COLLECTION_FILE.relative_to(ROOT)} ({len(collection['item'])} folder, {n} request)")
     print(f"✓ {ENV_FILE.relative_to(ROOT)}")
 
 

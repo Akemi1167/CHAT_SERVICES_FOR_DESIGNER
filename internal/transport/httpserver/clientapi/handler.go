@@ -442,7 +442,7 @@ func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.
 			item["actorId"] = m.User.ActorID
 			item["name"] = m.User.DisplayName
 			item["avatarUrl"] = m.User.AvatarURL
-			item["presence"] = string(m.User.Presence)
+			item["presence"] = string(m.User.LivePresence())
 			item["title"] = m.User.DisplayRole()
 		}
 		members = append(members, item)

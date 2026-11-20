@@ -1,6 +1,6 @@
 -- Task / nhan task / phieu sua.
 -- Thiet ke: "card cua ai hien cua nguoi do" => moi nguoi 1 dong task_assignments.
--- Trang thai tong cua task duoc suy ra tu cac assignment (xem docs/07-task.md).
+-- Trang thai tong cua task duoc suy ra tu cac assignment (xem docs/backend.md#module-task-nội-bộ).
 
 -- ---------- teams (to / bo phan) ----------
 CREATE TABLE IF NOT EXISTS teams (

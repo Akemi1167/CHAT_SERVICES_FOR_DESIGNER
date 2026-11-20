@@ -10,7 +10,7 @@
 //	/ping                 kiem tra ket noi
 //	/typing               bao dang nhap
 //	/read <message_id>    danh dau da doc
-//	/json {...}           gui frame tho (bat ky frame nao trong docs/02-websocket.md)
+//	/json {...}           gui frame tho (bat ky frame nao trong docs/frontend.md#giao-thức-websocket)
 //	/quit                 thoat
 package main
 

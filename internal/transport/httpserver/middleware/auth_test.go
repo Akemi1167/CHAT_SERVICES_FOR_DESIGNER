@@ -57,6 +57,10 @@ func (usersRepo) GetByActorID(_ context.Context, _ string) (*domain.User, error)
 	return nil, errNotImplemented
 }
 
+func (usersRepo) TouchLastSeen(_ context.Context, _ []uuid.UUID, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
 func (usersRepo) ListByCMSUserIDs(_ context.Context, _ []int64) ([]domain.User, error) {
 	return nil, errNotImplemented
 }

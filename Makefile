@@ -161,7 +161,7 @@ mforce: migrate-force     ## = migrate-force: make mforce version=1
 
 # ---------- postman ----------
 .PHONY: postman
-postman: ## Sinh lai 2 file Postman JSON (collection + environment)
+postman: ## Sinh lai 4 file Postman JSON (ban day du + [FE] + [CMS] + environment)
 	python3 scripts/gen_postman.py
 
 .PHONY: postman-run
@@ -194,6 +194,25 @@ postman-flow: ## Chay folder FLOW theo thu tu: make postman-flow TOKEN=<jwt> [KE
 	  --env-var "token=$(TOKEN)" --env-var "cms_token=$(or $(CMS_TOKEN),$(TOKEN))" \
 	  --env-var "service_key=$(KEY)" --env-var "stop_at=$(STOP)" \
 	  -i "FLOW · Chạy từ trên xuống để hiểu luồng"
+
+.PHONY: postman-fe
+postman-fe: ## Chay ban [FE] (chi API web chat goi): make postman-fe TOKEN=<cms jwt>
+	@test -n "$(TOKEN)" || (echo 'Thieu TOKEN (vd: make postman-fe TOKEN=$$(make -s token-cms CMS_USER=6))'; exit 1)
+	postman collection run internal/postman/chat-service-fe.postman_collection.json \
+	  -e internal/postman/chat-service.local.postman_environment.json \
+	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" \
+	  --env-var "token=$(TOKEN)" --env-var "cms_token=$(TOKEN)" \
+	  --env-var "stop_at=$(STOP)" \
+	  -i "FLOW · Luồng của FE"
+
+.PHONY: postman-cms
+postman-cms: ## Chay ban [CMS] (chi API CMS goi sang): make postman-cms KEY=<service key>
+	@test -n "$(KEY)" || (echo "Thieu KEY (= CHAT_SERVICE_KEY trong .env)"; exit 1)
+	postman collection run internal/postman/chat-service-cms.postman_collection.json \
+	  -e internal/postman/chat-service.local.postman_environment.json \
+	  --env-var "base_url=$(or $(BASE_URL),http://localhost:8080)" \
+	  --env-var "service_key=$(KEY)" --env-var "stop_at=$(STOP)" \
+	  -i "FLOW · Luồng của CMS"
 
 .PHONY: postman-lint
 postman-lint: ## Kiem tra file collection JSON (cau truc + khong lech voi generator)

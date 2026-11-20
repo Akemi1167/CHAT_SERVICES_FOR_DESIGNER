@@ -26,6 +26,9 @@ const (
 	InTemplateSend  = "template.send" // "gui mau" cho bot qua WS
 	InTyping        = "typing"
 	InPing          = "ping"
+	// InPresenceList: "ai dang online?" — tra ve anh chup tai thoi diem hoi.
+	// Event `presence` chi bao KHI DOI, nen can frame nay luc moi mo tab.
+	InPresenceList = "presence.list"
 )
 
 // Frame type server gui xuong (ngoai cac event cua realtime.Event).
@@ -152,6 +155,18 @@ type deletePayload struct {
 
 func (p *deletePayload) normalize() {
 	p.MessageID = firstNonEmpty(p.MessageID2, p.MessageID)
+}
+
+// presenceListPayload: de trong conversationId => lay moi nguoi dung chung it
+// nhat 1 hoi thoai voi minh. Co conversationId => chi thanh vien nhom do.
+type presenceListPayload struct {
+	ConversationID  string `json:"conversation_id"`
+	ConversationID2 string `json:"conversationId"`
+	GroupID         string `json:"groupId"`
+}
+
+func (p *presenceListPayload) normalize() {
+	p.ConversationID = firstNonEmpty(p.GroupID, p.ConversationID2, p.ConversationID)
 }
 
 type typingPayload struct {

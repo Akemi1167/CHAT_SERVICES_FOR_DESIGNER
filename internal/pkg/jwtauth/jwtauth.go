@@ -13,7 +13,7 @@ import (
 
 // Claims toi thieu service chat can. Them field tuy he thong auth cua ban.
 //
-// Token do CMS phat (xem docs/10-cms-integration.md) co them:
+// Token do CMS phat (xem docs/backend.md#tích-hợp-cms-designer-bot) co them:
 //
 //	{"sub":"92","cmsUserId":92,"openId":"local:<uuid>","name":"...",
 //	 "typ":"access","iss":"designer-cms","aud":"abc-workspace"}

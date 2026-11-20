@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
     # Prod BAT BUOC co mat khau: thieu REDIS_PASSWORD la compose dung ngay.
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD bat buoc o prod (xem docs/12-deploy.md)}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD bat buoc o prod (xem docs/deploy.md#chạy-thật-production)}
     command:
       - sh
       - -c
@@ -84,7 +84,7 @@ services:
       LOG_LEVEL: "info"
       LOG_FORMAT: "json"
     ports:
-      # Chi mo tren loopback: nginx/Caddy o host se proxy vao (xem docs/12-deploy.md).
+      # Chi mo tren loopback: nginx/Caddy o host se proxy vao (xem docs/deploy.md#chạy-thật-production).
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:9090:9090"
     logging: *logging

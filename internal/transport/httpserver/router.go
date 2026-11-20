@@ -106,7 +106,7 @@ func registerRoutes(app *fiber.App, cfg *config.Config, d Deps) {
 
 	// --- task noi bo: CHI bat khi TASK_ENGINE_ENABLED=true ---
 	// Khi tich hop CMS, don/task do CMS so huu: Chat chi luu card va chuyen event
-	// (xem docs/10-cms-integration.md). Code task van giu lai de dung doc lap.
+	// (xem docs/backend.md#tích-hợp-cms-designer-bot). Code task van giu lai de dung doc lap.
 	if cfg.App.TaskEngine {
 		registerTaskRoutes(api, taskH)
 	}

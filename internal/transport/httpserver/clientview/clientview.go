@@ -26,10 +26,12 @@ func User(u *domain.User) map[string]any {
 		"name":      u.DisplayName,
 		"avatarUrl": u.AvatarURL,
 		"role":      u.DisplayRole(),
-		"presence":  string(u.Presence),
-		"openId":    u.OpenID,
-		"email":     u.Email,
-		"username":  u.Username,
+		// LivePresence, KHONG phai u.Presence: online ma last_seen_at qua cu
+		// (instance giu ket noi da chet) phai hien offline.
+		"presence": string(u.LivePresence()),
+		"openId":   u.OpenID,
+		"email":    u.Email,
+		"username": u.Username,
 	}
 	if u.CMSUserID != nil {
 		view["cmsUserId"] = *u.CMSUserID

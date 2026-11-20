@@ -82,6 +82,10 @@ type UserRepository interface {
 	UpdatePresence(ctx context.Context, id uuid.UUID, p domain.Presence, seenAt time.Time) error
 	// UpdatePresenceWithReason dung cho PUT /bot/v1/presence (CMS bao OFF kem ly do).
 	UpdatePresenceWithReason(ctx context.Context, id uuid.UUID, p domain.Presence, reason string, seenAt time.Time) error
+	// TouchLastSeen lam tuoi last_seen_at cho nhung nguoi dang mo WebSocket.
+	// presence.Service goi dinh ky; nho vay khi mot instance chet thi
+	// last_seen_at cu dan va User.LivePresence() tu coi la offline.
+	TouchLastSeen(ctx context.Context, ids []uuid.UUID, seenAt time.Time) (int64, error)
 
 	// ---- dinh danh phia CMS ----
 	// UpsertFromCMS khop theo cms_user_id -> open_id -> external_id, roi cap nhat ho so.

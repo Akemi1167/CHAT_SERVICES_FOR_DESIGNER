@@ -34,7 +34,7 @@ info "Chat base              = $CHAT_BASE"
 
 if [ -z "${CHAT_SERVICE_KEY:-}" ] || [ -z "${CMS_WORKSPACE_BASE_URL:-}" ]; then
   fail "Thieu CHAT_SERVICE_KEY hoac CMS_WORKSPACE_BASE_URL trong .env" \
-       "Xin doi CMS 2 gia tri nay roi dien vao .env (xem docs/15-cms-cutover.md)."
+       "Xin doi CMS 2 gia tri nay roi dien vao .env (xem docs/deploy.md#cutover-bật-tích-hợp-cms)."
   exit 1
 fi
 
@@ -121,7 +121,7 @@ BOTK=$(curl -s -m 5 -X POST "$CHAT_BASE/bot/v1/users/resolve" -H "X-Chat-Service
 
 section "Ket qua: $OK muc OK, $FAIL muc loi"
 if [ "$FAIL" -gt 0 ]; then
-  echo "  Xem docs/15-cms-cutover.md de biet can xin doi CMS thong tin gi."
+  echo "  Xem docs/deploy.md#cutover-bật-tích-hợp-cms de biet can xin doi CMS thong tin gi."
   exit 1
 fi
 echo "  San sang noi. Buoc tiep: dat CMS_ENABLED=true, TASK_ENGINE_ENABLED=false, khoi dong lai."

@@ -332,6 +332,24 @@ func (h *Handler) dispatch(ctx context.Context, client *realtime.Client, identit
 			h.log.Debug("typing failed", "err", err)
 		}
 
+	case InPresenceList:
+		var p presenceListPayload
+		if len(in.Payload) > 0 {
+			if err := json.Unmarshal(in.Payload, &p); err != nil {
+				h.fail(client, in.ID, apperr.Invalid("invalid_payload", "payload khong hop le"))
+				return
+			}
+		}
+		p.normalize()
+		items, err := h.presenceSnapshot(ctx, identity.UserID, p.ConversationID, client.Dialect)
+		if err != nil {
+			h.fail(client, in.ID, err)
+			return
+		}
+		key := "items"
+		h.hub.SendToClient(client, Outbound{Type: OutAck, Ref: in.ID,
+			Payload: fiber.Map{key: items, "count": len(items)}})
+
 	default:
 		h.fail(client, in.ID, apperr.Invalid("unknown_frame_type", "Khong ho tro frame type: "+in.Type))
 	}
@@ -388,4 +406,79 @@ func (h *Handler) resolveConvID(ctx context.Context, raw string) (uuid.UUID, err
 		return uuid.Nil, err
 	}
 	return conv.ID, nil
+}
+
+// presenceSnapshot tra trang thai hien tai cua nhung nguoi lien quan.
+//
+// Doc tu bang `users` chu KHONG tu map ket noi cua hub: hub chi biet ai dang
+// mo WebSocket tren DUNG instance nay, chay nhieu pod se tra thieu nguoi.
+// `users.presence` do presence.Service ghi (WS mo/dong) va CMS day sang
+// (PUT /bot/v1/presence) nen dung cho moi instance.
+func (h *Handler) presenceSnapshot(
+	ctx context.Context, me uuid.UUID, rawConvID string, dialect realtime.Dialect,
+) ([]fiber.Map, error) {
+	if h.store == nil {
+		return nil, apperr.Internal("store_unavailable", "Khong doc duoc du lieu")
+	}
+
+	var ids []uuid.UUID
+	if rawConvID != "" {
+		convID, err := h.resolveConvID(ctx, rawConvID)
+		if err != nil {
+			return nil, err
+		}
+		// Chan nguoi ngoai nhom doc trang thai thanh vien.
+		if _, err := h.store.Conversations().GetMember(ctx, convID, me); err != nil {
+			return nil, apperr.ErrNotMember
+		}
+		if ids, err = h.store.Conversations().ListMemberUserIDs(ctx, convID); err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		if ids, err = h.store.Conversations().ListPeerUserIDs(ctx, me); err != nil {
+			return nil, err
+		}
+	}
+	if len(ids) == 0 {
+		return []fiber.Map{}, nil
+	}
+
+	users, err := h.store.Users().ListByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]fiber.Map, 0, len(users))
+	for i := range users {
+		u := &users[i]
+		// LivePresence: online ma last_seen_at qua cu thi tra offline.
+		live := u.LivePresence()
+		online := live == domain.PresenceOnline
+		if dialect == realtime.DialectClient {
+			item := fiber.Map{
+				"userId": u.ID.String(), "actorId": u.ActorID, "name": u.DisplayName,
+				"presence": string(live), "online": online,
+			}
+			if u.PresenceReason != "" {
+				item["reason"] = u.PresenceReason
+			}
+			if u.LastSeenAt != nil {
+				item["lastSeenAt"] = *u.LastSeenAt
+			}
+			out = append(out, item)
+			continue
+		}
+		item := fiber.Map{
+			"user_id": u.ID.String(), "actor_id": u.ActorID, "display_name": u.DisplayName,
+			"presence": string(live), "online": online,
+		}
+		if u.PresenceReason != "" {
+			item["reason"] = u.PresenceReason
+		}
+		if u.LastSeenAt != nil {
+			item["last_seen_at"] = *u.LastSeenAt
+		}
+		out = append(out, item)
+	}
+	return out, nil
 }

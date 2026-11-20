@@ -191,7 +191,7 @@ func userTo(u *domain.User) *chatv1.User {
 		AvatarUrl:   u.AvatarURL,
 		Email:       u.Email,
 		Role:        u.Role,
-		Presence:    string(u.Presence),
+		Presence:    string(u.LivePresence()),
 	}
 }
 

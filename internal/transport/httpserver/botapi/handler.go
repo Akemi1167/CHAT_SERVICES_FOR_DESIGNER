@@ -90,7 +90,7 @@ func (h *Handler) ResolveUsers(c *fiber.Ctx) error {
 			"openId":   u.OpenID,
 			"actorId":  u.ActorID,
 			"name":     u.DisplayName,
-			"presence": presenceLabel(u.Presence),
+			"presence": presenceLabel(u.LivePresence()),
 		})
 	}
 	return c.JSON(fiber.Map{"items": items})
@@ -162,6 +162,11 @@ func (h *Handler) PostMessage(c *fiber.Ctx) error {
 type patchMessageReq struct {
 	Card        domain.JSONMap `json:"card"`
 	CardVersion int            `json:"cardVersion"`
+
+	// Hai phan TUY CHON, gop vao de CMS khong phai goi 3 request cho mot lan
+	// doi trang thai don. Khong gui thi hanh vi y nhu truoc.
+	Thread *threadReq        `json:"thread"`
+	Notify []notificationReq `json:"notify"`
 }
 
 // PatchMessage: CMS thay card. Chi ap dung khi cardVersion LON HON ban dang luu.
@@ -189,12 +194,100 @@ func (h *Handler) PatchMessage(c *fiber.Ctx) error {
 			return 0, nil, err
 		}
 		if !applied {
+			// cardVersion khong lon hon ban dang luu => CMS dang gui trang thai CU.
+			// Bo qua CA thread va notify: ghi them dong dien bien cu vao nhom la sai.
 			return fiber.StatusOK, fiber.Map{
 				"ok": true, "ignored": true, "cardVersion": current.CardVersion,
 			}, nil
 		}
-		return fiber.StatusOK, fiber.Map{"ok": true, "cardVersion": req.CardVersion}, nil
+
+		out := fiber.Map{"ok": true, "cardVersion": req.CardVersion}
+
+		// Card la viec chinh va da xong. Hai viec phu loi thi KHONG tra 5xx:
+		// CMS se retry, nhung cardVersion khong tang nua nen lan retry chi nhan
+		// `ignored: true` — mat luon ca thread/notify. Bao loi theo tung phan.
+		if req.Thread != nil {
+			if res, terr := h.addThreadLine(c, current, *req.Thread); terr != nil {
+				out["thread"] = partError(terr)
+			} else {
+				out["thread"] = res
+			}
+		}
+		if len(req.Notify) > 0 {
+			items := make([]fiber.Map, 0, len(req.Notify))
+			for _, n := range req.Notify {
+				if n.MessageID == "" {
+					n.MessageID = current.ID.String() // mac dinh tro ve chinh card nay
+				}
+				if res, nerr := h.addNotification(c, n); nerr != nil {
+					items = append(items, partError(nerr))
+				} else {
+					items = append(items, res)
+				}
+			}
+			out["notify"] = items
+		}
+		return fiber.StatusOK, out, nil
 	})
+}
+
+// partError: loi cua mot phan phu trong PATCH gop, cung hinh dang voi loi chung.
+func partError(err error) fiber.Map {
+	e := apperr.From(err)
+	return fiber.Map{"error": fiber.Map{"code": e.Code, "message": e.Message}}
+}
+
+// addThreadLine ghi mot dong he thong vao thread cua card. Dung chung boi
+// POST /messages/:id/thread va PATCH /messages/:id (field `thread`).
+func (h *Handler) addThreadLine(c *fiber.Ctx, root *domain.Message, req threadReq) (fiber.Map, error) {
+	if strings.TrimSpace(req.Text) == "" {
+		return nil, apperr.Invalid("text_required", "Thieu text")
+	}
+	threadID := root.ID
+	if root.ThreadID != nil {
+		threadID = *root.ThreadID
+	}
+	msg, err := h.msgs.PostBot(c.UserContext(), message.BotMessageInput{
+		ConversationID: root.ConversationID,
+		ThreadID:       &threadID,
+		Content:        req.Text,
+		BotSender:      botSender(req.Bot),
+	})
+	if err != nil {
+		return nil, err
+	}
+	h.cards.Broadcast(c.UserContext(), msg, realtime.EventMessageNew)
+	return fiber.Map{"messageId": msg.ID.String()}, nil
+}
+
+// addNotification tao 1 thong bao. Dung chung boi POST /notifications va
+// PATCH /messages/:id (field `notify`).
+func (h *Handler) addNotification(c *fiber.Ctx, req notificationReq) (fiber.Map, error) {
+	if req.ActorID == "" || strings.TrimSpace(req.Text) == "" {
+		return nil, apperr.Invalid("invalid_request", "Thieu actorId hoac text")
+	}
+	user, err := h.store.Users().GetByActorID(c.UserContext(), req.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	messageID, err := optionalUUID(req.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	n, err := h.notifs.Create(c.UserContext(), notification.CreateInput{
+		UserID: user.ID, Text: req.Text, MessageID: messageID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return fiber.Map{
+		"id":        n.ID.String(),
+		"actorId":   user.ActorID,
+		"text":      n.Text,
+		"messageId": req.MessageID,
+		"createdAt": n.CreatedAt.UnixMilli(),
+		"read":      n.Read,
+	}, nil
 }
 
 type threadReq struct {
@@ -221,22 +314,11 @@ func (h *Handler) ThreadReply(c *fiber.Ctx) error {
 		if err != nil {
 			return 0, nil, err
 		}
-		threadID := root.ID
-		if root.ThreadID != nil {
-			threadID = *root.ThreadID
-		}
-
-		msg, err := h.msgs.PostBot(c.UserContext(), message.BotMessageInput{
-			ConversationID: root.ConversationID,
-			ThreadID:       &threadID,
-			Content:        req.Text,
-			BotSender:      botSender(req.Bot),
-		})
+		res, err := h.addThreadLine(c, root, req)
 		if err != nil {
 			return 0, nil, err
 		}
-		h.cards.Broadcast(c.UserContext(), msg, realtime.EventMessageNew)
-		return fiber.StatusOK, fiber.Map{"messageId": msg.ID.String()}, nil
+		return fiber.StatusOK, res, nil
 	})
 }
 
@@ -345,33 +427,11 @@ func (h *Handler) CreateNotification(c *fiber.Ctx) error {
 		if err := c.BodyParser(&req); err != nil {
 			return 0, nil, apperr.Invalid("invalid_body", "Body khong hop le")
 		}
-		if req.ActorID == "" || strings.TrimSpace(req.Text) == "" {
-			return 0, nil, apperr.Invalid("invalid_request", "Thieu actorId hoac text")
-		}
-
-		user, err := h.store.Users().GetByActorID(c.UserContext(), req.ActorID)
+		res, err := h.addNotification(c, req)
 		if err != nil {
 			return 0, nil, err
 		}
-		messageID, err := optionalUUID(req.MessageID)
-		if err != nil {
-			return 0, nil, err
-		}
-
-		n, err := h.notifs.Create(c.UserContext(), notification.CreateInput{
-			UserID: user.ID, Text: req.Text, MessageID: messageID,
-		})
-		if err != nil {
-			return 0, nil, err
-		}
-		return fiber.StatusOK, fiber.Map{
-			"id":        n.ID.String(),
-			"actorId":   user.ActorID,
-			"text":      n.Text,
-			"messageId": req.MessageID,
-			"createdAt": n.CreatedAt.UnixMilli(),
-			"read":      n.Read,
-		}, nil
+		return fiber.StatusOK, res, nil
 	})
 }
 
@@ -441,7 +501,7 @@ func (h *Handler) GroupMembers(c *fiber.Ctx) error {
 			item["id"] = m.User.ActorID
 			item["name"] = m.User.DisplayName
 			item["avatarUrl"] = m.User.AvatarURL
-			item["presence"] = presenceLabel(m.User.Presence)
+			item["presence"] = presenceLabel(m.User.LivePresence())
 			item["title"] = m.User.DisplayRole()
 		}
 		items = append(items, item)
@@ -566,7 +626,7 @@ func userView(u *domain.User) fiber.Map {
 	view := fiber.Map{
 		"id": u.ActorID, "internalId": u.ID.String(), "name": u.DisplayName,
 		"openId": u.OpenID, "avatarUrl": u.AvatarURL,
-		"presence": presenceLabel(u.Presence), "role": u.DisplayRole(),
+		"presence": presenceLabel(u.LivePresence()), "role": u.DisplayRole(),
 		"title": u.DisplayRole(),
 	}
 	if u.PresenceReason != "" {

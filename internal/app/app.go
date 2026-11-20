@@ -19,6 +19,7 @@ import (
 	"github.com/abc-workspace/chat-service/internal/cms"
 	"github.com/abc-workspace/chat-service/internal/config"
 	"github.com/abc-workspace/chat-service/internal/database"
+	"github.com/abc-workspace/chat-service/internal/domain"
 	"github.com/abc-workspace/chat-service/internal/logger"
 	"github.com/abc-workspace/chat-service/internal/pkg/jwtauth"
 	"github.com/abc-workspace/chat-service/internal/realtime"
@@ -49,7 +50,8 @@ type App struct {
 	cmsSync *cmssync.Service
 	outbox  *outbox.Service
 
-	logFile io.Closer // file LOG_FILE (noop khi khong ghi file)
+	logFile  io.Closer // file LOG_FILE (noop khi khong ghi file)
+	presence *presence.Service
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -146,7 +148,10 @@ func New(cfg *config.Config) (*App, error) {
 
 	// 3b) Tich hop CMS: dong bo nhom/user, card, thong bao, outbox.
 	notifSvc := notification.New(store, hub)
+	// Nguong "online da cu" dung chung cho moi cho tra presence ra ngoai.
+	domain.SetPresenceTTL(cfg.Presence.TTL)
 	presenceSvc := presence.New(store, hub)
+	presenceSvc.SetHeartbeat(cfg.Presence.Heartbeat)
 	cardSvc := card.New(store, convSvc, cmsClient, hub, cfg.CMS.WebhookTimeout)
 	syncSvc := cmssync.New(cmsClient, store, hub, cfg.CMS.SyncInterval)
 	outboxSvc := outbox.New(store, cmsClient, cfg.CMS.OutboxInterval, cfg.CMS.OutboxMaxRetry)
@@ -197,7 +202,8 @@ func New(cfg *config.Config) (*App, error) {
 		cfg: cfg, db: db, rdb: rdb, hub: hub,
 		http: httpSrv, grpc: grpcSrv,
 		cmsSync: syncSvc, outbox: outboxSvc,
-		logFile: logFile,
+		presence: presenceSvc,
+		logFile:  logFile,
 	}, nil
 }
 
@@ -209,6 +215,7 @@ func (a *App) Run() error {
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error { return a.hub.Run(gctx) })
+	g.Go(func() error { return a.presence.Run(gctx) })
 
 	// Dong bo nhom tu CMS + gui event bat dong bo (chi khi bat tich hop).
 	if a.cfg.CMS.Enabled {

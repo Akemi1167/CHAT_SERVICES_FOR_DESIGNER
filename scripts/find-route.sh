@@ -23,18 +23,29 @@ PATH_ONLY="${PATH_ONLY#\{\{base_url\}\}}"
 KEY="$(printf '%s' "$PATH_ONLY" | awk -F/ '{ if (NF>=2) printf "%s/%s", $(NF-1), $NF; else printf "%s", $NF }')"
 LAST="$(printf '%s' "$PATH_ONLY" | awk -F/ '{print $NF}')"
 
-echo "Tim: $PATH_ONLY   (tu khoa: \"$KEY\", \"$LAST\")"
+# Route co tham so duoc khai bao dang ":formId", ":id"... nen doan giua cua URL
+# that (vd "create_task") khong he xuat hien trong code. Dung them mot mau noi
+# long: doan ap cuoi coi nhu tham so, vd forms/create_task/submit -> forms/[^/]*/submit
+LOOSE=""
+if [ "$(printf '%s' "$PATH_ONLY" | awk -F/ '{print NF}')" -ge 3 ]; then
+  LOOSE="$(printf '%s' "$PATH_ONLY" | awk -F/ '{printf "%s/[^\"]*/%s", $(NF-2), $NF}')"
+fi
+
+PAT="\"(/)?${KEY}\"|\"(/)?${LAST}\""
+[ -n "$LOOSE" ] && PAT="$PAT|\"(/)?${LOOSE}\""
+
+echo "Tim: $PATH_ONLY   (tu khoa: \"$KEY\", \"$LAST\"${LOOSE:+, \"$LOOSE\"})"
 echo
 
 echo "1) Khai bao route"
-grep -rn --include=*.go -E "\"(/)?${KEY}\"|\"(/)?${LAST}\"" \
+grep -rn --include=*.go -E "$PAT" \
   internal/transport/httpserver/router.go \
   internal/transport/httpserver/clientapi \
   internal/transport/httpserver/botapi 2>/dev/null | sed 's/^/   /' || true
 echo
 
 echo "2) Handler (ham xu ly)"
-HANDLERS=$(grep -rhn --include=*.go -E "\"(/)?${KEY}\"|\"(/)?${LAST}\"" \
+HANDLERS=$(grep -rhn --include=*.go -E "$PAT" \
   internal/transport/httpserver 2>/dev/null \
   | grep -oE "h\.[A-Z][A-Za-z]*|[a-zA-Z]+H\.[A-Z][A-Za-z]*" | sed 's/.*\.//' | sort -u)
 for h in $HANDLERS; do

@@ -13,7 +13,7 @@ import (
 
 type EventType string
 
-// Ten event theo hop dong voi CMS (docs/10-cms-integration.md):
+// Ten event theo hop dong voi CMS (docs/backend.md#tích-hợp-cms-designer-bot):
 // message | read | notification | presence | user | reload.
 // Cac event con lai la mo rong rieng cua Chat.
 const (

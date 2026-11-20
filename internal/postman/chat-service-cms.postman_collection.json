@@ -1,0 +1,1510 @@
+{
+  "info": {
+    "_postman_id": "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e1003",
+    "name": "Chat Service · A Workspace [CMS]",
+    "description": "# Chat Service — bản cho **CMS**\n\nChỉ gồm những API **CMS gọi sang Chat** (`/bot/v1/*`). Phần web chat gọi nằm ở bản `[FE]`.\n\n## Chuẩn bị (1 bước)\n\nChọn environment **Chat Service · Local** rồi điền **`service_key`** = `CHAT_SERVICE_KEY`\n(khoá dùng chung hai phía, cũng là khoá Chat dùng để ký webhook gửi sang CMS).\n\nCollection tự gắn `X-Chat-Service-Key` và `Idempotency-Key` cho mọi request `/bot/v1`.\n\n## Bắt đầu từ đâu\n\nChạy folder **`FLOW · Luồng của CMS`** từ `1.1` xuống. Đặt `stop_at` = số bước để dừng xem kỹ.\n\n## Quy ước chung\n\n- **Không có envelope** — response là JSON phẳng (`{\"messageId\": \"...\"}`), khác bản `[FE]`.\n- **`Idempotency-Key`** (UUID) cho mọi request ghi: `POST /messages`, `PATCH /messages/:id`,\n  `POST /messages/:id/thread`, `POST /messages/:id/pin`, `POST /notifications`,\n  `PUT /presence`, `PUT /groups/:id`. Gặp lại key cũ → trả nguyên kết quả lần đầu.\n  Retry phải dùng **cùng key**.\n- **Lỗi**: `{\"code\", \"message\", \"retryable\"}`. `retryable: true` (5xx) thì thử lại một lần với\n  cùng key; `false` thì sửa payload.\n- **Id nhóm** nhận `wg_<hex>` hoặc UUID nội bộ. Ngoại lệ: `PUT /groups/:id` bắt buộc `wg_<hex>`\n  vì đó là chatId cần tạo.\n\n## Ba điều dễ sai nhất\n\n1. **`cardVersion` phải tăng đơn điệu.** Nhỏ hơn/bằng bản đang lưu → `{ok, ignored:true}`,\n   card không đổi và `thread`/`notify` bị bỏ qua.\n2. **Khoá của nút là `action`, không phải `actionId`.** Sai tên thì card tạo được nhưng người\n   bấm nhận `403 action_not_allowed`.\n3. **Lưu `messageId`** mà `POST /messages` trả về, ghép với mã đơn — không có nó thì không\n   `PATCH` được card về sau.\n\nHợp đồng đầy đủ kèm ví dụ trọn vòng: `docs/cms-goi-chat.md`.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// group_id = id nhóm chat, dùng cho CẢ BA bề mặt (/api/v1, /bot/v1,",
+          "// /api/client/v1): UUID nội bộ hoặc chatId của CMS (wg_<hex>) đều được.",
+          "// Folder 01 (hoặc FLOW) tự lưu biến này sau khi tạo/đồng bộ nhóm.",
+          "// Ngoại lệ duy nhất: PUT /bot/v1/groups/:id dùng cms_chat_id, vì tham số",
+          "// đó LÀ chatId mà CMS muốn tạo — truyền UUID vào sẽ đẻ ra nhóm lạ.",
+          "// Chưa chạy folder CMS thì dùng tạm tin nhắn thường để các request không vỡ.",
+          "if (!pm.variables.get('card_message_id') && pm.variables.get('message_id')) {",
+          "  pm.collectionVariables.set('card_message_id', pm.variables.get('message_id'));",
+          "}",
+          "// Bot API dùng service key thay vì JWT -> tự gắn header.",
+          "if (pm.request.url.getPath().startsWith('/bot/v1')) {",
+          "  if (!pm.request.headers.has('X-Chat-Service-Key')) {",
+          "    pm.request.headers.add({key: 'X-Chat-Service-Key', value: pm.variables.get('service_key') || ''});",
+          "  }",
+          "  pm.request.headers.upsert({key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}')});",
+          "}",
+          "// Cảnh báo sớm nếu chưa cấu hình biến bắt buộc.",
+          "const need = [\"base_url\", \"token\"];",
+          "need.forEach(k => {",
+          "  if (!pm.variables.get(k)) {",
+          "    console.warn(\"Thiếu biến \" + k + \" — chọn environment \\\"Chat Service · Local\\\" và dán token (make token).\");",
+          "  }",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "bot_slug",
+      "value": "bot",
+      "type": "string"
+    },
+    {
+      "key": "service_key",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cms_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "group_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cms_chat_id",
+      "value": "wg_postman_demo",
+      "type": "string"
+    },
+    {
+      "key": "stop_at",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "team_id_cms",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_action",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "actor_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_message_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id_2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "direct_conversation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "message_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "thread_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reply_message_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "attachment_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "FLOW · Luồng của CMS",
+      "description": "Thứ tự CMS gọi vào Chat, từ lúc có nhóm tới khi đơn xong. **Chạy lần lượt từ 1.1**.\n\n### Chuẩn bị\nĐiền **`service_key`** = `CHAT_SERVICE_KEY` (khoá dùng chung hai phía). Mọi request trong collection này tự gắn header `X-Chat-Service-Key` + `Idempotency-Key` — không dùng JWT.\n\n### Dừng ở một bước\nĐặt `stop_at` = số bước (vd `3.1`) rồi Run collection.\n\n### Hai điều quan trọng nhất\n**1. `Idempotency-Key`** (UUID) cho mọi request ghi. Chat lưu `(key → kết quả)`; gặp lại key cũ thì trả nguyên kết quả lần đầu, **không làm lại việc** — kể cả khi body lần hai khác. Retry phải dùng **cùng key**.\n\n**2. `cardVersion` phải tăng đơn điệu.** Chat chỉ áp card mới khi `cardVersion` **lớn hơn** bản đang lưu; nhỏ hơn/bằng → `{ok, ignored:true}` và bỏ qua luôn `thread`/`notify`.\n\nHợp đồng đầy đủ: `docs/cms-goi-chat.md`.",
+      "item": [
+        {
+          "name": "1.1 · Chat đang giữ những nhóm nào?",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/groups?source=cms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "groups"
+              ],
+              "query": [
+                {
+                  "key": "source",
+                  "value": "cms"
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Dùng để đối chiếu khi debug đồng bộ. `?q=` tìm theo tên, `?source=` = `cms` | `local`.\n\n`id` là `chatId` của CMS, `internalId` là UUID của Chat — endpoint nào cũng nhận cả hai dạng.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const items = pm.response.json().items || [];",
+                  "const g = items.find(x => String(x.id).startsWith(\"wg_\")) || items[0];",
+                  "if (g) pm.collectionVariables.set(\"group_id\", g.id);",
+                  "console.log(\"nhom =\", items.map(i => i.id + \" (\" + i.memberCount + \" nguoi)\").join(\", \"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"1.1\") {",
+                  "  console.log(\"DUNG tai buoc 1.1 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 · Nhóm này có những ai?",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/groups/{{group_id}}/members",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "groups",
+                "{{group_id}}",
+                "members"
+              ]
+            },
+            "description": "`id` trả về là **actorId** (`u_68`) — định danh Chat cấp. Dùng cho `visibleTo` của nút trên card và cho `notify[].actorId`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const items = pm.response.json().items || [];",
+                  "if (items[0]) pm.collectionVariables.set(\"actor_id\", items[0].id);",
+                  "console.log(\"thanh vien =\", items.map(i => i.id).join(\", \"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"1.2\") {",
+                  "  console.log(\"DUNG tai buoc 1.2 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.1 · openId → actorId",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/users/resolve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "users",
+                "resolve"
+              ]
+            },
+            "description": "Gọi khi cần `actorId` mà chưa có. Người **chưa từng đăng nhập Chat** cũng dùng được: Chat tạo actor từ hồ sơ CMS.\n\nMột lần gọi nhiều người (Chat tra bằng 2 câu query chứ không phải N câu). `actorId` ổn định theo `cmsUserId` nên **CMS nên cache**, không cần gọi lại.\n\nEndpoint này **không cần** `Idempotency-Key` — nó vốn idempotent theo `openId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"openId\": \"local:flow-cms-1\",\n      \"cmsUserId\": 9400,\n      \"name\": \"Người mới\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co items\", () => pm.expect(pm.response.json().items).to.be.an(\"array\"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"2.1\") {",
+                  "  console.log(\"DUNG tai buoc 2.1 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 · Đẩy nhóm + thành viên",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/groups/{{cms_chat_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "groups",
+                "{{cms_chat_id}}"
+              ]
+            },
+            "description": "Tạo nhóm nếu chưa có, cập nhật tên, và **thay toàn bộ** danh sách thành viên: ai không còn trong `members` **mất quyền xem nhóm ngay**.\n\nTham số URL phải là `chatId` dạng `wg_<hex>` — đây là id CMS muốn tạo, truyền UUID vào sẽ đẻ ra nhóm lạ.\n\nChat chỉ bắn event `reload` khi **thật sự** có thay đổi:\n\n| Thay đổi | `reason` | Gửi cho ai |\n|---|---|---|\n| thêm/bớt thành viên | `group.members_changed` | thành viên hiện tại ∪ người vừa bị gỡ |\n| đổi tên nhóm | `group.updated` | thành viên hiện tại |\n| không đổi gì | *(không bắn)* | — |\n\nChạy request này 2 lần liên tiếp để thấy: lần hai không ai nhận gì.\n\nChat cũng tự `GET /workspace/groups` mỗi 60s nên nhóm cuối cùng vẫn khớp CMS kể cả khi `PUT` thất bại — `PUT` chỉ để **nhanh hơn**.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nhóm Thiết kế Web\",\n  \"members\": [\n    {\n      \"openId\": \"local:flow-cms-1\",\n      \"cmsUserId\": 9400,\n      \"name\": \"Người mới\",\n      \"sources\": [\n        \"team\"\n      ],\n      \"teamCodes\": [\n        \"DESIGN\"\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co memberCount\", () => pm.expect(pm.response.json()).to.have.property(\"memberCount\"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"2.2\") {",
+                  "  console.log(\"DUNG tai buoc 2.2 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.1 · Đẩy card đơn vào nhóm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages"
+              ]
+            },
+            "description": "**Gọi ngay sau khi tạo đơn.** Đây là bước làm card hiện ra trong nhóm — `form.submit` mà CMS nhận được từ Chat **không** tự sinh tin nhắn nào.\n\n⚠️ Khoá của nút là **`action`**, KHÔNG phải `actionId`. Sai tên thì card vẫn tạo được nhưng người bấm nhận `403 action_not_allowed`.\n\n`visibleTo` = danh sách `actorId` được thấy nút. Chat lọc nút theo **từng người xem** trước khi gửi xuống UI; để `null`/bỏ trống = ai cũng thấy.\n\n**Lưu `messageId` trả về, ghép với mã đơn** — không có nó thì không `PATCH` được card về sau.\n\nBody cũng nhận `{groupId, text}` cho tin nhắn thường, và `threadRootId` để gửi vào thread.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupId\": \"{{group_id}}\",\n  \"bot\": {\n    \"id\": 1,\n    \"name\": \"Designer Bot\"\n  },\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261118-0006\",\n      \"title\": \"Banner Tết 2027\",\n      \"status\": {\n        \"text\": \"Chưa nhận\",\n        \"tone\": \"warning\"\n      }\n    },\n    \"elements\": [\n      {\n        \"type\": \"field\",\n        \"label\": \"Số lượng\",\n        \"value\": \"3\"\n      },\n      {\n        \"type\": \"button\",\n        \"text\": \"Nhận việc\",\n        \"action\": \"accept_task\",\n        \"visibleTo\": [\n          \"{{actor_id}}\"\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"co messageId + cardVersion\", () => pm.expect(d).to.include.keys(\"messageId\", \"cardVersion\"));",
+                  "pm.collectionVariables.set(\"card_message_id\", d.messageId);",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"3.1\") {",
+                  "  console.log(\"DUNG tai buoc 3.1 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 · Ghi một dòng diễn biến",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}/thread",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}",
+                "thread"
+              ]
+            },
+            "description": "Dùng cho lịch sử đơn khi **chỉ** cần ghi chữ, không đổi card. Nếu vừa đổi card vừa ghi dòng thì dùng bước 4.1 (gộp) thay vì gọi riêng.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Đã giao Trần Designer · Chờ nhận task.\",\n  \"bot\": {\n    \"id\": 1,\n    \"name\": \"Designer Bot\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co messageId\", () => pm.expect(pm.response.json()).to.have.property(\"messageId\"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"3.2\") {",
+                  "  console.log(\"DUNG tai buoc 3.2 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 · Thông báo cho một người",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "notifications"
+              ]
+            },
+            "description": "Chuông đỏ + badge của riêng người đó. `messageId` để FE bấm vào là nhảy tới đúng card.\n\nNgười dùng tự đánh dấu đã đọc qua bề mặt FE — CMS không cần gọi gì thêm.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actorId\": \"{{actor_id}}\",\n  \"text\": \"Bạn có task mới: WEB-20261118-0006 · Banner Tết 2027\",\n  \"messageId\": \"{{card_message_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co id\", () => pm.expect(pm.response.json()).to.have.property(\"id\"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"3.3\") {",
+                  "  console.log(\"DUNG tai buoc 3.3 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.1 · Đơn đổi trạng thái — gộp 3 việc 1 request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}"
+              ]
+            },
+            "description": "**Dùng request này cho MỖI lần đơn đổi trạng thái** (nhận / tạm dừng / treo / nộp bài / xong / huỷ) — thay cho 3 request riêng. Một `Idempotency-Key`, một chỗ xử lý lỗi.\n\n`card` + `cardVersion` bắt buộc; `thread` và `notify` **tuỳ chọn** (không gửi thì response không có khoá đó). `notify` là mảng, gửi nhiều người một lần được; `notify[].messageId` bỏ trống thì tự trỏ về chính card này.\n\n**Quy ước lỗi:**\n- `cardVersion` không lớn hơn → `{ok, ignored:true}`, **bỏ qua cả** `thread`/`notify`\n- `thread`/`notify` lỗi → vẫn `200`, card đã đổi xong, lỗi theo từng phần: `{\"thread\":{\"error\":{\"code\":\"text_required\"}}}`\n\nKhông trả 5xx cho phần phụ vì CMS retry sẽ gặp `ignored:true` (cardVersion không tăng nữa) và mất luôn thread/notify.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261118-0006\",\n      \"title\": \"Banner Tết 2027\",\n      \"status\": {\n        \"text\": \"Đã nộp bài\",\n        \"tone\": \"success\"\n      }\n    },\n    \"elements\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"Chờ duyệt\"\n      }\n    ]\n  },\n  \"cardVersion\": 2,\n  \"thread\": {\n    \"text\": \"Trần Designer đã nộp bài · Chờ duyệt\",\n    \"bot\": {\n      \"id\": 1,\n      \"name\": \"Designer Bot\"\n    }\n  },\n  \"notify\": [\n    {\n      \"actorId\": \"{{actor_id}}\",\n      \"text\": \"Đơn WEB-20261118-0006 đã nộp bài\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const d = pm.response.json();",
+                  "console.log(\"ignored =\", d.ignored, \"| thread =\", JSON.stringify(d.thread),",
+                  "            \"| notify =\", JSON.stringify(d.notify));",
+                  "pm.test(\"ignored thi khong co thread/notify\", () => {",
+                  "  if (d.ignored) { pm.expect(d).to.not.have.property(\"thread\");",
+                  "                   pm.expect(d).to.not.have.property(\"notify\"); }",
+                  "});",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"4.1\") {",
+                  "  console.log(\"DUNG tai buoc 4.1 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 · Gửi lại cùng cardVersion → ignored",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}"
+              ]
+            },
+            "description": "Chứng minh cơ chế chống ghi đè ngược: `cardVersion` **bằng** bản đang lưu nên Chat bỏ qua, và `thread` cũng không được ghi.\n\nResponse: `{ok: true, ignored: true, cardVersion: 2}` — **không** có khoá `thread`.\n\n`ignored: true` **không phải lỗi**: nghĩa là Chat đang giữ bản mới hơn. CMS đọc `cardVersion` trả về để biết trạng thái thật ở Chat.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"title\": \"Bản cũ hơn\"\n    },\n    \"elements\": []\n  },\n  \"cardVersion\": 2,\n  \"thread\": {\n    \"text\": \"Dòng này KHÔNG được xuất hiện\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"bi bo qua\", () => pm.expect(d.ignored).to.be.true);",
+                  "pm.test(\"khong ghi thread\", () => pm.expect(d).to.not.have.property(\"thread\"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"4.2\") {",
+                  "  console.log(\"DUNG tai buoc 4.2 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.1 · Ghim card quan trọng",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}/pin",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}",
+                "pin"
+              ]
+            },
+            "description": "`{}` = ghim, `{\"pinned\": false}` = bỏ ghim. Card hiện ở mục đã ghim của nhóm.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"ok\", () => pm.expect(pm.response.json().ok).to.be.true);",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"5.1\") {",
+                  "  console.log(\"DUNG tai buoc 5.1 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 · Cập nhật presence (lịch OFF)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/presence",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "presence"
+              ]
+            },
+            "description": "| `status` | `reason` | Chat hiểu là |\n|---|---|---|\n| `on` | — | online |\n| `off` | **có** | `off_duty` → FE hiện chữ **OFF** cạnh tên |\n| `off` | không | offline |\n\n`actorId` không tồn tại thì **bị bỏ qua, không báo lỗi** — `updated` cho biết thực sự đổi được bao nhiêu.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"actorId\": \"{{actor_id}}\",\n      \"status\": \"off\",\n      \"reason\": \"Lịch OFF ca chiều\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co updated\", () => pm.expect(pm.response.json().updated).to.be.a(\"number\"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"5.2\") {",
+                  "  console.log(\"DUNG tai buoc 5.2 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.1 · Tra cứu nhiều user một lần",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/users/batch",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "users",
+                "batch"
+              ]
+            },
+            "description": "Mỗi loại id **một câu query** (không phải N câu). Dùng khi cần đối chiếu hồ sơ.\n\nTra một người: `GET /bot/v1/users/{actorId|openId|UUID}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actorIds\": [\n    \"{{actor_id}}\"\n  ],\n  \"openIds\": [],\n  \"cmsUserIds\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co items\", () => pm.expect(pm.response.json()).to.have.property(\"items\"));",
+                  "if (String(pm.variables.get(\"stop_at\") || \"\").trim() === \"6.1\") {",
+                  "  console.log(\"DUNG tai buoc 6.1 (stop_at). Doi stop_at de di tiep.\");",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 · CMS → Chat (Bot API)",
+      "description": "Các API **CMS gọi sang Chat**. Auth: header `X-Chat-Service-Key` (biến `service_key`), không dùng JWT. Mọi request ghi nên có `Idempotency-Key` — gặp lại key trả nguyên kết quả cũ.\n\nChỉ bật khi `CMS_ENABLED=true`. Chi tiết: `docs/backend.md#tích-hợp-cms-designer-bot`.",
+      "item": [
+        {
+          "name": "Resolve user (openId → actorId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/users/resolve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "users",
+                "resolve"
+              ]
+            },
+            "description": "Chưa có trong Chat thì tạo actor mới (lấy hồ sơ qua Workspace API của CMS).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"openId\": \"local:designer-1\",\n      \"cmsUserId\": 68,\n      \"name\": \"Trần Designer\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co actorId\", () => pm.expect(pm.response.json().items[0]).to.have.property(\"actorId\"));",
+                  "const it = pm.response.json().items[0];",
+                  "if (it) pm.collectionVariables.set(\"actor_id\", it.actorId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gửi card vào nhóm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages"
+              ]
+            },
+            "description": "`groupId` nhận cả `wg_…` của CMS lẫn UUID nội bộ. Trả `{messageId, cardVersion}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupId\": \"{{group_id}}\",\n  \"bot\": {\n    \"id\": 1,\n    \"name\": \"Demo Designer Bot\"\n  },\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261118-0006\",\n      \"kind\": \"DESIGN\",\n      \"title\": \"Banner Tết 2027\",\n      \"status\": {\n        \"text\": \"Chưa nhận\",\n        \"tone\": \"warning\"\n      }\n    },\n    \"visibleTo\": null,\n    \"elements\": [\n      {\n        \"type\": \"button\",\n        \"text\": \"Nhận task\",\n        \"action\": \"accept_task\",\n        \"visibleTo\": [\n          \"{{actor_id}}\"\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const d = pm.response.json();",
+                  "pm.collectionVariables.set(\"card_message_id\", d.messageId);",
+                  "pm.test(\"cardVersion = 1\", () => pm.expect(d.cardVersion).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sửa card (PATCH theo cardVersion)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}"
+              ]
+            },
+            "description": "Chỉ áp dụng khi `cardVersion` **lớn hơn** bản đang lưu; nhỏ hơn/bằng → `{\"ok\":true,\"ignored\":true}`.\n\nGộp được 3 việc trong 1 request — xem request kế tiếp.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261118-0006\",\n      \"title\": \"Banner Tết 2027\",\n      \"status\": {\n        \"text\": \"Đang làm\",\n        \"tone\": \"info\"\n      }\n    },\n    \"elements\": [\n      {\n        \"type\": \"button\",\n        \"text\": \"Nộp bài\",\n        \"action\": \"submit_work\"\n      }\n    ]\n  },\n  \"cardVersion\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"ok\", () => pm.expect(pm.response.json().ok).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sửa card + thread + thông báo (gộp 1 request)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}"
+              ]
+            },
+            "description": "**Dùng cái này cho mỗi lần đơn đổi trạng thái** — thay vì gọi 3 request (`PATCH` card + `POST .../thread` + `POST /notifications`).\n\n`thread` và `notify` đều **tuỳ chọn**; không gửi thì hành vi y như request ở trên.\n`notify[].messageId` bỏ trống thì tự trỏ về chính card này.\n\n**Quy ước lỗi** (đã kiểm chứng):\n- `cardVersion` không lớn hơn → `{ok, ignored:true}` và **bỏ qua cả** `thread`/`notify` (đang gửi trạng thái cũ thì không được ghi thêm dòng diễn biến cũ).\n- `thread`/`notify` lỗi → vẫn `200`, card đã đổi xong, lỗi báo theo từng phần: `{\"thread\":{\"error\":{\"code\":\"text_required\"}}}`. Không trả 5xx vì CMS retry sẽ gặp `ignored:true` (cardVersion không tăng nữa) và mất luôn thread/notify.\n- Một `Idempotency-Key` cho cả 3 việc.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261118-0006\",\n      \"title\": \"Banner Tết 2027\",\n      \"status\": {\n        \"text\": \"Đã nộp bài\",\n        \"tone\": \"success\"\n      }\n    },\n    \"elements\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"Chờ duyệt\"\n      }\n    ]\n  },\n  \"cardVersion\": 3,\n  \"thread\": {\n    \"text\": \"Trần Designer đã nộp bài · Chờ duyệt\",\n    \"bot\": {\n      \"id\": 1,\n      \"name\": \"Demo Designer Bot\"\n    }\n  },\n  \"notify\": [\n    {\n      \"actorId\": \"{{actor_id}}\",\n      \"text\": \"Đơn WEB-20261118-0006 đã nộp bài\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"co cardVersion\", () => pm.expect(d).to.have.property(\"cardVersion\"));",
+                  "pm.test(\"ignored thi khong co thread/notify\", () => {",
+                  "  if (d.ignored) { pm.expect(d).to.not.have.property(\"thread\");",
+                  "                   pm.expect(d).to.not.have.property(\"notify\"); }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trả lời trong thread",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}/thread",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}",
+                "thread"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Đã giao Trần Designer · Chờ nhận task.\",\n  \"bot\": {\n    \"id\": 1,\n    \"name\": \"Demo Designer Bot\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co messageId\", () => pm.expect(pm.response.json()).to.have.property(\"messageId\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Thông báo cho 1 người",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/notifications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "notifications"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actorId\": \"{{actor_id}}\",\n  \"text\": \"Bạn có task mới: WEB-20261118-0006\",\n  \"messageId\": \"{{card_message_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đẩy nhóm + thành viên",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/groups/{{cms_chat_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "groups",
+                "{{cms_chat_id}}"
+              ]
+            },
+            "description": "**Thay thế toàn bộ** danh sách thành viên: ai không còn trong danh sách mất quyền xem nhóm ngay.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Nhóm Thiết kế Web\",\n  \"members\": [\n    {\n      \"openId\": \"local:designer-1\",\n      \"cmsUserId\": 68,\n      \"name\": \"Trần Designer\",\n      \"sources\": [\n        \"team\"\n      ],\n      \"teamCodes\": [\n        \"DESIGN\"\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co memberCount\", () => pm.expect(pm.response.json()).to.have.property(\"memberCount\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ghim tin nhắn",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}/pin",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}",
+                "pin"
+              ]
+            },
+            "description": "CMS ghim card/tin quan trọng. `{\"pinned\": false}` để bỏ ghim.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"ok\", () => pm.expect(pm.response.json().ok).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cập nhật presence (lịch OFF)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/presence",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "presence"
+              ]
+            },
+            "description": "`status`: `on` → online; `off` **kèm `reason`** → `off_duty` (hiện chữ OFF cạnh tên); `off` không reason → offline. Actor không tồn tại thì bị bỏ qua, không lỗi.\n\nChat phát event realtime `presence` cho những người **chung hội thoại** với người đó.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"actorId\": \"{{actor_id}}\",\n      \"status\": \"off\",\n      \"reason\": \"Lịch OFF ca chiều\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co so dong cap nhat\", () => pm.expect(pm.response.json().updated).to.be.a(\"number\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tra cứu: danh sách nhóm",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/groups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "groups"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "TEAM",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "cms",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Spec §7.7. Liệt kê nhóm Chat đang giữ — dùng để đối chiếu khi debug đồng bộ.\n\n**Filter** (bật trong tab Params): `q` tìm theo tên (không phân biệt hoa thường), `source` = `cms` | `local`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co items\", () => pm.expect(pm.response.json()).to.have.property(\"items\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tra cứu: 1 nhóm",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/groups/{{group_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "groups",
+                "{{group_id}}"
+              ]
+            },
+            "description": "Spec §7.7. Nhận `chatId` của CMS hoặc UUID nội bộ.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 / 404\", () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tra cứu: 1 user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/users/{{actor_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "users",
+                "{{actor_id}}"
+              ]
+            },
+            "description": "Spec §7.7. Nhận `actorId` (`u_68`), `openId`, hoặc UUID nội bộ.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 / 404\", () => pm.expect(pm.response.code).to.be.oneOf([200, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tra cứu: nhiều user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/users/batch",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "users",
+                "batch"
+              ]
+            },
+            "description": "Spec §7.7. Tra hàng loạt bằng **một** query cho mỗi loại id (không phải N query).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actorIds\": [\n    \"{{actor_id}}\"\n  ],\n  \"openIds\": [],\n  \"cmsUserIds\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"co items\", () => pm.expect(pm.response.json()).to.have.property(\"items\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Thông tin tệp đính kèm",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/attachments/{{attachment_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "attachments",
+                "{{attachment_id}}"
+              ]
+            },
+            "description": "Chat **không lưu file**, chỉ lưu URL do service upload/CDN cung cấp. Thêm `?redirect=true` để nhảy thẳng tới URL đó (302).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 hoac 404 neu chua co attachment_id\", () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sai service key → 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Chat-Service-Key",
+                "value": "khoa-sai-co-y"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/users/resolve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "users",
+                "resolve"
+              ]
+            },
+            "description": "Gửi khoá sai để xem dạng lỗi `{code, message, retryable}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code invalid_service_key\", () => pm.expect(pm.response.json().code).to.eql(\"invalid_service_key\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

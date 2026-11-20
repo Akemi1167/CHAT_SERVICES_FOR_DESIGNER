@@ -14,7 +14,7 @@ Service chat cho ABC Workspace: **Go + Fiber (REST/WebSocket) + gRPC + PostgreSQ
 - **Task**: tạo yêu cầu trong chat (tự gợi ý người phụ trách theo tổ + tải việc), **nhận task** (chọn định mức & số lượng), tạm dừng / tiếp tục / treo / hoàn thành, chia task cho nhiều người (mỗi người 1 card), gọi hỗ trợ / gọi Edit, đổi người phụ trách, danh sách **chờ nhận**, lịch sử task
 - **Reply & thread**: `reply_to_id` (trích dẫn) tách khỏi `thread_id` (thread của yêu cầu), kèm `reply_count` / `thread_count` trong mọi danh sách và API `GET /messages/:id/replies?mode=direct|thread`
 - **Phiếu sửa**: ghi nguyên nhân / loại sửa / số lượng, tự mở lại card đã hoàn thành, hoàn thành riêng từng phiếu
-- **Tích hợp CMS/Task Engine**: xác thực token CMS bằng JWKS (RS256), đồng bộ nhóm + thành viên từ CMS, lưu card `abc.card/v1` và lọc nút theo `visibleTo`, webhook ký HMAC (`form.submit`, `card.action`, `message.created`), Bot API cho CMS gọi sang (có `Idempotency-Key`), API `/api/client/v1/chat/*` theo hợp đồng — xem [docs/10-cms-integration.md](docs/10-cms-integration.md)
+- **Tích hợp CMS/Task Engine**: xác thực token CMS bằng JWKS (RS256), đồng bộ nhóm + thành viên từ CMS, lưu card `abc.card/v1` và lọc nút theo `visibleTo`, webhook ký HMAC (`form.submit`, `card.action`, `message.created`), Bot API cho CMS gọi sang (có `Idempotency-Key`), API `/api/client/v1/chat/*` theo hợp đồng — xem [docs/backend.md](docs/backend.md#tích-hợp-cms-designer-bot)
 - Idempotency khi gửi tin (chống trùng khi FE retry), cursor pagination, graceful shutdown
 
 ---
@@ -44,7 +44,7 @@ make migrate-up                 # tạo schema + seed bot "@bot" + seed tổ
 make run                        # HTTP :8080, gRPC :9090
 ```
 
-Chi tiết Docker: [docs/08-docker.md](docs/08-docker.md).
+Chi tiết Docker: [docs/deploy.md](docs/deploy.md#docker).
 
 Sinh token để test (giống token FE sẽ gửi xuống):
 
@@ -159,23 +159,13 @@ transport (http/grpc/ws)  ->  service  ->  repository (interface)  ->  postgres/
 
 | File | Nội dung |
 |------|----------|
-| [docs/01-architecture.md](docs/01-architecture.md) | Sơ đồ tầng, luồng gửi tin nhắn, vì sao chia như vậy, cách scale nhiều instance |
-| [docs/02-websocket.md](docs/02-websocket.md) | Giao thức WebSocket đầy đủ: cách FE auth, từng frame, ví dụ client JS |
-| [docs/03-bot-template.md](docs/03-bot-template.md) | `@bot` + gửi mẫu: cú pháp, schema mẫu, bảng DB, cách thêm bot/mẫu mới |
-| [docs/04-them-sua-xoa-field.md](docs/04-them-sua-xoa-field.md) | Quy trình chuẩn khi thêm/sửa/xoá field hoặc API (checklist từng bước) |
-| [docs/05-api.md](docs/05-api.md) | Danh sách REST endpoint + gRPC RPC |
-| [docs/06-roadmap.md](docs/06-roadmap.md) | Phần còn lại của spec (Drive, tính điểm, AI...) map vào kiến trúc hiện tại |
-| [docs/07-task.md](docs/07-task.md) | Task: mô hình dữ liệu, state machine, tạo yêu cầu / nhận task / phiếu sửa, chia task |
-| [docs/08-docker.md](docs/08-docker.md) | Hai stack Docker (dev hot-reload và prod-like), lệnh, biến môi trường, sự cố hay gặp |
-| [docs/09-postman.md](docs/09-postman.md) | Postman: file import, cách chạy cả collection, WebSocket & gRPC |
-| [docs/14-code-map.md](docs/14-code-map.md) | **Từ URL tới code**: route nằm đâu, handler nào, service nào — kèm `make route` |
-| [docs/13-test-guide.md](docs/13-test-guide.md) | **Cách test**: `make seed`, chat trên terminal, Postman, curl, xem log khi lỗi |
-| [docs/12-deploy.md](docs/12-deploy.md) | **Deploy VPS**: stack prod, TLS/WebSocket qua nginx, bảo mật, backup, checklist |
-| [docs/17-giao-dien-live.md](docs/17-giao-dien-live.md) | **Giao diện live** `/demo/live.html` — bản chạy thật của `chat-thread-demo.html` |
-| [docs/16-api-flow.md](docs/16-api-flow.md) | **Luồng gọi API theo thứ tự** (từ FE): mở app, mở nhóm, gửi tin, thread, tạo yêu cầu, bấm nút card |
-| [docs/11-frontend.md](docs/11-frontend.md) | **Dành cho FE**: 2 chế độ, auth, REST + WebSocket, reply/thread, card, luồng chuẩn, checklist |
-| [docs/15-cms-cutover.md](docs/15-cms-cutover.md) | **Nối vào CMS**: xin gì, đưa gì, điền env, `make cms-check`, cách quay lui |
-| [docs/10-cms-integration.md](docs/10-cms-integration.md) | **Tích hợp CMS**: JWKS, đồng bộ nhóm, card/visibleTo, webhook HMAC, Bot API, API cho FE |
+| [docs/FLOW.md](docs/FLOW.md) | **Đọc trước tiên — cho cả 3 đội**: sơ đồ FE ↔ Chat ↔ CMS · ai sở hữu cái gì · 4 danh mục `type` (6 frame gửi lên, 12 frame nhận về, 4 event webhook, `action` trên card) · khi nào CMS cần gọi Chat · 9 luồng A–I kèm **lệnh chạy thử dán là chạy** · bảng tra lỗi |
+| [docs/source.md](docs/source.md) | **Sửa code**: sơ đồ tầng, luồng gửi tin nhắn, cách scale nhiều instance · từ URL tới hàm (`make route`) · checklist thêm/sửa/xoá field & API · migrate có mất dữ liệu không · phần còn lại của spec map vào đâu |
+| [docs/backend.md](docs/backend.md) | **API & tích hợp**: danh sách REST + gRPC · tích hợp CMS (JWKS, đồng bộ nhóm, card/`visibleTo`, webhook HMAC, Bot API) · `@bot` và mẫu · module task nội bộ · Postman · hướng dẫn test |
+| [docs/frontend.md](docs/frontend.md) | **Dành cho FE**: hai bề mặt API khác nhau ở đâu · giao thức WebSocket đầy đủ · thứ tự gọi API theo từng tình huống · giao diện mẫu `/demo/live.html` chạy thật |
+| [docs/deploy.md](docs/deploy.md) | **Đưa lên server**: hai stack Docker · deploy VPS (TLS/WebSocket qua nginx, bảo mật, backup) · cutover bật tích hợp CMS |
+| [docs/cms-goi-chat.md](docs/cms-goi-chat.md) | **Dành cho đội CMS**: khi CMS có thay đổi (tạo đơn, đổi trạng thái, sửa card, đổi thành viên) thì gọi API nào của Chat — body, response, `Idempotency-Key`, `cardVersion`, mã lỗi, ví dụ trọn vòng |
+| [docs/CHAT_SERVICE_INTEGRATION.md](docs/CHAT_SERVICE_INTEGRATION.md) | **Spec gốc do CMS đưa** — giữ nguyên, không sửa. Hợp đồng hai phía: token, webhook, Bot API, Client API |
 
 ---
 
@@ -197,20 +187,28 @@ make seed            # dựng dữ liệu demo + in token/ID để test ngay
 make token SUB=user-002 ROLE=order
 make postman         # sinh lại collection Postman sau khi đổi API
 make postman-run TOKEN=$(make -s token)   # chạy cả collection bằng Postman CLI
-make postman-flow TOKEN=$(make -s token) [STOP=2.3]   # chạy folder FLOW, dừng ở bước muốn xem
+make postman-flow TOKEN=$(make -s token) [STOP=2.3]   # bản đầy đủ: FLOW 17 bước
+make postman-fe   TOKEN=$(make -s token-cms CMS_USER=6)   # bản [FE]
+make postman-cms  KEY=$CHAT_SERVICE_KEY                   # bản [CMS]
 ```
 
 ## 4b. Postman
 
 Import 2 file này vào Postman (Import → File):
 
-- `internal/postman/chat-service.postman_collection.json` — 79 request, 10 folder, có sẵn test + tự lưu id giữa các request.
-  Folder **`FLOW`** là 16 bước đánh số theo đúng thứ tự thật — chạy cái này trước nếu mới làm quen.
+Có **3 bản** — gửi cho ai thì import bản của người đó:
+
+| File | Gửi cho | Nội dung |
+|---|---|---|
+| `chat-service-fe.postman_collection.json` | **đội FE** | `FLOW · Luồng của FE` (12 bước) + `/api/client/v1/chat/*` + mẫu WebSocket |
+| `chat-service-cms.postman_collection.json` | **đội CMS** | `FLOW · Luồng của CMS` (12 bước) + `/bot/v1/*` |
+| `chat-service.postman_collection.json` | nội bộ | bản đầy đủ: 81 request, 10 folder, cả `/api/v1` và lỗi/quyền |
+⚠️ Khi `CMS_ENABLED=true`, bước gửi form **tạo đơn thật** bên CMS.
   Folder **`10 · WebSocket & gRPC`** chứa mẫu frame WS (body + các trường hợp xảy ra) trong tab Documentation.
 - `internal/postman/chat-service.local.postman_environment.json` — environment `Chat Service · Local`
 
 Rồi dán token (`make token`) vào biến `token`. Chi tiết + cách thêm request WebSocket/gRPC:
-[docs/09-postman.md](docs/09-postman.md).
+[docs/backend.md](docs/backend.md#postman).
 
 ## 5. Biến môi trường
 

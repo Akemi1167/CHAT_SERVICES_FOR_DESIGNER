@@ -229,3 +229,18 @@ func (r *UserRepo) UpdatePresenceWithReason(ctx context.Context, id uuid.UUID, p
 		}).Error
 	return wrap(err, "user.updatePresenceWithReason")
 }
+
+// TouchLastSeen chi cham vao nhung dong DANG la online — khong "hoi sinh"
+// nguoi da offline hay dang off_duty.
+func (r *UserRepo) TouchLastSeen(ctx context.Context, ids []uuid.UUID, seenAt time.Time) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := r.db(ctx).Model(&domain.User{}).
+		Where("id IN ? AND presence = ?", ids, domain.PresenceOnline).
+		Update("last_seen_at", seenAt)
+	if res.Error != nil {
+		return 0, wrap(res.Error, "user.touchLastSeen")
+	}
+	return res.RowsAffected, nil
+}
