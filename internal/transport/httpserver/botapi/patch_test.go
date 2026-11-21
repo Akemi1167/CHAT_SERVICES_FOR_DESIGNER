@@ -103,3 +103,31 @@ func TestPartErrorVoiLoiLa(t *testing.T) {
 type errLa struct{}
 
 func (errLa) Error() string { return "loi la" }
+
+// POST /messages/:id/thread nhan card (chia task: card cua phan 2..N nam trong
+// thread card goc). Body chi co text nhu truoc van parse binh thuong.
+func TestThreadReqNhanCard(t *testing.T) {
+	body := `{"bot":{"id":1,"name":"Designer Bot"},
+      "card":{"schema":"abc.card/v1",
+              "header":{"code":"WEB-20261120-0003-P2","title":"Banner Tet · Phan 2/3"},
+              "elements":[{"type":"actions","items":[
+                {"action":"accept_task","label":"Nhan task","visibleTo":["u_6"]}]}]}}`
+	var req threadReq
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatalf("parse body co card: %v", err)
+	}
+	if req.Card == nil || req.Card["schema"] != "abc.card/v1" {
+		t.Fatalf("mat card: %+v", req)
+	}
+	if req.Text != "" || req.CardVersion != 0 {
+		t.Errorf("khong gui text/cardVersion thi phai rong: %+v", req)
+	}
+
+	var old threadReq
+	if err := json.Unmarshal([]byte(`{"text":"da nhan task"}`), &old); err != nil {
+		t.Fatalf("parse body cu: %v", err)
+	}
+	if old.Text != "da nhan task" || old.Card != nil {
+		t.Errorf("body cu sai: %+v", old)
+	}
+}

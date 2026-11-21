@@ -70,6 +70,11 @@
       "type": "string"
     },
     {
+      "key": "docs_key",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "cms_token",
       "value": "",
       "type": "string"
@@ -1539,6 +1544,44 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tài liệu FLOW.md (markdown)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Docs-Key",
+                "value": "{{docs_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/docs/flow",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "docs",
+                "flow"
+              ]
+            },
+            "description": "Trả nguyên văn `docs/FLOW.md` (`text/markdown`) để dựng trang tài liệu. Auth: header `X-Docs-Key` = `DOCS_API_KEY` trong `.env` (biến `docs_key`), không dùng JWT.\n\n- sai/thiếu khoá → `401 invalid_docs_key`\n- chưa đặt `DOCS_API_KEY` → route không tồn tại (`404`)\n\nNội dung được nhúng vào binary lúc build: sửa `FLOW.md` xong phải build/deploy lại.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 (dung khoa) / 401 (sai khoa) / 404 (chua bat)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 401, 404]));"
                 ]
               }
             }

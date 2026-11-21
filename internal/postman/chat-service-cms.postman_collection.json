@@ -70,6 +70,11 @@
       "type": "string"
     },
     {
+      "key": "docs_key",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "cms_token",
       "value": "",
       "type": "string"
@@ -1050,6 +1055,58 @@
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
                   "pm.test(\"co messageId\", () => pm.expect(pm.response.json()).to.have.property(\"messageId\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Card vào thread (chia task)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/messages/{{card_message_id}}/thread",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "messages",
+                "{{card_message_id}}",
+                "thread"
+              ]
+            },
+            "description": "Chia task: card của phần 2..N nằm **trong thread của card gốc**. Body cần `text` **hoặc** `card`.\n\nTrả `messageId` + `cardVersion` (không gửi thì bắt đầu từ `1`) + `threadRootId`. Card trong thread dùng được như card ở timeline: `PATCH /bot/v1/messages/:id`, lọc `visibleTo`, FE bấm nút → `card.action` với `messageId` = id của card phần.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bot\": {\n    \"id\": 1,\n    \"name\": \"Designer Bot\"\n  },\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261120-0003-P2\",\n      \"title\": \"Banner Tết · Phần 2/3\",\n      \"status\": {\n        \"text\": \"Chưa nhận\",\n        \"tone\": \"warning\"\n      }\n    },\n    \"elements\": [\n      {\n        \"type\": \"actions\",\n        \"items\": [\n          {\n            \"action\": \"accept_task\",\n            \"label\": \"Nhận task\",\n            \"placement\": \"primary\",\n            \"visibleTo\": [\n              \"{{actor_id}}\"\n            ],\n            \"confirm\": {\n              \"title\": \"Nhận phần 2/3?\"\n            }\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"co messageId + cardVersion + threadRootId\", () => pm.expect(d).to.include.keys(\"messageId\", \"cardVersion\", \"threadRootId\"));"
                 ]
               }
             }

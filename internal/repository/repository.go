@@ -133,9 +133,18 @@ type ConversationRepository interface {
 	ReplaceMembers(ctx context.Context, convID uuid.UUID, members []domain.ConversationMember) error
 }
 
+// MessageLocation: tin nhan nam o nhom nao, thread nao (khong tai noi dung).
+type MessageLocation struct {
+	ConversationID uuid.UUID
+	GroupID        string     // chatId cua CMS; rong neu nhom tao trong Chat
+	ThreadID       *uuid.UUID // nil = tin o timeline nhom
+}
+
 type MessageRepository interface {
 	Create(ctx context.Context, m *domain.Message) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Message, error)
+	// Locations tra vi tri cua nhieu tin cung luc (tranh N+1); id khong ton tai thi vang mat.
+	Locations(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]MessageLocation, error)
 	GetByClientMsgID(ctx context.Context, convID uuid.UUID, clientMsgID string) (*domain.Message, error)
 	List(ctx context.Context, f MessageFilter, p paging.Page) ([]domain.Message, error)
 	Search(ctx context.Context, f SearchFilter, p paging.Page) ([]domain.Message, error)

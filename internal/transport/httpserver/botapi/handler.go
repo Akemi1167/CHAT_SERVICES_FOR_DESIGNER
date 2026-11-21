@@ -237,11 +237,15 @@ func partError(err error) fiber.Map {
 	return fiber.Map{"error": fiber.Map{"code": e.Code, "message": e.Message}}
 }
 
-// addThreadLine ghi mot dong he thong vao thread cua card. Dung chung boi
+// addThreadLine ghi mot tin cua bot vao thread cua card: dong he thong (text)
+// hoac CARD (vd card cua tung phan khi chia task). Dung chung boi
 // POST /messages/:id/thread va PATCH /messages/:id (field `thread`).
+//
+// :id la tin nam TRONG thread (card phan) thi tin moi van vao thread cua card
+// goc — thread chi co mot cap.
 func (h *Handler) addThreadLine(c *fiber.Ctx, root *domain.Message, req threadReq) (fiber.Map, error) {
-	if strings.TrimSpace(req.Text) == "" {
-		return nil, apperr.Invalid("text_required", "Thieu text")
+	if strings.TrimSpace(req.Text) == "" && req.Card == nil {
+		return nil, apperr.Invalid("text_required", "Phai co text hoac card")
 	}
 	threadID := root.ID
 	if root.ThreadID != nil {
@@ -251,13 +255,22 @@ func (h *Handler) addThreadLine(c *fiber.Ctx, root *domain.Message, req threadRe
 		ConversationID: root.ConversationID,
 		ThreadID:       &threadID,
 		Content:        req.Text,
+		Card:           req.Card,
+		CardVersion:    req.CardVersion,
 		BotSender:      botSender(req.Bot),
 	})
 	if err != nil {
 		return nil, err
 	}
+	// Broadcast loc card theo visibleTo cho tung nguoi, y nhu card o timeline.
 	h.cards.Broadcast(c.UserContext(), msg, realtime.EventMessageNew)
-	return fiber.Map{"messageId": msg.ID.String()}, nil
+
+	out := fiber.Map{"messageId": msg.ID.String(), "threadRootId": threadID.String()}
+	if msg.Card != nil {
+		// CMS can so nay de lan PATCH sau gui cardVersion lon hon.
+		out["cardVersion"] = msg.CardVersion
+	}
+	return out, nil
 }
 
 // addNotification tao 1 thong bao. Dung chung boi POST /notifications va
@@ -280,22 +293,35 @@ func (h *Handler) addNotification(c *fiber.Ctx, req notificationReq) (fiber.Map,
 	if err != nil {
 		return nil, err
 	}
-	return fiber.Map{
+	out := fiber.Map{
 		"id":        n.ID.String(),
 		"actorId":   user.ActorID,
 		"text":      n.Text,
 		"messageId": req.MessageID,
 		"createdAt": n.CreatedAt.UnixMilli(),
 		"read":      n.Read,
-	}, nil
+	}
+	// Cho CMS thay Chat da hieu messageId tro vao dau (tin trong thread hay khong).
+	if n.ConversationID != nil {
+		out["conversationId"] = n.ConversationID.String()
+	}
+	if n.ThreadRootID != nil {
+		out["threadRootId"] = n.ThreadRootID.String()
+	}
+	return out, nil
 }
 
 type threadReq struct {
 	Text string   `json:"text"`
 	Bot  *botInfo `json:"bot"`
+
+	// Card trong thread (chia task: card cua phan 2..N). Khong gui cardVersion
+	// thi card bat dau tu 1.
+	Card        domain.JSONMap `json:"card"`
+	CardVersion int            `json:"cardVersion"`
 }
 
-// ThreadReply: CMS ghi dong he thong vao thread cua card.
+// ThreadReply: CMS ghi dong he thong HOAC card vao thread cua card.
 func (h *Handler) ThreadReply(c *fiber.Ctx) error {
 	return h.idempotent(c, "messages.thread", func() (int, any, error) {
 		rootID, err := paramUUID(c, "id")
@@ -306,8 +332,8 @@ func (h *Handler) ThreadReply(c *fiber.Ctx) error {
 		if err := c.BodyParser(&req); err != nil {
 			return 0, nil, apperr.Invalid("invalid_body", "Body khong hop le")
 		}
-		if strings.TrimSpace(req.Text) == "" {
-			return 0, nil, apperr.Invalid("text_required", "Thieu text")
+		if strings.TrimSpace(req.Text) == "" && req.Card == nil {
+			return 0, nil, apperr.Invalid("text_required", "Phai co text hoac card")
 		}
 
 		root, err := h.store.Messages().GetByID(c.UserContext(), rootID)

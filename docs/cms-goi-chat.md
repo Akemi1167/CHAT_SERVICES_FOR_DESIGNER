@@ -72,6 +72,7 @@ dạng `wg_<hex>`.
 | Tạo đơn mới | `POST /messages` (kèm `card`) | card đơn hiện trong nhóm, realtime |
 | **Đổi trạng thái đơn** (nhận / tạm dừng / treo / nộp bài / xong / huỷ) | `PATCH /messages/:id` — **một request làm cả 3 việc**: đổi card + ghi thread + thông báo | card cập nhật tại chỗ, thêm dòng diễn biến, người liên quan nhận chuông |
 | Chỉ ghi một dòng diễn biến | `POST /messages/:id/thread` | dòng chữ trong thread của card |
+| **Chia task thành N phần** | `POST /messages/:cardGốc/thread` kèm `card` × (N−1), rồi `PATCH` card gốc | card từng phần hiện trong thread của card gốc |
 | Chỉ thông báo cho ai đó | `POST /notifications` | chuông đỏ + badge của riêng người đó |
 | Đổi tên nhóm / thêm / bớt thành viên | `PUT /groups/:id` | sidebar của người liên quan tự tải lại |
 | User mới chưa từng vào Chat | `POST /users/resolve` | có `actorId` để dùng trong `visibleTo` |
@@ -287,7 +288,7 @@ CMS nên đọc: `ignored` trước, rồi `thread.error` / `notify[].error` n�
 Sau khi áp, Chat phát realtime `message` cho cả nhóm (card đã lọc theo từng người) — FE **upsert
 theo `id`**, không tạo bong bóng tin nhắn mới.
 
-### `POST /messages/:messageId/thread` — ghi một dòng diễn biến
+### `POST /messages/:messageId/thread` — ghi một dòng diễn biến hoặc một card
 
 ```bash
 curl -X POST "$CHAT_API_BASE/messages/7a5510a9-…/thread" \
@@ -302,7 +303,34 @@ curl -X POST "$CHAT_API_BASE/messages/7a5510a9-…/thread" \
 ```
 
 Dùng cho lịch sử đơn: *"… đã nhận task"*, *"… đã nộp bài · Chờ duyệt"*, *"Phiếu sửa #1 · …"*,
-*"Gọi hỗ trợ · …"*, *"… đã huỷ yêu cầu"*. Thiếu `text` → `400 text_required`.
+*"Gọi hỗ trợ · …"*, *"… đã huỷ yêu cầu"*.
+
+**Card trong thread** (chia task — card của phần 2..N): gửi `card` thay cho (hoặc cùng với) `text`.
+
+```bash
+curl -X POST "$CHAT_API_BASE/messages/7a5510a9-…/thread" \
+  -H "X-Chat-Service-Key: $CHAT_SERVICE_KEY" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Content-Type: application/json" \
+  -d '{"bot":{"id":1,"name":"Designer Bot"},
+       "card":{"schema":"abc.card/v1",
+               "header":{"code":"WEB-20261120-0003-P2","title":"Banner Tết · Phần 2/3"},
+               "elements":[{"type":"actions","items":[
+                 {"action":"accept_task","label":"Nhận task","visibleTo":["u_6"]}]}]}}'
+```
+
+```json
+{ "messageId": "34030601-…", "cardVersion": 1, "threadRootId": "7a5510a9-…" }
+```
+
+- `cardVersion` không gửi thì bắt đầu từ `1`; lần `PATCH` sau gửi `2`.
+- Card trong thread dùng được **mọi thứ như card ở timeline**: `PATCH /messages/:id` (kể cả
+  `thread` + `notify` gộp — dòng `thread` vào thread của card gốc), lọc `visibleTo` theo từng
+  người, FE bấm nút → `card.action` với `messageId` = id của card phần.
+- `:messageId` là một tin đang nằm trong thread thì tin mới vẫn vào thread của card gốc.
+- Response luôn có `threadRootId`; `cardVersion` chỉ có khi gửi `card`.
+
+Thiếu cả `text` lẫn `card` → `400 text_required`.
 
 ### `POST /messages/:messageId/pin` — ghim / bỏ ghim
 
@@ -340,6 +368,10 @@ curl -X POST "$CHAT_API_BASE/notifications" \
   "text": "Bạn có task mới: …", "messageId": "7a5510a9-…",
   "createdAt": 1794976774706, "read": false }
 ```
+
+`messageId` có thể là card nằm trong thread (card của một phần). Chat tự tra vị trí của tin và
+trả cho FE `conversationId` + `threadRootId`, nên CMS **chỉ cần gửi `messageId`**; response của
+endpoint này cũng kèm `conversationId` và `threadRootId` (khi tin nằm trong thread) để đối chiếu.
 
 `messageId` để FE bấm vào thông báo là nhảy tới đúng card. Chat phát realtime `notification` cho
 riêng người đó và tăng `unreadNotifications`. Người dùng tự đánh dấu đã đọc qua bề mặt FE — CMS

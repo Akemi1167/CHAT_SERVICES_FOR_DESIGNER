@@ -95,7 +95,7 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 	return ok(c, fiber.Map{
 		"me":                  userView(me),
 		"groups":              groups,
-		"notifications":       notifs,
+		"notifications":       clientview.Notifications(notifs),
 		"unreadNotifications": unread,
 	})
 }
@@ -384,7 +384,7 @@ func (h *Handler) ListNotifications(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return ok(c, fiber.Map{"notifications": items, "unread": unread, "pageInfo": pageView(info)})
+	return ok(c, fiber.Map{"notifications": clientview.Notifications(items), "unread": unread, "pageInfo": pageView(info)})
 }
 
 type readNotificationsReq struct {

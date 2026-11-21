@@ -43,6 +43,35 @@ func (r *MessageRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Messag
 	return &m, nil
 }
 
+func (r *MessageRepo) Locations(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]repository.MessageLocation, error) {
+	out := make(map[uuid.UUID]repository.MessageLocation, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID             uuid.UUID
+		ConversationID uuid.UUID
+		ThreadID       *uuid.UUID
+		ExternalID     *string
+	}
+	err := r.db(ctx).Table("messages AS m").
+		Select("m.id, m.conversation_id, m.thread_id, c.external_id").
+		Joins("JOIN conversations c ON c.id = m.conversation_id").
+		Where("m.id IN ?", ids).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, wrap(err, "message.locations")
+	}
+	for _, row := range rows {
+		loc := repository.MessageLocation{ConversationID: row.ConversationID, ThreadID: row.ThreadID}
+		if row.ExternalID != nil {
+			loc.GroupID = *row.ExternalID
+		}
+		out[row.ID] = loc
+	}
+	return out, nil
+}
+
 // GetByClientMsgID dung cho idempotency: FE retry gui lai cung client_msg_id.
 func (r *MessageRepo) GetByClientMsgID(ctx context.Context, convID uuid.UUID, clientMsgID string) (*domain.Message, error) {
 	if clientMsgID == "" {

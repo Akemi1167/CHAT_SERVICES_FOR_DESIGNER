@@ -3,6 +3,7 @@ package notification
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*domain.Notificat
 	if err := s.store.Notifications().Create(ctx, n); err != nil {
 		return nil, err
 	}
+	// Thieu vi tri thi FE van hien duoc thong bao, chi khong nhay toi tin duoc.
+	if err := s.attachLocations(ctx, []*domain.Notification{n}); err != nil {
+		slog.Warn("khong tra duoc vi tri tin cua thong bao", "notification_id", n.ID, "err", err)
+	}
 	s.hub.Publish(ctx, realtime.NewEvent(
 		realtime.EventNotification, "", []uuid.UUID{in.UserID}, n,
 	))
@@ -57,7 +62,46 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, f repository.Notif
 	items, info := paging.Build(rows, p, func(n domain.Notification) (time.Time, string) {
 		return n.CreatedAt, n.ID.String()
 	})
+	refs := make([]*domain.Notification, len(items))
+	for i := range items {
+		refs[i] = &items[i]
+	}
+	if err := s.attachLocations(ctx, refs); err != nil {
+		return nil, paging.PageInfo{}, err
+	}
 	return items, info, nil
+}
+
+// attachLocations dien conversationId / groupId / threadRootId cho thong bao
+// co messageId, bang MOT query cho ca trang. Tin da bi xoa cung thi de trong.
+func (s *Service) attachLocations(ctx context.Context, items []*domain.Notification) error {
+	ids := make([]uuid.UUID, 0, len(items))
+	for _, n := range items {
+		if n.MessageID != nil {
+			ids = append(ids, *n.MessageID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	locs, err := s.store.Messages().Locations(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, n := range items {
+		if n.MessageID == nil {
+			continue
+		}
+		loc, ok := locs[*n.MessageID]
+		if !ok {
+			continue
+		}
+		convID := loc.ConversationID
+		n.ConversationID = &convID
+		n.GroupID = loc.GroupID
+		n.ThreadRootID = loc.ThreadID
+	}
+	return nil
 }
 
 // MarkRead danh dau da doc; all=true thi danh dau het.

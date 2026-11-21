@@ -50,6 +50,9 @@ type HTTP struct {
 	WSSendBuffer    int
 	// WebDemoDir: thu muc trang thu tay (web/). Rong = khong phuc vu (dung o prod).
 	WebDemoDir string
+	// DocsKey = DOCS_API_KEY: khoa cho GET /docs/flow (header X-Docs-Key).
+	// Rong = khong mo route.
+	DocsKey string
 }
 
 type GRPC struct {
@@ -157,6 +160,7 @@ func Load() (*Config, error) {
 			Addr:            str("HTTP_ADDR", ":8080"),
 			AllowOrigins:    str("HTTP_ALLOW_ORIGINS", "*"),
 			WebDemoDir:      str("WEB_DEMO_DIR", "./web"),
+			DocsKey:         str("DOCS_API_KEY", ""),
 			BodyLimitMB:     num("HTTP_BODY_LIMIT_MB", 25),
 			ReadTimeout:     dur("HTTP_READ_TIMEOUT", 30*time.Second),
 			WriteTimeout:    dur("HTTP_WRITE_TIMEOUT", 30*time.Second),

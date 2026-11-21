@@ -101,6 +101,17 @@ start = folder(
             tests=(OK, 'pm.test("status=ok", () => pm.expect(pm.response.json().data.status).to.eql("ok"));')),
         req("Readyz (ping DB)", "GET", "/readyz", desc="Không cần token. 503 nếu mất DB.",
             auth={"type": "noauth"}),
+        req("Tài liệu FLOW.md (markdown)", "GET", "/docs/flow",
+            headers={"X-Docs-Key": "{{docs_key}}"},
+            auth={"type": "noauth"},
+            desc="Trả nguyên văn `docs/FLOW.md` (`text/markdown`) để dựng trang tài liệu. "
+                 "Auth: header `X-Docs-Key` = `DOCS_API_KEY` trong `.env` (biến `docs_key`), "
+                 "không dùng JWT.\n\n"
+                 "- sai/thiếu khoá → `401 invalid_docs_key`\n"
+                 "- chưa đặt `DOCS_API_KEY` → route không tồn tại (`404`)\n\n"
+                 "Nội dung được nhúng vào binary lúc build: sửa `FLOW.md` xong phải build/deploy lại.",
+            tests=('pm.test("200 (dung khoa) / 401 (sai khoa) / 404 (chua bat)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 401, 404]));',)),
         req("Ai đang mở WebSocket (debug realtime)", "GET", "/api/v1/ws/online",
             desc="Trả về các kết nối WebSocket đang mở **trên instance này**. Dùng khi test: mở "
                  "các tab WS xong thì bấm request này để chắc chắn tab của người nhận còn sống "
@@ -402,6 +413,22 @@ cms_bot = folder(
             body={"text": "Đã giao Trần Designer · Chờ nhận task.", "bot": {"id": 1, "name": "Demo Designer Bot"}},
             auth={"type": "noauth"},
             tests=(OK, 'pm.test("co messageId", () => pm.expect(pm.response.json()).to.have.property("messageId"));')),
+        req("Card vào thread (chia task)", "POST", "/bot/v1/messages/{{card_message_id}}/thread",
+            body={"bot": {"id": 1, "name": "Designer Bot"},
+                  "card": {"schema": "abc.card/v1",
+                           "header": {"code": "WEB-20261120-0003-P2", "title": "Banner Tết · Phần 2/3",
+                                      "status": {"text": "Chưa nhận", "tone": "warning"}},
+                           "elements": [{"type": "actions", "items": [
+                               {"action": "accept_task", "label": "Nhận task", "placement": "primary",
+                                "visibleTo": ["{{actor_id}}"], "confirm": {"title": "Nhận phần 2/3?"}}]}]}},
+            auth={"type": "noauth"},
+            desc="Chia task: card của phần 2..N nằm **trong thread của card gốc**. Body cần `text` **hoặc** `card`.\n\n"
+                 "Trả `messageId` + `cardVersion` (không gửi thì bắt đầu từ `1`) + `threadRootId`. Card trong "
+                 "thread dùng được như card ở timeline: `PATCH /bot/v1/messages/:id`, lọc `visibleTo`, "
+                 "FE bấm nút → `card.action` với `messageId` = id của card phần.",
+            tests=(OK, 'const d = pm.response.json();',
+                   'pm.test("co messageId + cardVersion + threadRootId",'
+                   ' () => pm.expect(d).to.include.keys("messageId", "cardVersion", "threadRootId"));')),
         req("Thông báo cho 1 người", "POST", "/bot/v1/notifications",
             body={"actorId": "{{actor_id}}", "text": "Bạn có task mới: WEB-20261118-0006",
                   "messageId": "{{card_message_id}}"},
@@ -1169,6 +1196,7 @@ collection = {
         {"key": "token", "value": "", "type": "string"},
         {"key": "bot_slug", "value": "bot", "type": "string"},
         {"key": "service_key", "value": "", "type": "string"},
+        {"key": "docs_key", "value": "", "type": "string"},
         {"key": "cms_token", "value": "", "type": "string"},
         {"key": "group_id", "value": "", "type": "string"},
         {"key": "cms_chat_id", "value": "wg_postman_demo", "type": "string"},
@@ -1205,6 +1233,7 @@ environment = {
         {"key": "token_2", "value": "", "type": "secret", "enabled": True},
         {"key": "cms_token", "value": "", "type": "secret", "enabled": True},
         {"key": "service_key", "value": "", "type": "secret", "enabled": True},
+        {"key": "docs_key", "value": "", "type": "secret", "enabled": True},
         {"key": "user_id_2", "value": "", "type": "default", "enabled": True},
         # CO Y khong khai group_id o environment: bien environment LAN AT bien
         # collection, nen mot `group_id` rong o day se vo hieu hoa gia tri ma

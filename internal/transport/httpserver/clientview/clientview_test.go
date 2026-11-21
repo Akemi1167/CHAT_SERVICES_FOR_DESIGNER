@@ -167,3 +167,54 @@ func keys(m map[string]any) []string {
 	}
 	return out
 }
+
+// Thong bao tro vao card nam trong thread: FE can conversationId + threadRootId
+// de mo dung thread roi cuon toi messageId.
+func TestNotificationTrongThread(t *testing.T) {
+	msgID, convID, rootID := uuid.New(), uuid.New(), uuid.New()
+	n := &domain.Notification{
+		ID: uuid.New(), UserID: uuid.New(), Text: "Ban duoc giao phan 2/3",
+		MessageID: &msgID, ConversationID: &convID, GroupID: "wg_abc", ThreadRootID: &rootID,
+		CreatedAt: time.Now().UTC(),
+	}
+	got := Notification(n)
+	want := map[string]string{
+		"messageId": msgID.String(), "conversationId": convID.String(),
+		"groupId": "wg_abc", "threadRootId": rootID.String(),
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %v, muon %s", k, got[k], v)
+		}
+	}
+
+	// Tin o timeline nhom: khong co threadRootId.
+	n.ThreadRootID = nil
+	if _, ok := Notification(n)["threadRootId"]; ok {
+		t.Error("tin khong nam trong thread thi khong tra threadRootId")
+	}
+}
+
+// Tin bot co card nam trong thread: van tra card + actions[] da loc + threadRootId.
+func TestMessageCardTrongThread(t *testing.T) {
+	rootID := uuid.New()
+	m := &domain.Message{
+		ID: uuid.New(), ConversationID: uuid.New(), ThreadID: &rootID,
+		SenderType: domain.SenderBot, CardVersion: 1,
+		Card: domain.JSONMap{"schema": "abc.card/v1", "elements": []any{
+			map[string]any{"type": "actions", "items": []any{
+				map[string]any{"action": "accept_task", "visibleTo": []any{"u_6"}},
+			}},
+		}},
+	}
+	mine := Message(m, "u_6")
+	if mine["threadRootId"] != rootID.String() || mine["cardVersion"] != 1 {
+		t.Errorf("thieu threadRootId/cardVersion: %v", mine)
+	}
+	if a := mine["actions"].([]string); len(a) != 1 || a[0] != "accept_task" {
+		t.Errorf("nguoi duoc giao phai thay accept_task: %v", a)
+	}
+	if a := Message(m, "u_9")["actions"].([]string); len(a) != 0 {
+		t.Errorf("nguoi khac khong duoc thay nut: %v", a)
+	}
+}
