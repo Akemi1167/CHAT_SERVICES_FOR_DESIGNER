@@ -291,6 +291,9 @@ Card do backend dựng; **FE chỉ render, không tự suy luận quyền**.
   `POST /api/client/v1/chat/messages/:id/actions` `{ "action": "submit_work", "values": {…} }`
   → trả `{ ok, toast: {type,text}, closeForm, card, cardVersion }`.
   Hiện `toast`; nếu có `card` mới thì thay card tại chỗ (so `cardVersion` lớn hơn mới thay).
+- CMS trả `ok: true` → server ghi thêm 1 tin `type: "system"` vào **thread của card**
+  (`text` = `"<tên> · <chữ trên nút>"`, `metadata.kind = "card_action"`, kèm `action`, `values`,
+  `card_message_id`). Tin này tới qua realtime như tin thường — FE không phải tự thêm.
 - Người không được phép → `403 action_not_allowed` (server chặn, không phụ thuộc UI).
 
 **Tạo yêu cầu**: `POST /api/client/v1/chat/forms/create_task/submit`
@@ -299,6 +302,10 @@ Card do backend dựng; **FE chỉ render, không tự suy luận quyền**.
 { "values": { "kind":"task", "title":"Banner Tết 2027", "teamId":"9", "useAI": false },
   "context": { "groupId": "<chatId hoặc id nhóm>" } }
 ```
+
+CMS trả `ok: true` → server ghi 1 tin `type: "system"` vào nhóm (vào thread nếu gửi
+`context.threadRootId`): `text` = `"<tên> · <toast.text>"`, `metadata.kind = "form_submitted"`,
+kèm `form_id`, `values`, `toast`. Card đơn vẫn tới **sau**, khi CMS gọi `POST /bot/v1/messages`.
 
 `teamId` **phải là tổ thuộc nhóm đang mở** — lấy từ `bootstrap` → `groups[].cms.teams[].id`,
 đừng hardcode. Gửi tổ không thuộc nhóm thì CMS từ chối:

@@ -152,7 +152,7 @@ func New(cfg *config.Config) (*App, error) {
 	domain.SetPresenceTTL(cfg.Presence.TTL)
 	presenceSvc := presence.New(store, hub)
 	presenceSvc.SetHeartbeat(cfg.Presence.Heartbeat)
-	cardSvc := card.New(store, convSvc, cmsClient, hub, cfg.CMS.WebhookTimeout)
+	cardSvc := card.New(store, convSvc, cmsClient, hub, msgSvc, cfg.CMS.WebhookTimeout)
 	syncSvc := cmssync.New(cmsClient, store, hub, cfg.CMS.SyncInterval)
 	outboxSvc := outbox.New(store, cmsClient, cfg.CMS.OutboxInterval, cfg.CMS.OutboxMaxRetry)
 	if cfg.CMS.Enabled {

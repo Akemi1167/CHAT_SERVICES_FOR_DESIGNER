@@ -542,6 +542,10 @@ FE  ──2──► CHAT  POST /api/client/v1/chat/forms/create_task/submit
                               (hoặc gọi riêng /thread và /notifications)
            CHAT ◄──7── CMS   200 {ok, toast, closeForm}
 
+           ok=true → CHAT ghi 1 tin system vào nhóm (thread nếu có threadRootId):
+               "SKY · Đã gửi yêu cầu WEB-…"  metadata.kind="form_submitted" {form_id, values, toast}
+               ══► realtime "message"
+
 FE  ◄──8── CHAT  {statusCode:200, element:{ok, toast, closeForm}}
 ```
 
@@ -611,6 +615,8 @@ FE ──1──► CHAT  POST /api/client/v1/chat/messages/{messageId}/actions
                 CMS cập nhật đơn (khoá lạc quan theo cardVersion)
           CHAT ◄──3── CMS  200 {ok, toast, closeForm, card, cardVersion:2}
 
+          ok=true → CHAT ghi 1 tin system vào THREAD của card (card con → thread gốc):
+               "SKY · Nhận việc"  metadata.kind="card_action" {action, values, card_message_id, card_version}
           CHAT thay card nếu cardVersion LỚN HƠN bản đang lưu
                ══► realtime "message" (mỗi người một bản card đã lọc)
 

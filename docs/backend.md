@@ -643,8 +643,10 @@ Hệ quả: `GET /api/v1/conversations/<chuỗi-bất-kỳ>` không còn trả `
 | 5 · thông báo | `5.1` xem chưa đọc · `5.2` đánh dấu đã đọc |
 | 6 · dọn dẹp | `6.1` xoá tin nhắn |
 
-Giai đoạn 4 là chỗ hay hiểu sai: `4.1` **không tạo tin nhắn nào trong Chat** — card chỉ xuất hiện
-ở `4.3` khi CMS gọi ngược vào `POST /bot/v1/messages`. Ở local CMS không gọi tới `localhost` được
+Giai đoạn 4 là chỗ hay hiểu sai: `4.1` chỉ ghi **một tin system** "đã gửi yêu cầu" vào nhóm
+(`metadata.kind = "form_submitted"`, khi CMS trả `ok`) — **card đơn** chỉ xuất hiện ở `4.3` khi CMS
+gọi ngược vào `POST /bot/v1/messages`. Tương tự `4.4` (bấm nút) ghi một tin system vào thread
+của card (`metadata.kind = "card_action"`). Ở local CMS không gọi tới `localhost` được
 nên `4.3` **đóng vai CMS** bằng `service_key`.
 
 **Dừng ở một bước để xem kỹ**: đặt biến `stop_at` = số bước rồi Run collection.

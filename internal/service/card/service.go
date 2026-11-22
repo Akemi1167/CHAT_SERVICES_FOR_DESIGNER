@@ -14,7 +14,13 @@ import (
 	"github.com/abc-workspace/chat-service/internal/realtime"
 	"github.com/abc-workspace/chat-service/internal/repository"
 	"github.com/abc-workspace/chat-service/internal/service/conversation"
+	"github.com/abc-workspace/chat-service/internal/service/message"
 )
+
+// MessagePoster la cua de ghi dong lich su vao hoi thoai (message.Service cai dat).
+type MessagePoster interface {
+	PostSystem(ctx context.Context, in message.SystemMessageInput) (*domain.Message, error)
+}
 
 // Service noi UI <-> CMS cho 2 thao tac dong bo: gui form va bam nut tren card.
 type Service struct {
@@ -22,16 +28,17 @@ type Service struct {
 	convs   *conversation.Service
 	client  *cms.Client
 	hub     *realtime.Hub
+	poster  MessagePoster
 	timeout time.Duration
 	log     *slog.Logger
 }
 
-func New(store repository.Store, convs *conversation.Service, client *cms.Client, hub *realtime.Hub, timeout time.Duration) *Service {
+func New(store repository.Store, convs *conversation.Service, client *cms.Client, hub *realtime.Hub, poster MessagePoster, timeout time.Duration) *Service {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
 	return &Service{
-		store: store, convs: convs, client: client, hub: hub, timeout: timeout,
+		store: store, convs: convs, client: client, hub: hub, poster: poster, timeout: timeout,
 		log: slog.Default().With("component", "service.card"),
 	}
 }
@@ -86,6 +93,25 @@ func (s *Service) SubmitForm(ctx context.Context, in SubmitFormInput) (*Result, 
 	if err != nil {
 		s.log.Error("gui form.submit that bai", "form_id", in.FormID, "err", err)
 		return nil, apperr.Internal("cms_unreachable", "Khong gui duoc yeu cau sang CMS, thu lai sau").Wrap(err)
+	}
+
+	if resp.OK {
+		// Ghi lai trong lich su nhom: CMS da nhan form (card task se toi sau qua Bot API).
+		meta := domain.JSONMap{
+			"kind":    HistoryFormSubmitted,
+			"form_id": in.FormID,
+			"values":  map[string]any(in.Values),
+		}
+		if resp.Toast != nil {
+			meta["toast"] = map[string]any{"type": resp.Toast.Type, "text": resp.Toast.Text}
+		}
+		s.recordHistory(ctx, message.SystemMessageInput{
+			ConversationID: in.ConversationID,
+			ThreadID:       in.ThreadID,
+			Content:        formHistoryText(actor.DisplayName, in.FormID, resp.Toast),
+			ActorID:        &in.ActorID,
+			Metadata:       meta,
+		})
 	}
 	return &Result{OK: resp.OK, Toast: resp.Toast, CloseForm: resp.CloseForm}, nil
 }
@@ -149,6 +175,28 @@ func (s *Service) RunAction(ctx context.Context, in ActionInput) (*Result, error
 	}
 
 	out := &Result{OK: resp.OK, Toast: resp.Toast, CloseForm: resp.CloseForm, MessageID: &msg.ID}
+
+	if resp.OK {
+		// Card duoc sua tai cho => ghi them 1 dong vao thread cua card de giu dien bien.
+		// Card nam trong thread (card tung phan) thi ghi vao thread goc — thread chi 1 cap.
+		threadID := msg.ID
+		if msg.ThreadID != nil {
+			threadID = *msg.ThreadID
+		}
+		s.recordHistory(ctx, message.SystemMessageInput{
+			ConversationID: msg.ConversationID,
+			ThreadID:       &threadID,
+			Content:        fmt.Sprintf("%s · %s", actor.DisplayName, actionLabel(msg.Card, in.Action)),
+			ActorID:        &in.ActorID,
+			Metadata: domain.JSONMap{
+				"kind":            HistoryCardAction,
+				"action":          in.Action,
+				"values":          values,
+				"card_message_id": msg.ID.String(),
+				"card_version":    msg.CardVersion,
+			},
+		})
+	}
 
 	newCard, err := resp.CardMap()
 	if err != nil {
@@ -218,6 +266,43 @@ func (s *Service) Broadcast(ctx context.Context, msg *domain.Message, evType rea
 			evType, msg.ConversationID.String(), []uuid.UUID{u.ID}, &view,
 		))
 	}
+}
+
+// metadata.kind cua dong lich su Chat tu ghi (FE dung de hien kieu rieng neu muon).
+const (
+	HistoryFormSubmitted = "form_submitted"
+	HistoryCardAction    = "card_action"
+)
+
+// recordHistory ghi 1 tin he thong vao nhom. Loi chi log: CMS da xu ly xong,
+// khong duoc bao that bai cho UI chi vi khong ghi duoc lich su.
+func (s *Service) recordHistory(ctx context.Context, in message.SystemMessageInput) {
+	if s.poster == nil {
+		return
+	}
+	if _, err := s.poster.PostSystem(ctx, in); err != nil {
+		s.log.Error("ghi lich su vao nhom that bai", "kind", in.Metadata["kind"], "err", err)
+	}
+}
+
+// formHistoryText: uu tien cau CMS tra trong toast (co ma yeu cau), khong co thi ghi chung chung.
+func formHistoryText(name, formID string, toast *cms.Toast) string {
+	if toast != nil && toast.Text != "" {
+		return fmt.Sprintf("%s · %s", name, toast.Text)
+	}
+	return fmt.Sprintf("%s · da gui form %s", name, formID)
+}
+
+// actionLabel lay chu tren nut (text/label) de dong lich su de doc, khong co thi dung ten action.
+func actionLabel(c domain.JSONMap, action string) string {
+	if node, ok := FindAction(c, action); ok {
+		for _, k := range []string{"text", "label"} {
+			if v, ok := node[k].(string); ok && v != "" {
+				return v
+			}
+		}
+	}
+	return action
 }
 
 func (s *Service) actorAndConversation(ctx context.Context, actorID, convID uuid.UUID) (*domain.User, *domain.Conversation, error) {

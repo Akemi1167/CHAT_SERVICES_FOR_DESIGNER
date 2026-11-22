@@ -680,8 +680,9 @@ flow = folder(
     "| 5 | thông báo | CMS + FE |\n"
     "| 6 | dọn dẹp | — |\n\n"
     "### Điều quan trọng nhất về giai đoạn 4\n"
-    "`POST /forms/create_task/submit` **không tạo tin nhắn nào trong Chat**. Nó chỉ ký HMAC rồi "
-    "chuyển sang CMS. Card đơn chỉ xuất hiện khi **CMS gọi ngược** vào `POST /bot/v1/messages`.\n\n"
+    "`POST /forms/create_task/submit` ký HMAC rồi chuyển sang CMS; CMS trả `ok` thì Chat chỉ ghi "
+    "**một tin system** \"đã gửi yêu cầu\" vào nhóm. **Card đơn** chỉ xuất hiện khi **CMS gọi ngược** "
+    "vào `POST /bot/v1/messages`.\n\n"
     "Ở local CMS không gọi tới được `localhost` của bạn, nên bước **4.3 đóng vai CMS** (dùng "
     "`service_key`) để bạn thấy đủ vòng. Trên môi trường thật, bước đó do CMS tự làm.\n\n"
     "### Cần gì trước\n"
@@ -786,7 +787,8 @@ flow = folder(
                   "Lỗi hay gặp: `\"Chọn tổ thực hiện thuộc nhóm này\"` — `teamId` không thuộc nhóm. "
                   "Bước 2.1 đã lấy đúng tổ vào `team_id_cms`; nếu nhóm không có tổ nào thì biến rỗng "
                   "và bước này sẽ bị từ chối.\n\n"
-                  "**Bước này không tạo tin nhắn nào trong Chat.** Card đơn đến từ 4.3.",
+                  "**Bước này chỉ ghi một tin system** (`metadata.kind = \"form_submitted\"`) vào nhóm khi CMS "
+                  "trả `ok`. Card đơn đến từ 4.3.",
              tests=('pm.test("200 / 400 (chua bat CMS) / 403 (khong thuoc nhom)",'
                     ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',
                     'if (pm.response.code === 200) {',
@@ -1474,7 +1476,7 @@ flow_cms = folder(
                                           "visibleTo": ["{{actor_id}}"]}]}},
              auth={"type": "noauth"},
              desc="**Gọi ngay sau khi tạo đơn.** Đây là bước làm card hiện ra trong nhóm — "
-                  "`form.submit` mà CMS nhận được từ Chat **không** tự sinh tin nhắn nào.\n\n"
+                  "`form.submit` chỉ làm Chat ghi một tin system \"đã gửi yêu cầu\", **không** sinh card.\n\n"
                   "⚠️ Khoá của nút là **`action`**, KHÔNG phải `actionId`. Sai tên thì card vẫn tạo "
                   "được nhưng người bấm nhận `403 action_not_allowed`.\n\n"
                   "`visibleTo` = danh sách `actorId` được thấy nút. Chat lọc nút theo **từng người xem** "
