@@ -4,6 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Chặn 2 job Jenkins chạy song song (@2) đụng độ Docker Swarm ("update out of sequence")
+exec 9>/tmp/deploy_chat_services_for_designer.lock
+if ! flock -n 9; then
+  echo "⏳ Đang có một tiến trình deploy khác chạy, chờ đến lượt..."
+  flock 9
+fi
+
 if [ ! -f .env ]; then
   echo "Thieu file .env!" >&2
   exit 1
@@ -43,7 +50,13 @@ if ! docker network inspect designer_bot_network >/dev/null 2>&1; then
 fi
 
 echo "5. Deploying Docker Swarm stack (chat_services_for_designer)..."
-docker stack deploy -c docker.swarm.yml chat_services_for_designer
+for attempt in 1 2 3; do
+  if docker stack deploy --resolve-image never -c docker.swarm.yml chat_services_for_designer; then
+    break
+  fi
+  echo "Swarm đang bận (update out of sequence), thử lại lần ${attempt}/3 sau 3s..."
+  sleep 3
+done
 
 echo "6. Waiting for Postgres to be ready and running database migrations..."
 PG_CONTAINER=""
