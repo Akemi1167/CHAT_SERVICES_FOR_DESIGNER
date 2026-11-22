@@ -1,0 +1,18 @@
+name: Notify Jenkins
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  notify-jenkins:
+    if: contains(github.repository, 'Akemi1167')
+    runs-on: ubuntu-latest
+    env:
+      JENKINS_HOST: http://jenskin.abc33.work/generic-webhook-trigger/invoke
+
+    steps:
+      - name: Trigger Jenkins
+        run: |
+          curl -fsSL "$JENKINS_HOST?token=CHAT_SERVICES_FOR_DESIGNER"
