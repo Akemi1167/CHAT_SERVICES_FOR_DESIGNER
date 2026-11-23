@@ -203,6 +203,33 @@ Một tin nhắn (A):
 
 `replies` sắp **cũ → mới**; phân trang tiếp bằng `cursor` như bình thường.
 
+#### Panel chi tiết một đơn theo mã — `GET /api/client/v1/chat/cards/:code`
+
+Khi chỉ có **mã đơn** (`header.code`, vd `WEB-20261123-0001` — từ thông báo, link, ô tìm kiếm)
+mà không có `messageId`. Một request trả đủ để vẽ panel: card + khối Drive + thread đã tách sẵn.
+
+```json
+{ "statusCode": 200, "code": "SUCCESS", "element": {
+    "card":  { "id": "3a0e…", "type": "bot_command", "card": { … }, "cardVersion": 2, "actions": ["accept_task"] },
+    "root":  { …cùng tin với card; khác khi :code là card con -P1/-E1 nằm trong thread… },
+    "links": [ { "type": "links", "title": "Google Drive", "items": [ { "label": "Folder đơn", "url": "https://drive…" }, … ] } ],
+    "activity":   [ { "senderType": "bot", "text": "📁 **Google Drive** (bấm link để mở)\n• …", "threadRootId": "3a0e…" } ],
+    "discussion": [],
+    "threadCount": 1,
+    "pageInfo": { "hasMore": false, "nextCursor": "" } } }
+```
+
+| Field | Ý nghĩa |
+|---|---|
+| `card` | tin chứa card mới nhất có mã này — **đã lọc `visibleTo`**, `actions` = nút người xem được bấm |
+| `links` | các phần tử `{"type":"links"}` của card (vd "Google Drive"). `[]` = CMS chưa gửi (đang tạo folder / đơn không có Drive) |
+| `activity` | dòng diễn biến bot / hệ thống trong thread, cũ → mới (vd "Đã giao…", tin Drive, "SKY · Nhận task") |
+| `discussion` | tin **người dùng** trao đổi trong thread, cũ → mới. Rỗng → hiện "Chưa có trao đổi" |
+| `threadCount` | tổng số tin trong thread (cả hai loại) |
+
+Phân trang thread bằng `?cursor=&limit=` (tối đa 100) — mỗi trang tách lại `activity` / `discussion`.
+Lỗi: mã không tồn tại → `404 CARD_NOT_FOUND`; không thuộc nhóm chứa card → `403 NOT_CONVERSATION_MEMBER`.
+
 #### Gọi thử nhanh bộ (B)
 
 ```bash
@@ -342,6 +369,15 @@ Card đơn **không** đến từ response này. Nó xuất hiện khi CMS gọi
                 "assignments": [ { "display_name": "Designer 1", "status": "pending",
                                    "role": "primary", "assignment_id": "bc7e8b7a-…" } ] } }
 ```
+
+**Khối Google Drive** (`{"type":"links","title":…,"items":[{label,url}]}`): mở link ở tab mới.
+Card mới tạo **chưa có** khối này — vài giây sau CMS `PATCH` card lên `cardVersion` mới có `links`
+và gửi thêm một tin markdown vào thread. Cả hai tới qua realtime `message`; FE chỉ cần upsert theo
+`id` (version lớn hơn mới thay) là card tự hiện khối Drive. Chi tiết: [FLOW.md › G1](FLOW.md#g1-link-google-drive-của-đơn).
+
+**Tin trong thread là markdown** (`**đậm**`, `[chữ](url)`) và xuống dòng bằng `\n` đơn. Markdown
+chuẩn coi `\n` đơn là dấu cách → cả tin dính thành một dòng. Bật chế độ xuống dòng cứng
+(vd `remark-breaks`, `marked` với `breaks: true`).
 
 FE kiểm tra `metadata.kind`: `task_card` → vẽ card, `task_event` → vẽ dòng trạng thái trong thread.
 Khi chuyển sang CMS, chỗ này đổi thành `card` + `actions` — **nên tách component render card riêng**
@@ -881,6 +917,7 @@ Vào nhóm bằng link mời: FE gọi CMS `POST /workspace/groups/join {token}`
 | Cuộn lên | `GET …/messages?cursor=<nextCursor>` |
 | Gửi tin | WS `message.send` (fallback `POST /chat/groups/{id}/messages`) |
 | Mở thread | `GET /chat/messages/{id}/replies?mode=thread` |
+| Mở chi tiết đơn theo mã | `GET /chat/cards/{code}` → card + `links` (Drive) + `activity` + `discussion` |
 | Tạo yêu cầu | `POST /chat/forms/create_task/submit` |
 | Bấm nút card | `POST /chat/messages/{id}/actions` |
 | Nhận `reload` | `GET /chat/bootstrap` lại |

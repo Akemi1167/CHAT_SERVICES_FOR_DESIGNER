@@ -249,3 +249,50 @@ func TestFilterGiuNguyenPhanTuLa(t *testing.T) {
 		t.Errorf("card goc bi sua, con %d nut", n)
 	}
 }
+
+// Card don that cua CMS sau khi tao xong folder Drive (PATCH cardVersion 2):
+// nut nam trong actions.items[], khoi links khong co visibleTo.
+const driveCard = `{
+  "schema": "abc.card/v1",
+  "header": {"code": "WEB-20261123-0001", "kind": "DESIGN", "title": "Banner Tet",
+             "status": {"text": "Chua nhan", "tone": "warning"}},
+  "visibleTo": null,
+  "elements": [
+    {"type": "meta", "text": "Thiet ke · Tran Designer"},
+    {"type": "links", "title": "Google Drive", "items": [
+      {"label": "Folder don", "url": "https://drive.google.com/drive/folders/A"},
+      {"label": "01_Tai_lieu", "url": "https://drive.google.com/drive/folders/B"},
+      {"label": "02_Ket_qua", "url": "https://drive.google.com/drive/folders/C"}
+    ]},
+    {"type": "actions", "items": [
+      {"action": "accept_task", "label": "Nhan task", "visibleTo": ["u_68"]}
+    ]}
+  ]
+}`
+
+func TestDriveLinksKeptForEveryViewer(t *testing.T) {
+	var c domain.JSONMap
+	if err := json.Unmarshal([]byte(driveCard), &c); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, viewer := range []string{"u_68", "u_99"} {
+		got := FilterForViewer(c, viewer)
+		els := got["elements"].([]any)
+		links := els[1].(map[string]any)
+		if links["type"] != "links" || len(links["items"].([]any)) != 3 {
+			t.Fatalf("%s: khoi Google Drive phai giu du 3 link, got %v", viewer, links)
+		}
+	}
+
+	if !CanAct(c, "accept_task", "u_68") {
+		t.Fatal("nguoi duoc giao phai bam duoc accept_task trong actions.items[]")
+	}
+	if CanAct(c, "accept_task", "u_99") {
+		t.Fatal("nguoi khac khong duoc bam accept_task")
+	}
+	// "links" khong phai action: khong duoc lot vao danh sach nut.
+	if got := Actions(c, "u_99"); len(got) != 0 {
+		t.Fatalf("u_99 khong co nut nao, got %v", got)
+	}
+}

@@ -48,6 +48,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/groups/:id/messages", h.SendMessage)
 	router.Post("/groups/:id/read", h.MarkRead)
 	router.Get("/messages/:id/replies", h.Replies)
+	router.Get("/cards/:code", h.CardThread)
 	router.Post("/messages/:id/actions", h.RunAction)
 	router.Post("/forms/:formId/submit", h.SubmitForm)
 	router.Get("/notifications", h.ListNotifications)
@@ -292,6 +293,36 @@ func (h *Handler) Replies(c *fiber.Ctx) error {
 		"root":        h.messageView(res.Root, me.ActorID),
 		"replies":     h.messageViews(res.Replies, me.ActorID),
 		"replyCount":  res.DirectCount,
+		"threadCount": res.ThreadCount,
+		"pageInfo":    pageView(res.PageInfo),
+	})
+}
+
+// CardThread: panel chi tiet 1 don theo ma (card.header.code), vd WEB-20261123-0001.
+//
+//	card       tin chua card (da loc visibleTo, kem actions nguoi xem duoc bam)
+//	root       card goc cua thread (khac card khi day la card con -P1/-E1...)
+//	links      cac khoi {"type":"links"} cua card (vd "Google Drive"), rong = chua co
+//	activity   dong dien bien bot/he thong trong thread (cu -> moi)
+//	discussion tin nguoi dung trao doi trong thread (cu -> moi)
+//
+// Phan trang thread bang ?cursor=&limit= nhu /messages/:id/replies?mode=thread.
+func (h *Handler) CardThread(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	res, err := h.cards.ThreadByCode(c.UserContext(), me.ID, c.Params("code"),
+		paging.Normalize(c.Query("cursor"), int32(c.QueryInt("limit", 0))))
+	if err != nil {
+		return fail(c, err)
+	}
+	return ok(c, fiber.Map{
+		"card":        h.messageView(res.Card, res.ViewerActorID),
+		"root":        h.messageView(res.Root, res.ViewerActorID),
+		"links":       res.Links,
+		"activity":    h.messageViews(res.Activity, res.ViewerActorID),
+		"discussion":  h.messageViews(res.Discussion, res.ViewerActorID),
 		"threadCount": res.ThreadCount,
 		"pageInfo":    pageView(res.PageInfo),
 	})

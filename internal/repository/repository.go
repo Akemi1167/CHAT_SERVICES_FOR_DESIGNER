@@ -143,6 +143,8 @@ type MessageLocation struct {
 type MessageRepository interface {
 	Create(ctx context.Context, m *domain.Message) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Message, error)
+	// GetCardByCode tra card MOI NHAT co card.header.code = code (vd "WEB-20261123-0001").
+	GetCardByCode(ctx context.Context, code string) (*domain.Message, error)
 	// Locations tra vi tri cua nhieu tin cung luc (tranh N+1); id khong ton tai thi vang mat.
 	Locations(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]MessageLocation, error)
 	GetByClientMsgID(ctx context.Context, convID uuid.UUID, clientMsgID string) (*domain.Message, error)

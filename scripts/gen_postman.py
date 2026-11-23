@@ -540,6 +540,24 @@ cms_client = folder(
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
+        req("Chi tiết đơn theo mã (card + Drive + thread)", "GET", "/api/client/v1/chat/cards/{{card_code}}",
+            query=[("limit", "50")],
+            desc="Chỉ cần **mã đơn** (`card.header.code`), không cần `messageId`. Trả `card` (đã lọc "
+                 "`visibleTo`), `root`, `links` (các khối `{\"type\":\"links\"}` — vd Google Drive; `[]` = "
+                 "CMS chưa gửi), `activity` (bot/hệ thống), `discussion` (người dùng), `threadCount`, "
+                 "`pageInfo`.\n\n"
+                 "- mã không tồn tại → `404 CARD_NOT_FOUND`\n"
+                 "- không thuộc nhóm chứa card → `403 NOT_CONVERSATION_MEMBER`",
+            auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
+            tests=('pm.test("200 / 403 (khong thuoc nhom) / 404 (chua co card)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 403, 404]));',
+                   'if (pm.response.code === 200) {',
+                   '  const e = pm.response.json().element;',
+                   '  pm.test("co links, activity, discussion la mang", () => {',
+                   '    pm.expect(e.links).to.be.an("array");',
+                   '    pm.expect(e.activity).to.be.an("array");',
+                   '    pm.expect(e.discussion).to.be.an("array"); });',
+                   '}')),
         req("Bấm nút trên card", "POST", "/api/client/v1/chat/messages/{{card_message_id}}/actions",
             body={"action": "accept_task", "values": {"normItemId": "996802", "quantity": 2}},
             desc="Chat kiểm `visibleTo` trước (không được phép → `403 ACTION_NOT_ALLOWED`), rồi gửi "
@@ -1209,6 +1227,8 @@ collection = {
         {"key": "card_action", "value": "", "type": "string"},
         {"key": "actor_id", "value": "", "type": "string"},
         {"key": "card_message_id", "value": "", "type": "string"},
+        # Ma don tren card (header.code) — trung voi card mau cua request "Gửi card vào nhóm".
+        {"key": "card_code", "value": "WEB-20261118-0006", "type": "string"},
         {"key": "user_id", "value": "", "type": "string"},
         {"key": "user_id_2", "value": "", "type": "string"},
         {"key": "direct_conversation_id", "value": "", "type": "string"},

@@ -114,6 +114,7 @@ var (
 	ErrNotMember          = Forbidden("not_conversation_member", "Ban khong thuoc cuoc hoi thoai nay")
 	ErrConvNotFound       = NotFound("conversation_not_found", "Khong tim thay cuoc hoi thoai")
 	ErrMessageNotFound    = NotFound("message_not_found", "Khong tim thay tin nhan")
+	ErrCardNotFound       = NotFound("card_not_found", "Khong tim thay card voi ma nay")
 	ErrBotNotFound        = NotFound("bot_not_found", "Bot khong ton tai hoac dang tat")
 	ErrTemplateNotFound   = NotFound("bot_template_not_found", "Mau khong ton tai")
 	ErrTaskNotFound       = NotFound("task_not_found", "Khong tim thay task")

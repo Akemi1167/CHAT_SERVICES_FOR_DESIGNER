@@ -43,6 +43,19 @@ func (r *MessageRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Messag
 	return &m, nil
 }
 
+func (r *MessageRepo) GetCardByCode(ctx context.Context, code string) (*domain.Message, error) {
+	var m domain.Message
+	// Bieu thuc phai trung voi index ix_messages_card_code (migration 000007).
+	err := r.db(ctx).Preload("Attachments").Preload("Sender").
+		Where("card IS NOT NULL AND card -> 'header' ->> 'code' = ?", code).
+		Order("created_at DESC").
+		First(&m).Error
+	if err != nil {
+		return nil, mapErr(err, apperr.ErrCardNotFound)
+	}
+	return &m, nil
+}
+
 func (r *MessageRepo) Locations(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]repository.MessageLocation, error) {
 	out := make(map[uuid.UUID]repository.MessageLocation, len(ids))
 	if len(ids) == 0 {

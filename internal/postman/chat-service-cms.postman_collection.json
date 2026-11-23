@@ -115,6 +115,11 @@
       "type": "string"
     },
     {
+      "key": "card_code",
+      "value": "WEB-20261118-0006",
+      "type": "string"
+    },
+    {
       "key": "user_id",
       "value": "",
       "type": "string"

@@ -115,6 +115,11 @@
       "type": "string"
     },
     {
+      "key": "card_code",
+      "value": "WEB-20261118-0006",
+      "type": "string"
+    },
+    {
       "key": "user_id",
       "value": "",
       "type": "string"
@@ -3729,6 +3734,63 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chi tiết đơn theo mã (card + Drive + thread)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/client/v1/chat/cards/{{card_code}}?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                "v1",
+                "chat",
+                "cards",
+                "{{card_code}}"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Chỉ cần **mã đơn** (`card.header.code`), không cần `messageId`. Trả `card` (đã lọc `visibleTo`), `root`, `links` (các khối `{\"type\":\"links\"}` — vd Google Drive; `[]` = CMS chưa gửi), `activity` (bot/hệ thống), `discussion` (người dùng), `threadCount`, `pageInfo`.\n\n- mã không tồn tại → `404 CARD_NOT_FOUND`\n- không thuộc nhóm chứa card → `403 NOT_CONVERSATION_MEMBER`",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cms_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 / 403 (khong thuoc nhom) / 404 (chua co card)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 403, 404]));",
+                  "if (pm.response.code === 200) {",
+                  "  const e = pm.response.json().element;",
+                  "  pm.test(\"co links, activity, discussion la mang\", () => {",
+                  "    pm.expect(e.links).to.be.an(\"array\");",
+                  "    pm.expect(e.activity).to.be.an(\"array\");",
+                  "    pm.expect(e.discussion).to.be.an(\"array\"); });",
+                  "}"
                 ]
               }
             }

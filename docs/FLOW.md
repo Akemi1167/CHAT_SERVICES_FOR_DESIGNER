@@ -21,6 +21,7 @@ tham số, response thật, và **lệnh chạy thử dán là chạy**.
 - [Luồng E — Tạo đơn (vòng tròn đầy đủ)](#luồng-e--tạo-đơn-vòng-tròn-đầy-đủ)
 - [Luồng F — Bấm nút trên card](#luồng-f--bấm-nút-trên-card)
 - [Luồng G — CMS cập nhật đơn](#luồng-g--cms-cập-nhật-đơn)
+  - [G1. Link Google Drive của đơn](#g1-link-google-drive-của-đơn)
 - [Luồng H — Thành viên nhóm thay đổi](#luồng-h--thành-viên-nhóm-thay-đổi)
 - [Luồng I — Thông báo](#luồng-i--thông-báo)
 - [6. Chạy thử trọn vòng bằng một script](#6-chạy-thử-trọn-vòng-bằng-một-script)
@@ -745,6 +746,43 @@ Card đổi xong mà `thread`/`notify` lỗi → vẫn `200`, báo theo từng p
 
 Không trả 5xx vì CMS retry sẽ gặp `ignored: true` (cardVersion không tăng nữa) và mất luôn
 thread/notify.
+
+### G1. Link Google Drive của đơn
+
+Chat **không gọi API nào** để lấy link Drive — CMS tạo folder xong thì tự đẩy sang, bằng đúng
+hai Bot API sẵn có. Không có endpoint hay bảng riêng cho Drive: link nằm **trong card** và
+**trong tin thread**, lưu bền như mọi tin khác (tải lại trang vẫn còn).
+
+```
+── ngay khi tạo đơn ──
+CMS ──► CHAT  POST /bot/v1/messages {card}            → {messageId, cardVersion:1}  card CHƯA có Drive
+
+── vài giây sau (CMS chạy nền, chỉ khi bot đã bật Drive) ──
+CMS ──► CHAT  POST  /bot/v1/messages/{id}/thread {text: markdown 3 link}
+                CHAT ══► realtime "message" (threadRootId = id)
+CMS ──► CHAT  PATCH /bot/v1/messages/{id} {cardVersion:2, card có phần tử links}
+                CHAT thay card (2 > 1) ══► realtime "message" cùng id, cardVersion 2
+```
+
+Phần tử `links` trong card (Chat lưu nguyên văn, **không lọc** vì không có `visibleTo`):
+
+```json
+{ "type": "links", "title": "Google Drive", "items": [
+    { "label": "Folder đơn", "url": "https://drive.google.com/drive/folders/…" },
+    { "label": "01_Tai_lieu · Tài liệu (người order up ảnh / file)", "url": "…" },
+    { "label": "02_Ket_qua · Kết quả (designer up bài)", "url": "…" } ] }
+```
+
+- Từ `cardVersion: 2` trở đi, mọi card CMS gửi cho đơn này (PATCH sau, hoặc card trong
+  response `card.action`) đều đã có `links`.
+- **Không có khối Drive** khi: bot chưa bật / chưa cấu hình Drive, đơn tham khảo
+  (`kind: reference`), hoặc CMS tạo folder lỗi. FE không cần xử lý gì đặc biệt — chỉ là card
+  không có phần tử `links`.
+- Đọc lại sau khi tải trang: card ở timeline nhóm; tin markdown ở
+  `GET /api/client/v1/chat/messages/{id}/replies?mode=thread`.
+- Chỉ có mã đơn: `GET /api/client/v1/chat/cards/{code}` trả card + `links` (khối Drive tách sẵn)
+  + `activity` (bot/hệ thống) + `discussion` (người dùng) trong một request — xem
+  [frontend.md](frontend.md).
 
 ---
 
