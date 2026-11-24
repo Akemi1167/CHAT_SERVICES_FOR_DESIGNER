@@ -1021,10 +1021,20 @@
                 {
                   "key": "limit",
                   "value": "30"
+                },
+                {
+                  "key": "threadRootId",
+                  "value": "{{card_message_id}}",
+                  "disabled": true
+                },
+                {
+                  "key": "includeThread",
+                  "value": "true",
+                  "disabled": true
                 }
               ]
             },
-            "description": "Card trả về đã **lọc nút theo `visibleTo`** của chính người gọi; `actions` liệt kê action người đó được bấm.\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `group_id`, không thì `403 not_conversation_member`.",
+            "description": "Card trả về đã **lọc nút theo `visibleTo`** của chính người gọi; `actions` liệt kê action người đó được bấm.\n\n**Mặc định chỉ trả tin gốc** — tin trả lời trong thread gom vào tin gốc (`threadCount`). Bật `threadRootId` để mở một thread (tin gốc + các tin trả lời); bật `includeThread=true` để lấy cả tin trong thread lẫn vào lịch sử (hành vi cũ).\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `group_id`, không thì `403 not_conversation_member`.",
             "auth": {
               "type": "bearer",
               "bearer": [

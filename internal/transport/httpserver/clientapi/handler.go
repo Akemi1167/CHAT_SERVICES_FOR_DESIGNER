@@ -142,8 +142,13 @@ func (h *Handler) ListMessages(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
+	// Lich su nhom mac dinh CHI co tin goc: tin tra loi trong thread gom vao tin
+	// goc (threadCount), bam vao moi tai qua ?threadRootId= hoac /messages/:id/replies?mode=thread.
+	// includeThread=true: lay ca tin trong thread (hanh vi cu, de debug / FE cu).
+	onlyRoot := threadID == nil && !c.QueryBool("includeThread", false)
+
 	items, info, err := h.msgs.List(c.UserContext(), message.ListInput{
-		ActorID: me.ID, ConversationID: conv.ID, ThreadID: threadID,
+		ActorID: me.ID, ConversationID: conv.ID, ThreadID: threadID, OnlyRoot: onlyRoot,
 	}, paging.Normalize(c.Query("cursor"), int32(c.QueryInt("limit", 0))))
 	if err != nil {
 		return fail(c, err)

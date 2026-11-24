@@ -520,9 +520,13 @@ cms_client = folder(
             tests=('pm.test("200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
         req("Lịch sử tin nhắn (card đã lọc)", "GET", "/api/client/v1/chat/groups/{{group_id}}/messages",
-            query=[("limit", "30")],
+            query=[("limit", "30"), ("threadRootId", "{{card_message_id}}", True),
+                   ("includeThread", "true", True)],
             desc="Card trả về đã **lọc nút theo `visibleTo`** của chính người gọi; `actions` liệt kê "
-                 "action người đó được bấm.\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `group_id`, "
+                 "action người đó được bấm.\n\n"
+                 "**Mặc định chỉ trả tin gốc** — tin trả lời trong thread gom vào tin gốc (`threadCount`). "
+                 "Bật `threadRootId` để mở một thread (tin gốc + các tin trả lời); bật `includeThread=true` "
+                 "để lấy cả tin trong thread lẫn vào lịch sử (hành vi cũ).\n\n⚠️ `cms_token` phải là người **thuộc nhóm** `group_id`, "
                  "không thì `403 not_conversation_member`.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
@@ -781,8 +785,10 @@ flow = folder(
         step("3.3", "Đọc lịch sử", "GET", "/api/client/v1/chat/groups/{{group_id}}/messages",
              query=[("limit", "30")], auth=CMS_AUTH,
              desc="Mới nhất trước, phân trang bằng `pageInfo.nextCursor`. Card trong danh sách **đã "
-                  "lọc nút theo `visibleTo`** của chính người gọi.",
-             tests=(OK,)),
+                  "lọc nút theo `visibleTo`** của chính người gọi.\n\n"
+                  "Chỉ có **tin gốc** — tin trả lời trong thread (`threadRootId`) không nằm ở đây.",
+             tests=(OK, 'pm.test("khong co tin trong thread", () => pm.expect('
+                        'pm.response.json().element.messages.every(m => !m.threadRootId)).to.be.true);')),
         step("3.4", "Đánh dấu đã đọc", "POST", "/api/client/v1/chat/groups/{{group_id}}/read",
              body={"messageId": "{{message_id}}"}, auth=CMS_AUTH,
              desc="Trả `unreadCount` mới. Realtime phát event `read` cho người khác trong nhóm.",

@@ -162,6 +162,15 @@ Một tin có thể có cả hai: trả lời bạn A **trong** thread của yê
   - `?only_root=true` — chỉ tin ngoài thread (khung chat chính gọn hơn)
   - `?thread_id=<id>` — tin trong một thread
 - **(B)** `GET /api/client/v1/chat/groups/:id/messages?limit=30&threadRootId=…`
+  - **mặc định chỉ trả tin gốc** — tin trả lời trong thread **không** nằm trong lịch sử nhóm,
+    mà gom vào tin gốc qua `threadCount`
+  - `?threadRootId=<id>` — bấm vào tin gốc: trả tin gốc + toàn bộ tin trong thread đó
+    (hoặc `GET …/messages/:id/replies?mode=thread`, trả `root` + `replies` cũ → mới)
+  - `?includeThread=true` — lấy cả tin trong thread lẫn vào lịch sử (hành vi cũ, để debug)
+
+**Realtime với thread**: event `message` của tin trả lời trong thread có `threadRootId`. FE
+**không** chèn tin đó vào khung chat chính — tăng `threadCount` của tin gốc (badge "N trả lời"),
+và nếu panel thread đó đang mở thì upsert vào panel.
 
 Một tin nhắn (A):
 

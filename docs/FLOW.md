@@ -282,7 +282,7 @@ Tám event phát theo nhóm/người (envelope `{type, eventId, conversationId, 
 
 | `type` | Khi nào | Payload chính |
 |---|---|---|
-| `message` | tin mới **hoặc** tin/card được cập nhật | cả tin nhắn (FE **upsert theo `id`**) |
+| `message` | tin mới **hoặc** tin/card được cập nhật | cả tin nhắn (FE **upsert theo `id`**). Có `threadRootId` → tin trong thread: không chèn vào khung chính, tăng `threadCount` tin gốc ([Luồng D](#thread-gom-vào-một-tin-gốc)) |
 | `message.deleted` | ai đó xoá tin | `conversationId`, `messageId` |
 | `read` | ai đó đánh dấu đã đọc | `conversationId`, `userId`, `messageId`, `seenAt` |
 | `typing` | ai đó đang nhập | `conversationId`, `userId`, `typing` |
@@ -440,7 +440,14 @@ print("nextCursor =", el["pageInfo"]["nextCursor"][:24], "| hasMore =", el["page
 |---|---|
 | `limit` | 1–100, mặc định 30 |
 | `cursor` | `pageInfo.nextCursor` của trang trước — **cuộn lên** lấy tin cũ hơn |
-| `threadRootId` | chỉ lấy tin trong một thread |
+| `threadRootId` | mở một thread: tin gốc + mọi tin trả lời trong thread đó |
+| `includeThread` | `true` = lấy cả tin trong thread lẫn vào lịch sử (hành vi cũ, chỉ để debug) |
+
+**Lịch sử nhóm chỉ có tin gốc.** Tin trả lời trong thread (có `threadRootId`) **không** nằm
+trong danh sách này — chúng gom vào tin gốc qua `threadCount` ("N trả lời"), bấm vào mới tải
+(Luồng D). Card đơn, tin hệ thống "đã gửi yêu cầu" là tin gốc nên vẫn hiện; dòng diễn biến
+CMS ghi vào thread của card ("Đã giao…", tin Google Drive, "SKY · Nhận task") thì chỉ thấy
+trong thread.
 
 ```bash
 # 2. Đánh dấu đã đọc tới tin mới nhất
@@ -516,6 +523,30 @@ print("so phan hoi =", len(el["replies"]), "| replyCount =", el.get("replyCount"
 | `thread` | **cả thread** mà tin đó mở (`threadRootId`) |
 
 Tin gốc giữ nguyên, chỉ `replyCount` / `threadCount` tăng → FE vẽ badge.
+
+### Thread gom vào một tin gốc
+
+```
+Khung chat chính (GET …/groups/{id}/messages)       Panel thread (bấm vào tin gốc)
+┌──────────────────────────────────────┐            ┌──────────────────────────────────────┐
+│ [card WEB-…-0001]   💬 3 trả lời  ───┼── bấm ───► │ GET …/groups/{id}/messages            │
+│ SKY · Đã gửi yêu cầu WEB-…-0002      │            │       ?threadRootId={id tin gốc}      │
+│ An: Xin chào cả nhóm                 │            │ hoặc GET …/messages/{id}/replies      │
+└──────────────────────────────────────┘            │       ?mode=thread                    │
+  KHÔNG có tin trả lời trong thread                  │ → tin gốc + các tin trả lời cũ → mới  │
+                                                     └──────────────────────────────────────┘
+```
+
+**Realtime**: tin trả lời trong thread vẫn tới qua event `message`, payload có `threadRootId`.
+
+| Event `message` | FE làm |
+|---|---|
+| **không** có `threadRootId` | upsert vào khung chat chính theo `id` (như cũ) |
+| **có** `threadRootId` | **không** chèn vào khung chính — tăng `threadCount` của tin gốc; nếu panel thread đó đang mở thì upsert vào panel |
+
+Chỉ có **mã đơn** (từ thông báo, link) mà chưa có id tin gốc: `GET /api/client/v1/chat/cards/{code}`
+trả card + `links` (Drive) + thread đã tách `activity` (bot/hệ thống) / `discussion` (người dùng) —
+xem [G1](#g1-link-google-drive-của-đơn).
 
 ---
 
@@ -706,6 +737,7 @@ curl -s -X POST "$BASE/bot/v1/messages/$CARD/thread" \
 | `/thread` nhận `card`? | **Có.** Body cần `text` **hoặc** `card` (cả hai cũng được). Không gửi `cardVersion` thì card bắt đầu từ `1`; response trả `messageId` + `cardVersion`. |
 | `PATCH /bot/v1/messages/:id` với tin trong thread? | **Có**, y như card ở timeline (cùng luật `cardVersion`). Field `thread` của PATCH ghi dòng vào **thread của card gốc**, `notify[].messageId` bỏ trống thì trỏ về chính card phần. |
 | FE bấm nút trên card trong thread? | `POST …/messages/:id/actions` với `:id` = tin trong thread: Chat kiểm `visibleTo` rồi gửi `card.action` với `messageId` = **id của tin trong thread**. |
+| Lịch sử nhóm có hiện tin trong thread không? | **Không.** `GET …/groups/:id/messages` mặc định chỉ trả tin gốc, mỗi tin gốc có `threadCount`. Bấm vào → `?threadRootId=<id>`. Realtime: tin có `threadRootId` → tăng `threadCount` của tin gốc, không chèn vào khung chính. `?includeThread=true` để lấy cả (debug). |
 | FE đọc card trong thread? | `GET …/groups/:id/messages?threadRootId=` và `GET …/messages/:id/replies?mode=thread` trả `card` + `cardVersion` + `actions[]` đã lọc theo người xem. Event realtime `message` của tin này có `threadRootId`. |
 | Đường khác? | `POST /bot/v1/messages` kèm `threadRootId` + `card` cũng chạy, trả `{messageId, cardVersion}`. |
 | Gọi `/thread` với `:id` là card phần? | Tin mới vẫn vào thread của card gốc — thread chỉ có một cấp. |
