@@ -115,6 +115,11 @@
       "type": "string"
     },
     {
+      "key": "chat_cursor",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "card_code",
       "value": "WEB-20261118-0006",
       "type": "string"
@@ -285,7 +290,7 @@
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
                   "const el = pm.response.json().element;",
-                  "pm.test(\"co me + groups\", () => pm.expect(el).to.have.keys([\"me\",\"groups\",\"notifications\",\"unreadNotifications\"]));",
+                  "pm.test(\"co me + groups\", () => pm.expect(el).to.have.keys([\"me\",\"groups\",\"chats\",\"chatsPageInfo\",\"notifications\",\"unreadNotifications\"]));",
                   "const g = (el.groups || [])[0];",
                   "if (g) {",
                   "  pm.collectionVariables.set(\"group_id\", g.chatId || g.id);",
@@ -3459,7 +3464,7 @@
                 "bootstrap"
               ]
             },
-            "description": "Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, kèm `members` + `sources`/`teamCodes`), `notifications`, `unreadNotifications`.",
+            "description": "Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, kèm `members` + `sources`/`teamCodes`), `chats` (thanh bên kiểu Lark: nhóm + thread trộn chung, trang đầu) + `chatsPageInfo`, `notifications`, `unreadNotifications`.\n\nTrang sau: `?chatCursor=<chatsPageInfo.nextCursor>` (xem request lazy load).",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3480,8 +3485,9 @@
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
                   "const el = pm.response.json().element;",
-                  "pm.test(\"co me + groups\", () => pm.expect(el).to.have.keys([\"me\",\"groups\",\"notifications\",\"unreadNotifications\"]));",
-                  "if (el.groups && el.groups[0]) pm.collectionVariables.set(\"group_id\", el.groups[0].chatId || el.groups[0].id);"
+                  "pm.test(\"co me + groups\", () => pm.expect(el).to.have.keys([\"me\",\"groups\",\"chats\",\"chatsPageInfo\",\"notifications\",\"unreadNotifications\"]));",
+                  "if (el.groups && el.groups[0]) pm.collectionVariables.set(\"group_id\", el.groups[0].chatId || el.groups[0].id);",
+                  "pm.collectionVariables.set(\"chat_cursor\", (el.chatsPageInfo || {}).nextCursor || \"\");"
                 ]
               }
             }
@@ -3745,6 +3751,63 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bootstrap · trang thanh bên tiếp (lazy load)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/client/v1/chat/bootstrap?chatCursor={{chat_cursor}}&chatLimit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                "v1",
+                "chat",
+                "bootstrap"
+              ],
+              "query": [
+                {
+                  "key": "chatCursor",
+                  "value": "{{chat_cursor}}"
+                },
+                {
+                  "key": "chatLimit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Thanh bên kiểu Lark: `chats` = **nhóm và thread trộn chung**, hoạt động gần nhất trước. Trang đầu nằm sẵn trong `bootstrap`; cuộn xuống thì gọi lại với `chatCursor = chatsPageInfo.nextCursor`.\n\nCó `chatCursor` → **chỉ trả `chats` + `chatsPageInfo`**, không tải lại nhóm / thông báo.\n\nMỗi dòng: `type` (`group`|`thread`), `id`, `title`, `preview` (\"Người gửi: nội dung\"), `lastActivityAt`, `lastMessage`, `group`. Nhóm thêm `unreadCount`; thread thêm `root`, `threadCount`, `replyCount`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cms_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const el = pm.response.json().element;",
+                  "pm.test(\"chats la mang\", () => pm.expect(el.chats).to.be.an(\"array\"));",
+                  "pm.test(\"moi dong co type group|thread\", () => pm.expect(el.chats.every(x => [\"group\",\"thread\"].includes(x.type))).to.be.true);",
+                  "pm.collectionVariables.set(\"chat_cursor\", el.chatsPageInfo.nextCursor || \"\");"
                 ]
               }
             }

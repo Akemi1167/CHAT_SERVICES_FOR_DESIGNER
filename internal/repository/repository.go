@@ -21,6 +21,34 @@ type MessageFilter struct {
 	OnlyRoot bool
 }
 
+// SidebarFilter: danh sach chat tren thanh ben kieu Lark — NHOM va THREAD tron
+// chung, moi hoat dong nhat truoc.
+type SidebarFilter struct {
+	UserID uuid.UUID // chi nhom (va thread trong nhom) nguoi nay con la thanh vien
+}
+
+type SidebarKind string
+
+const (
+	SidebarGroup  SidebarKind = "group"
+	SidebarThread SidebarKind = "thread"
+)
+
+// SidebarRow: 1 dong tren thanh ben.
+//
+//	group : ID = conversation id. LastActivityAt = tin GOC moi nhat (tin trong
+//	        thread khong day nhom len — chung hien o dong thread rieng).
+//	thread: ID = id tin goc. Thread = tin goc co it nhat 1 tin trong thread HOAC
+//	        la card (card don luon mo thread, ke ca khi chua ai tra loi).
+type SidebarRow struct {
+	Kind           SidebarKind
+	ID             uuid.UUID
+	ConversationID uuid.UUID
+	LastActivityAt time.Time
+	ThreadCount    int64 // chi thread: moi tin trong thread
+	UserReplyCount int64 // chi thread: tin nguoi dung ("Chua co phan hoi" khi = 0)
+}
+
 // ReplyMode quyet dinh "reply cua mot tin nhan" nghia la gi:
 //
 //	direct — tin co reply_to_id = tin do (trich dan truc tiep, giong nut Reply)
@@ -143,6 +171,14 @@ type MessageLocation struct {
 type MessageRepository interface {
 	Create(ctx context.Context, m *domain.Message) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Message, error)
+	// ListByIDs tra nhieu tin cung luc (kem Sender, Attachments); id khong ton tai thi vang mat.
+	ListByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.Message, error)
+	// ListSidebar: nhom + thread tron chung, moi hoat dong nhat truoc, cursor = (LastActivityAt, ID).
+	ListSidebar(ctx context.Context, f SidebarFilter, p paging.Page) ([]SidebarRow, error)
+	// LastRootMessages: tin GOC moi nhat cua tung nhom (dong xem truoc cua dong nhom).
+	LastRootMessages(ctx context.Context, convIDs []uuid.UUID) (map[uuid.UUID]domain.Message, error)
+	// LastInThreads: tin moi nhat cua tung thread (de hien dong xem truoc tren sidebar).
+	LastInThreads(ctx context.Context, rootIDs []uuid.UUID) (map[uuid.UUID]domain.Message, error)
 	// GetCardByCode tra card MOI NHAT co card.header.code = code (vd "WEB-20261123-0001").
 	GetCardByCode(ctx context.Context, code string) (*domain.Message, error)
 	// Locations tra vi tri cua nhieu tin cung luc (tranh N+1); id khong ton tai thi vang mat.

@@ -115,6 +115,11 @@
       "type": "string"
     },
     {
+      "key": "chat_cursor",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "card_code",
       "value": "WEB-20261118-0006",
       "type": "string"

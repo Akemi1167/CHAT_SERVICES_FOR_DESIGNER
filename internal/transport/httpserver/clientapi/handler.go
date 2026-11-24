@@ -67,12 +67,30 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 
 // Bootstrap: tat ca thu FE can khi mo app — chi gom nhom user la thanh vien,
 // card da loc nut theo nguoi xem.
+//
+// Thanh ben kieu Lark (chats = nhom + thread tron chung) phan trang de FE lazy load:
+//
+//	GET /bootstrap                        me + groups + chats (trang dau) + notifications
+//	GET /bootstrap?chatCursor=<cursor>    CHI trang chats tiep theo (khong tai lai nhom/thong bao)
+//	chatLimit=   so dong moi trang (mac dinh 20, toi da 100)
+//
+// groups van tra du (toi da 100) — dung tra thanh vien / to (cms.teams), khong phai de ve thanh ben.
 func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 	me, err := h.currentUser(c)
 	if err != nil {
 		return fail(c, err)
 	}
 	ctx := c.UserContext()
+
+	chatCursor := strings.TrimSpace(c.Query("chatCursor"))
+	chats, chatsPage, err := h.chatsPage(c, me,
+		paging.Normalize(chatCursor, int32(c.QueryInt("chatLimit", defaultChatLimit))))
+	if err != nil {
+		return fail(c, err)
+	}
+	if chatCursor != "" {
+		return ok(c, fiber.Map{"chats": chats, "chatsPageInfo": chatsPage})
+	}
 
 	convs, _, err := h.convs.List(ctx, me.ID, repository.ConversationFilter{}, paging.Normalize("", 100))
 	if err != nil {
@@ -96,10 +114,15 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 	return ok(c, fiber.Map{
 		"me":                  userView(me),
 		"groups":              groups,
+		"chats":               chats,
+		"chatsPageInfo":       chatsPage,
 		"notifications":       clientview.Notifications(notifs),
 		"unreadNotifications": unread,
 	})
 }
+
+// defaultChatLimit: so dong thanh ben trang dau trong bootstrap (vua mot man hinh).
+const defaultChatLimit = 20
 
 // RefreshGroups: FE goi sau khi vao nhom bang link moi -> Chat hoi lai CMS ngay.
 func (h *Handler) RefreshGroups(c *fiber.Ctx) error {
@@ -301,6 +324,52 @@ func (h *Handler) Replies(c *fiber.Ctx) error {
 		"threadCount": res.ThreadCount,
 		"pageInfo":    pageView(res.PageInfo),
 	})
+}
+
+// chatsPage: 1 trang thanh ben kieu Lark — nhom va thread tron chung, moi hoat dong nhat truoc.
+//
+//	type=group  : bam vao -> GET /groups/:id/messages
+//	type=thread : bam vao -> GET /groups/:group.id/messages?threadRootId=<id>
+func (h *Handler) chatsPage(c *fiber.Ctx, me *domain.User, p paging.Page) ([]fiber.Map, fiber.Map, error) {
+	items, info, err := h.msgs.ListSidebar(c.UserContext(), me.ID, p)
+	if err != nil {
+		return nil, nil, err
+	}
+	chats := make([]fiber.Map, 0, len(items))
+	for _, it := range items {
+		group := fiber.Map{}
+		if it.Conversation != nil {
+			chatID := ""
+			if it.Conversation.ExternalID != nil {
+				chatID = *it.Conversation.ExternalID
+			}
+			group = fiber.Map{"id": it.Conversation.ID.String(), "chatId": chatID,
+				"name": it.Conversation.Name, "avatarUrl": it.Conversation.AvatarURL}
+		}
+		item := fiber.Map{
+			"type":           string(it.Kind),
+			"group":          group,
+			"lastActivityAt": it.LastActivityAt,
+			"preview":        clientview.Preview(it.LastMessage),
+			"lastMessage":    nil,
+		}
+		if it.LastMessage != nil {
+			item["lastMessage"] = h.messageView(it.LastMessage, me.ActorID)
+		}
+		if it.Kind == repository.SidebarThread {
+			item["id"] = it.Root.ID.String() // = threadRootId
+			item["title"] = clientview.ThreadTitle(it.Root)
+			item["root"] = h.messageView(it.Root, me.ActorID)
+			item["threadCount"] = it.ThreadCount
+			item["replyCount"] = it.UserReplyCount
+		} else {
+			item["id"] = it.Conversation.ID.String()
+			item["title"] = it.Conversation.Name
+			item["unreadCount"] = it.UnreadCount
+		}
+		chats = append(chats, item)
+	}
+	return chats, pageView(info), nil
 }
 
 // CardThread: panel chi tiet 1 don theo ma (card.header.code), vd WEB-20261123-0001.

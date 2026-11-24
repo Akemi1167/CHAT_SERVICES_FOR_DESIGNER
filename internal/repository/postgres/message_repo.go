@@ -43,6 +43,126 @@ func (r *MessageRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Messag
 	return &m, nil
 }
 
+func (r *MessageRepo) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.Message, error) {
+	var out []domain.Message
+	if len(ids) == 0 {
+		return out, nil
+	}
+	if err := r.db(ctx).Preload("Attachments").Preload("Sender").
+		Where("id IN ?", ids).Find(&out).Error; err != nil {
+		return nil, wrap(err, "message.listByIDs")
+	}
+	return out, nil
+}
+
+// ListSidebar tron nhom va thread thanh 1 danh sach (1 query, khong N+1):
+//
+//	agg     = dem / lay luc moi nhat cua tin trong thread, theo thread_id
+//	threads = tin goc la card HOAC co it nhat 1 tin trong thread
+//	groups  = nhom cua toi; hoat dong = tin GOC moi nhat (chua co tin => luc tao nhom)
+func (r *MessageRepo) ListSidebar(ctx context.Context, f repository.SidebarFilter, p paging.Page) ([]repository.SidebarRow, error) {
+	args := map[string]any{"uid": f.UserID, "limit": p.FetchLimit()}
+	cursor := ""
+	if p.Cursor.Valid {
+		cursor = `WHERE (f.last_activity_at, f.id) < (@cur_at, @cur_id)`
+		args["cur_at"], args["cur_id"] = p.Cursor.CreatedAt, p.Cursor.ID
+	}
+
+	q := `
+WITH my AS (
+	SELECT conversation_id FROM conversation_members
+	 WHERE user_id = @uid AND left_at IS NULL
+),
+agg AS (
+	SELECT t.thread_id                                    AS root_id,
+	       COUNT(*)                                       AS thread_count,
+	       COUNT(*) FILTER (WHERE t.sender_type = 'user') AS user_reply_count,
+	       MAX(t.created_at)                              AS last_at
+	  FROM messages t
+	 WHERE t.thread_id IS NOT NULL AND t.deleted_at IS NULL
+	   AND t.conversation_id IN (SELECT conversation_id FROM my)
+	 GROUP BY t.thread_id
+),
+threads AS (
+	SELECT 'thread'                          AS kind,
+	       r.id                              AS id,
+	       r.conversation_id                 AS conversation_id,
+	       COALESCE(a.last_at, r.created_at) AS last_activity_at,
+	       COALESCE(a.thread_count, 0)       AS thread_count,
+	       COALESCE(a.user_reply_count, 0)   AS user_reply_count
+	  FROM messages r
+	  LEFT JOIN agg a ON a.root_id = r.id
+	 WHERE r.conversation_id IN (SELECT conversation_id FROM my)
+	   AND r.thread_id IS NULL AND r.deleted_at IS NULL
+	   AND (r.card IS NOT NULL OR a.root_id IS NOT NULL)
+),
+groups AS (
+	SELECT 'group' AS kind,
+	       c.id    AS id,
+	       c.id    AS conversation_id,
+	       COALESCE((SELECT MAX(m.created_at) FROM messages m
+	                  WHERE m.conversation_id = c.id
+	                    AND m.thread_id IS NULL AND m.deleted_at IS NULL),
+	                c.created_at) AS last_activity_at,
+	       0 AS thread_count,
+	       0 AS user_reply_count
+	  FROM conversations c
+	 WHERE c.id IN (SELECT conversation_id FROM my)
+)
+SELECT * FROM (SELECT * FROM threads UNION ALL SELECT * FROM groups) f
+` + cursor + `
+ ORDER BY f.last_activity_at DESC, f.id DESC
+ LIMIT @limit`
+
+	var out []repository.SidebarRow
+	if err := r.db(ctx).Raw(q, args).Scan(&out).Error; err != nil {
+		return nil, wrap(err, "message.listSidebar")
+	}
+	return out, nil
+}
+
+func (r *MessageRepo) LastRootMessages(ctx context.Context, convIDs []uuid.UUID) (map[uuid.UUID]domain.Message, error) {
+	out := make(map[uuid.UUID]domain.Message, len(convIDs))
+	if len(convIDs) == 0 {
+		return out, nil
+	}
+	var rows []domain.Message
+	err := r.db(ctx).Preload("Sender").
+		Select("DISTINCT ON (conversation_id) *").
+		Where("conversation_id IN ? AND thread_id IS NULL", convIDs).
+		Order("conversation_id, created_at DESC, id DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, wrap(err, "message.lastRootMessages")
+	}
+	for _, m := range rows {
+		out[m.ConversationID] = m
+	}
+	return out, nil
+}
+
+func (r *MessageRepo) LastInThreads(ctx context.Context, rootIDs []uuid.UUID) (map[uuid.UUID]domain.Message, error) {
+	out := make(map[uuid.UUID]domain.Message, len(rootIDs))
+	if len(rootIDs) == 0 {
+		return out, nil
+	}
+	var rows []domain.Message
+	err := r.db(ctx).Preload("Sender").
+		Select("DISTINCT ON (thread_id) *").
+		Where("thread_id IN ?", rootIDs).
+		Order("thread_id, created_at DESC, id DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, wrap(err, "message.lastInThreads")
+	}
+	for _, m := range rows {
+		if m.ThreadID != nil {
+			out[*m.ThreadID] = m
+		}
+	}
+	return out, nil
+}
+
 func (r *MessageRepo) GetCardByCode(ctx context.Context, code string) (*domain.Message, error) {
 	var m domain.Message
 	// Bieu thuc phai trung voi index ix_messages_card_code (migration 000007).

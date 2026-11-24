@@ -390,7 +390,7 @@ FE ──1──► CMS   POST /api/client/v1/workspace/auth/login {identifier, 
    ◄─────       {accessToken, refreshToken, user}
 
 FE ──2──► CHAT  GET /api/client/v1/chat/bootstrap        Bearer <accessToken>
-   ◄─────       {me, groups[], notifications[], unreadNotifications}
+   ◄─────       {me, groups[], chats[], chatsPageInfo, notifications[], unreadNotifications}
                  (lần đầu Chat tự: kiểm token qua JWKS → tạo actor
                   → GET /workspace/users?ids= lấy hồ sơ từ CMS)
 
@@ -410,6 +410,7 @@ Trả về gì:
 |---|---|
 | `me` | `actorId`, `name`, `avatarUrl`, `role`, `profile.webTeams` |
 | `groups[]` | vẽ sidebar: `id`, `chatId`, `name`, `unreadCount`, `members[]`, `cms.teams[]` |
+| `chats[]` + `chatsPageInfo` | **vẽ thanh bên** kiểu Lark: nhóm + thread trộn chung, 20 dòng đầu. Cuộn xuống: `bootstrap?chatCursor=<nextCursor>` ([Luồng D](#thanh-bên-kiểu-lark--chats-trong-bootstrap)) |
 | `notifications[]` | 30 thông báo mới nhất |
 | `unreadNotifications` | số cho badge |
 
@@ -543,6 +544,57 @@ Khung chat chính (GET …/groups/{id}/messages)       Panel thread (bấm vào 
 |---|---|
 | **không** có `threadRootId` | upsert vào khung chat chính theo `id` (như cũ) |
 | **có** `threadRootId` | **không** chèn vào khung chính — tăng `threadCount` của tin gốc; nếu panel thread đó đang mở thì upsert vào panel |
+
+### Thanh bên kiểu Lark — `chats` trong `bootstrap`
+
+Thanh bên là **một danh sách trộn nhóm và thread**, hoạt động gần nhất trước (giống Lark). **Không
+có API riêng**: trang đầu nằm sẵn trong `GET /api/client/v1/chat/bootstrap`, cuộn xuống thì lazy load:
+
+```
+GET /bootstrap                              → me, groups, chats (trang đầu), chatsPageInfo, notifications…
+GET /bootstrap?chatCursor=<nextCursor>      → CHỈ {chats, chatsPageInfo} (không tải lại nhóm / thông báo)
+    &chatLimit=20                             mặc định 20, tối đa 100
+```
+
+`chatsPageInfo.hasMore = false` → hết, ngừng lazy load. `groups` vẫn trả đủ (thành viên, `cms.teams`)
+để tra cứu — **vẽ thanh bên bằng `chats`**, không phải `groups`.
+
+```json
+{ "chats": [
+    { "type": "thread",
+      "id": "3a0ea6e2-…",                              // = threadRootId
+      "title": "WEB-20261123-0001 · Banner Tết",        // card: "code · title"; tin thường: dòng đầu
+      "preview": "Designer Bot: 📁 **Google Drive** …",  // "Người gửi: nội dung" của tin mới nhất
+      "lastActivityAt": "2026-11-23T08:53:55Z",
+      "group": { "id": "4075d650-…", "chatId": "wg_91aeddfc3a825552", "name": "TEAM TEST 222", "avatarUrl": "" },
+      "root": { …tin gốc, card đã lọc visibleTo… },
+      "lastMessage": { …tin mới nhất trong thread… },
+      "threadCount": 2,          // mọi tin trong thread
+      "replyCount": 0 },         // chỉ tin người dùng → 0 = "Chưa có phản hồi"
+    { "type": "group",
+      "id": "4075d650-…",
+      "title": "TEAM TEST 222",
+      "preview": "Designer Bot: WEB-20261123-0001 · Banner Tết",
+      "lastActivityAt": "2026-11-23T08:53:55Z",
+      "group": { …chính nhóm… },
+      "lastMessage": { …tin GỐC mới nhất của nhóm… },
+      "unreadCount": 4 }
+  ],
+  "chatsPageInfo": { "hasMore": true, "nextCursor": "…" } }
+```
+
+| `type` | Là gì | `lastActivityAt` | Bấm vào |
+|---|---|---|---|
+| `group` | một nhóm mình là thành viên | tin **gốc** mới nhất (tin trong thread **không** đẩy nhóm lên) | `GET /groups/{id}/messages` |
+| `thread` | tin gốc có ≥ 1 tin trả lời, hoặc là card (card đơn luôn mở thread) | tin mới nhất trong thread | `GET /groups/{group.id}/messages?threadRootId={id}` |
+
+**Realtime cho thanh bên** (không có event riêng — dùng event `message` sẵn có):
+
+| Event `message` | Thanh bên |
+|---|---|
+| có `threadRootId` | dòng `thread` có `id = threadRootId` lên đầu, cập nhật `preview`/`lastMessage`, `threadCount` +1 (`replyCount` +1 nếu `senderType = "user"`). Chưa có trong danh sách → gọi lại `bootstrap` |
+| không có `threadRootId`, có `card` | dòng `group` lên đầu **và** thêm dòng `thread` mới (card mở thread) |
+| không có `threadRootId` | dòng `group` có `id = conversationId` lên đầu, cập nhật `preview`, `unreadCount` +1 nếu không phải tin của mình |
 
 Chỉ có **mã đơn** (từ thông báo, link) mà chưa có id tin gốc: `GET /api/client/v1/chat/cards/{code}`
 trả card + `links` (Drive) + thread đã tách `activity` (bot/hệ thống) / `discussion` (người dùng) —

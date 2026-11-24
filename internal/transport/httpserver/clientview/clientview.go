@@ -92,6 +92,58 @@ func Message(m *domain.Message, actorID string) map[string]any {
 	return view
 }
 
+// ThreadTitle: ten hien tren sidebar cho 1 thread.
+// Card don => "WEB-... · <tieu de>"; tin thuong => dong dau cua noi dung (toi da 80 ky tu).
+func ThreadTitle(m *domain.Message) string {
+	if m == nil {
+		return ""
+	}
+	if h, ok := m.Card["header"].(map[string]any); ok {
+		code, _ := h["code"].(string)
+		title, _ := h["title"].(string)
+		switch {
+		case code != "" && title != "":
+			return code + " · " + title
+		case title != "":
+			return title
+		case code != "":
+			return code
+		}
+	}
+	// Card kieu cu: title o cap ngoai cung, khong co header.
+	if t, ok := m.Card["title"].(string); ok && strings.TrimSpace(t) != "" {
+		return strings.TrimSpace(t)
+	}
+	text, _, _ := strings.Cut(strings.TrimSpace(m.Content), "\n")
+	if r := []rune(text); len(r) > 80 {
+		return string(r[:80]) + "…"
+	}
+	return text
+}
+
+// Preview: dong xem truoc tren thanh ben kieu Lark — "Nguoi gui: noi dung".
+// Tin he thong khong co ten nguoi gui; tin chi co tep => "[image]", "[file]"...
+func Preview(m *domain.Message) string {
+	if m == nil {
+		return ""
+	}
+	text := ThreadTitle(m)
+	if text == "" && len(m.Attachments) > 0 {
+		text = "[" + m.Attachments[0].Kind + "]"
+	}
+	name := ""
+	switch {
+	case m.Sender != nil:
+		name = m.Sender.DisplayName
+	case m.BotSender != nil:
+		name, _ = m.BotSender["name"].(string)
+	}
+	if name == "" || text == "" {
+		return text
+	}
+	return name + ": " + text
+}
+
 // Messages: danh sach tin nhan, cung goc nhin.
 func Messages(items []domain.Message, actorID string) []map[string]any {
 	out := make([]map[string]any, 0, len(items))

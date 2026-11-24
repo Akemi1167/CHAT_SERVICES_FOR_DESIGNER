@@ -506,11 +506,14 @@ cms_client = folder(
     [
         req("Bootstrap", "GET", "/api/client/v1/chat/bootstrap",
             desc="Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, "
-                 "kèm `members` + `sources`/`teamCodes`), `notifications`, `unreadNotifications`.",
+                 "kèm `members` + `sources`/`teamCodes`), `chats` (thanh bên kiểu Lark: nhóm + thread "
+                 "trộn chung, trang đầu) + `chatsPageInfo`, `notifications`, `unreadNotifications`.\n\n"
+                 "Trang sau: `?chatCursor=<chatsPageInfo.nextCursor>` (xem request lazy load).",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=(OK, 'const el = pm.response.json().element;',
-                   'pm.test("co me + groups", () => pm.expect(el).to.have.keys(["me","groups","notifications","unreadNotifications"]));',
-                   'if (el.groups && el.groups[0]) pm.collectionVariables.set("group_id", el.groups[0].chatId || el.groups[0].id);')),
+                   'pm.test("co me + groups", () => pm.expect(el).to.have.keys(["me","groups","chats","chatsPageInfo","notifications","unreadNotifications"]));',
+                   'if (el.groups && el.groups[0]) pm.collectionVariables.set("group_id", el.groups[0].chatId || el.groups[0].id);',
+                   'pm.collectionVariables.set("chat_cursor", (el.chatsPageInfo || {}).nextCursor || "");')),
         req("Tôi là ai", "GET", "/api/client/v1/chat/auth/me",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=(OK,)),
@@ -544,6 +547,21 @@ cms_client = folder(
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
+        req("Bootstrap · trang thanh bên tiếp (lazy load)", "GET", "/api/client/v1/chat/bootstrap",
+            query=[("chatCursor", "{{chat_cursor}}"), ("chatLimit", "20")],
+            desc="Thanh bên kiểu Lark: `chats` = **nhóm và thread trộn chung**, hoạt động gần nhất trước. "
+                 "Trang đầu nằm sẵn trong `bootstrap`; cuộn xuống thì gọi lại với "
+                 "`chatCursor = chatsPageInfo.nextCursor`.\n\n"
+                 "Có `chatCursor` → **chỉ trả `chats` + `chatsPageInfo`**, không tải lại nhóm / thông báo.\n\n"
+                 "Mỗi dòng: `type` (`group`|`thread`), `id`, `title`, `preview` (\"Người gửi: nội dung\"), "
+                 "`lastActivityAt`, `lastMessage`, `group`. Nhóm thêm `unreadCount`; thread thêm `root`, "
+                 "`threadCount`, `replyCount`.",
+            auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
+            tests=(OK, 'const el = pm.response.json().element;',
+                   'pm.test("chats la mang", () => pm.expect(el.chats).to.be.an("array"));',
+                   'pm.test("moi dong co type group|thread", () => pm.expect('
+                   'el.chats.every(x => ["group","thread"].includes(x.type))).to.be.true);',
+                   'pm.collectionVariables.set("chat_cursor", el.chatsPageInfo.nextCursor || "");')),
         req("Chi tiết đơn theo mã (card + Drive + thread)", "GET", "/api/client/v1/chat/cards/{{card_code}}",
             query=[("limit", "50")],
             desc="Chỉ cần **mã đơn** (`card.header.code`), không cần `messageId`. Trả `card` (đã lọc "
@@ -736,7 +754,7 @@ flow = folder(
                   "(`groups[].cms.teams[].id`) — bước 4.1 cần đúng tổ **thuộc nhóm này**.",
              tests=(OK, 'const el = pm.response.json().element;',
                     'pm.test("co me + groups", () => pm.expect(el).to.have.keys('
-                    '["me","groups","notifications","unreadNotifications"]));',
+                    '["me","groups","chats","chatsPageInfo","notifications","unreadNotifications"]));',
                     'const g = (el.groups || [])[0];',
                     'if (g) {',
                     '  pm.collectionVariables.set("group_id", g.chatId || g.id);',
@@ -1233,6 +1251,8 @@ collection = {
         {"key": "card_action", "value": "", "type": "string"},
         {"key": "actor_id", "value": "", "type": "string"},
         {"key": "card_message_id", "value": "", "type": "string"},
+        # Cursor trang thanh ben (chats) tiep theo, do request Bootstrap luu (lazy load).
+        {"key": "chat_cursor", "value": "", "type": "string"},
         # Ma don tren card (header.code) — trung voi card mau cua request "Gửi card vào nhóm".
         {"key": "card_code", "value": "WEB-20261118-0006", "type": "string"},
         {"key": "user_id", "value": "", "type": "string"},
@@ -1315,8 +1335,8 @@ flow_fe = folder(
                   "**đừng hardcode**.\n\n"
                   "Ngay sau bước này: mở WebSocket (xem mô tả folder).",
              tests=(OK, 'const el = pm.response.json().element;',
-                    'pm.test("co 4 khoa", () => pm.expect(el).to.have.keys('
-                    '["me","groups","notifications","unreadNotifications"]));',
+                    'pm.test("co 6 khoa", () => pm.expect(el).to.have.keys('
+                    '["me","groups","chats","chatsPageInfo","notifications","unreadNotifications"]));',
                     'const g = (el.groups || [])[0];',
                     'if (g) {',
                     '  pm.collectionVariables.set("group_id", g.chatId || g.id);',

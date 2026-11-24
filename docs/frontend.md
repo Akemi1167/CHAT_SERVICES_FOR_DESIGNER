@@ -124,7 +124,7 @@ truyền cái nào cũng được. Nghĩa là `…/chat/groups/:id/messages` th�
 
 | Việc | (A) | (B) |
 |---|---|---|
-| Danh sách nhóm + `unread_count` | `GET /api/v1/conversations?limit=30&type=&source=&q=` | `GET …/chat/bootstrap` (kèm `me`, `notifications`) |
+| Danh sách nhóm + `unread_count` | `GET /api/v1/conversations?limit=30&type=&source=&q=` | `GET …/chat/bootstrap` (kèm `me`, `chats`, `notifications`) |
 | Chi tiết + thành viên | `GET /api/v1/conversations/:id` | có sẵn trong `bootstrap` |
 | Tạo nhóm *(chỉ chế độ fake)* | `POST /api/v1/conversations` `{"type":"group","name":"…","member_user_ids":[…]}` | — (CMS tạo) |
 | Thêm thành viên *(chỉ fake)* | `POST /api/v1/conversations/:id/members` | — |
@@ -211,6 +211,57 @@ Một tin nhắn (A):
 ```
 
 `replies` sắp **cũ → mới**; phân trang tiếp bằng `cursor` như bình thường.
+
+#### Thanh bên kiểu Lark — `chats` trong `bootstrap`
+
+Thanh bên là **một danh sách trộn nhóm và thread**, hoạt động gần nhất trước (giống Lark). **Không
+có API riêng**: trang đầu nằm sẵn trong `GET /api/client/v1/chat/bootstrap`, cuộn xuống thì lazy load:
+
+```
+GET /bootstrap                              → me, groups, chats (trang đầu), chatsPageInfo, notifications…
+GET /bootstrap?chatCursor=<nextCursor>      → CHỈ {chats, chatsPageInfo} (không tải lại nhóm / thông báo)
+    &chatLimit=20                             mặc định 20, tối đa 100
+```
+
+`chatsPageInfo.hasMore = false` → hết, ngừng lazy load. `groups` vẫn trả đủ (thành viên, `cms.teams`)
+để tra cứu — **vẽ thanh bên bằng `chats`**, không phải `groups`.
+
+```json
+{ "chats": [
+    { "type": "thread",
+      "id": "3a0ea6e2-…",                              // = threadRootId
+      "title": "WEB-20261123-0001 · Banner Tết",        // card: "code · title"; tin thường: dòng đầu
+      "preview": "Designer Bot: 📁 **Google Drive** …",  // "Người gửi: nội dung" của tin mới nhất
+      "lastActivityAt": "2026-11-23T08:53:55Z",
+      "group": { "id": "4075d650-…", "chatId": "wg_91aeddfc3a825552", "name": "TEAM TEST 222", "avatarUrl": "" },
+      "root": { …tin gốc, card đã lọc visibleTo… },
+      "lastMessage": { …tin mới nhất trong thread… },
+      "threadCount": 2,          // mọi tin trong thread
+      "replyCount": 0 },         // chỉ tin người dùng → 0 = "Chưa có phản hồi"
+    { "type": "group",
+      "id": "4075d650-…",
+      "title": "TEAM TEST 222",
+      "preview": "Designer Bot: WEB-20261123-0001 · Banner Tết",
+      "lastActivityAt": "2026-11-23T08:53:55Z",
+      "group": { …chính nhóm… },
+      "lastMessage": { …tin GỐC mới nhất của nhóm… },
+      "unreadCount": 4 }
+  ],
+  "chatsPageInfo": { "hasMore": true, "nextCursor": "…" } }
+```
+
+| `type` | Là gì | `lastActivityAt` | Bấm vào |
+|---|---|---|---|
+| `group` | một nhóm mình là thành viên | tin **gốc** mới nhất (tin trong thread **không** đẩy nhóm lên) | `GET /groups/{id}/messages` |
+| `thread` | tin gốc có ≥ 1 tin trả lời, hoặc là card (card đơn luôn mở thread) | tin mới nhất trong thread | `GET /groups/{group.id}/messages?threadRootId={id}` |
+
+**Realtime cho thanh bên** (không có event riêng — dùng event `message` sẵn có):
+
+| Event `message` | Thanh bên |
+|---|---|
+| có `threadRootId` | dòng `thread` có `id = threadRootId` lên đầu, cập nhật `preview`/`lastMessage`, `threadCount` +1 (`replyCount` +1 nếu `senderType = "user"`). Chưa có trong danh sách → gọi lại `bootstrap` |
+| không có `threadRootId`, có `card` | dòng `group` lên đầu **và** thêm dòng `thread` mới (card mở thread) |
+| không có `threadRootId` | dòng `group` có `id = conversationId` lên đầu, cập nhật `preview`, `unreadCount` +1 nếu không phải tin của mình |
 
 #### Panel chi tiết một đơn theo mã — `GET /api/client/v1/chat/cards/:code`
 
@@ -750,7 +801,7 @@ FE ──3──► CHAT  WebSocket  ws(s)://…/api/client/v1/chat/ws?token=<ac
 | # | Gọi | Dùng để |
 |---|---|---|
 | 1 | CMS `auth/login` | lấy token (Chat **không** có login) |
-| 2 | CHAT `bootstrap` | danh sách nhóm + `unreadCount` + thông báo → vẽ sidebar |
+| 2 | CHAT `bootstrap` | danh sách nhóm + `unreadCount` + `chats` (thanh bên nhóm + thread, trang đầu) + thông báo → vẽ thanh bên. Cuộn: `bootstrap?chatCursor=` |
 | 3 | CHAT `/api/client/v1/chat/ws` | mở realtime, giữ suốt phiên |
 
 Token hết hạn (401 ở bất kỳ request nào) → FE gọi CMS `POST /workspace/auth/refresh`, rồi **mở lại WebSocket** bằng token mới.
@@ -926,6 +977,7 @@ Vào nhóm bằng link mời: FE gọi CMS `POST /workspace/groups/join {token}`
 | Cuộn lên | `GET …/messages?cursor=<nextCursor>` |
 | Gửi tin | WS `message.send` (fallback `POST /chat/groups/{id}/messages`) |
 | Mở thread | `GET /chat/messages/{id}/replies?mode=thread` |
+| Thanh bên (nhóm + thread kiểu Lark) | `GET /chat/bootstrap` → `chats`; cuộn tiếp `?chatCursor=` |
 | Mở chi tiết đơn theo mã | `GET /chat/cards/{code}` → card + `links` (Drive) + `activity` + `discussion` |
 | Tạo yêu cầu | `POST /chat/forms/create_task/submit` |
 | Bấm nút card | `POST /chat/messages/{id}/actions` |
