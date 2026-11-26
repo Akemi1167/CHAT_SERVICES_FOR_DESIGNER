@@ -106,6 +106,29 @@ func (c *Client) Users(ctx context.Context, cmsUserIDs []int64, openIDs []string
 	return env.Element.Users, nil
 }
 
+// UsersUpdatedSince tra ho so doi SAU moc since (ISO), xep cu -> moi, toi da limit (<= 200).
+// Chat luu NextSince lam moc lan sau; HasMore = con nua, goi tiep ngay.
+func (c *Client) UsersUpdatedSince(ctx context.Context, since string, limit int) (*UsersPage, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 200
+	}
+	q := url.Values{}
+	q.Set("updatedSince", since)
+	q.Set("limit", strconv.Itoa(limit))
+
+	var env Envelope[UsersPage]
+	if err := c.get(ctx, "/users", q, &env); err != nil {
+		return nil, err
+	}
+	return &env.Element, nil
+}
+
+// AbsoluteURL ghep duong dan tuong doi cua CMS (/api/avatars/...) voi base URL.
+func (c *Client) AbsoluteURL(path string) string { return AbsoluteAvatar(c.cfg.BaseURL, path) }
+
+// ProfilesToDomain doi ho so CMS sang user Chat (ghep avatar tuong doi voi base URL).
+func (c *Client) ProfilesToDomain(users []User) []domain.User { return c.toDomain(users) }
+
 // UsersByCMSID cai dat auth.ProfileSource.
 func (c *Client) UsersByCMSID(ctx context.Context, ids []int64) ([]domain.User, error) {
 	users, err := c.Users(ctx, ids, nil)

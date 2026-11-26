@@ -206,6 +206,18 @@ func (r *UserRepo) ListByCMSUserIDs(ctx context.Context, ids []int64) ([]domain.
 	return users, nil
 }
 
+func (r *UserRepo) ListCMSUserIDs(ctx context.Context) ([]int64, error) {
+	var ids []int64
+	err := r.db(ctx).Model(&domain.User{}).
+		Where("cms_user_id IS NOT NULL").
+		Order("cms_user_id").
+		Pluck("cms_user_id", &ids).Error
+	if err != nil {
+		return nil, wrap(err, "user.listCMSUserIDs")
+	}
+	return ids, nil
+}
+
 func (r *UserRepo) ListByActorIDs(ctx context.Context, actorIDs []string) ([]domain.User, error) {
 	if len(actorIDs) == 0 {
 		return nil, nil

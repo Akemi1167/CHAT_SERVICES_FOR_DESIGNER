@@ -40,6 +40,10 @@ type Service struct {
 	// chay ca o vong dong bo lan o Bot API (PUT /bot/v1/groups/:id).
 	systemMu sync.Mutex
 	systemID uuid.UUID
+
+	// Moc dong bo ho so (nextSince cua GET /workspace/users). Rong = chua dong bo lan nao.
+	profileMu    sync.Mutex
+	profileSince string
 }
 
 func New(client *cms.Client, store repository.Store, hub *realtime.Hub, interval time.Duration) *Service {
@@ -104,8 +108,48 @@ func (s *Service) ApplyGroup(ctx context.Context, g cms.Group) (*domain.Conversa
 	return s.store.Conversations().GetByID(ctx, conv.ID)
 }
 
+// ApplyGroupPush: CMS day 1 nhom qua PUT /bot/v1/groups/:chatId. Khac vong poll
+// (luon gui du), PUT co the chi gui name + members: field nhom nao KHONG co trong
+// body (present) thi giu gia tri dang luu thay vi ghi de bang gia tri rong.
+func (s *Service) ApplyGroupPush(ctx context.Context, g cms.Group, present map[string]bool) (*domain.Conversation, error) {
+	var existingInfo domain.JSONMap
+	if g.ChatID != "" {
+		if cur, err := s.store.Conversations().GetByExternalID(ctx, g.ChatID); err == nil {
+			existingInfo = cur.CMSInfo
+		}
+	}
+	conv, err := s.applyGroupWith(ctx, g, mergeGroupInfo(g.Info(), existingInfo, present))
+	if err != nil {
+		return nil, err
+	}
+	return s.store.Conversations().GetByID(ctx, conv.ID)
+}
+
+// mergeGroupInfo: khoa cms_info nao CMS khong gui thi lay lai tu ban dang luu.
+// Ten khoa trong cms_info trung ten field JSON cua nhom (type, botId, teams...).
+func mergeGroupInfo(next, existing domain.JSONMap, present map[string]bool) domain.JSONMap {
+	if existing == nil {
+		return next
+	}
+	out := make(domain.JSONMap, len(next))
+	for k, v := range next {
+		if present[k] {
+			out[k] = v
+		} else if old, ok := existing[k]; ok {
+			out[k] = old
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // applyGroup lam toan bo viec ghi; tra ve nhom MOC (chua preload Members).
 func (s *Service) applyGroup(ctx context.Context, g cms.Group) (*domain.Conversation, error) {
+	return s.applyGroupWith(ctx, g, g.Info())
+}
+
+func (s *Service) applyGroupWith(ctx context.Context, g cms.Group, info domain.JSONMap) (*domain.Conversation, error) {
 	if strings.TrimSpace(g.ChatID) == "" {
 		return nil, fmt.Errorf("cmssync: thieu chatId")
 	}
@@ -120,8 +164,10 @@ func (s *Service) applyGroup(ctx context.Context, g cms.Group) (*domain.Conversa
 		ExternalID: &chatID,
 		Type:       domain.ConversationGroup,
 		Name:       g.Name,
-		CMSInfo:    g.Info(),
+		CMSInfo:    info,
 		CreatedBy:  systemID,
+		AvatarURL:  s.client.AbsoluteURL(g.AvatarURL.Value),
+		AvatarSet:  g.AvatarURL.Set,
 	})
 	if err != nil {
 		return nil, err

@@ -123,6 +123,9 @@ type CMS struct {
 
 	// Dong bo nhom dinh ky (ngoai viec CMS day PUT /bot/v1/groups/:id).
 	SyncInterval time.Duration
+	// Keo ho so user doi tu CMS (GET /workspace/users?updatedSince=) — ho ten moi
+	// hien tren chip @ va card cu. Spec CMS: 10–60 giay.
+	UserSyncInterval time.Duration
 	// Timeout goi Workspace API va webhook dong bo (form.submit, card.action).
 	HTTPTimeout    time.Duration
 	WebhookTimeout time.Duration
@@ -210,6 +213,7 @@ func Load() (*Config, error) {
 			Issuer:           str("CMS_JWT_ISSUER", "designer-cms"),
 			Audience:         str("CMS_JWT_AUDIENCE", "abc-workspace"),
 			SyncInterval:     dur("CMS_SYNC_INTERVAL", 60*time.Second),
+			UserSyncInterval: dur("CMS_USER_SYNC_INTERVAL", 30*time.Second),
 			HTTPTimeout:      dur("CMS_HTTP_TIMEOUT", 10*time.Second),
 			WebhookTimeout:   dur("CMS_WEBHOOK_TIMEOUT", 5*time.Second),
 			OutboxInterval:   dur("CMS_OUTBOX_INTERVAL", 10*time.Second),

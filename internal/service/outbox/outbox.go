@@ -66,6 +66,13 @@ func (s *Service) EnqueueMessageCreated(ctx context.Context, msg *domain.Message
 	if msg.ThreadID != nil {
 		message["threadRootId"] = msg.ThreadID.String()
 	}
+	// CMS luu ai duoc nhac (tin trong thread don -> web_order_messages).
+	mentions := []string(msg.Mentions)
+	if mentions == nil {
+		mentions = []string{}
+	}
+	message["mentions"] = mentions
+	message["mentionAll"] = msg.MentionAll
 
 	fields := map[string]any{
 		"message": message,

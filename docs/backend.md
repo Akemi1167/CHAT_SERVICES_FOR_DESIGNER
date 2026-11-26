@@ -169,6 +169,7 @@ CMS_JWT_AUDIENCE=abc-workspace
 CMS_JWKS_URL=                                     # trống = <workspace>/.well-known/jwks.json
 CMS_JWKS_CACHE_TTL=6h
 CMS_SYNC_INTERVAL=60s                             # poll GET /workspace/groups
+CMS_USER_SYNC_INTERVAL=30s                        # poll GET /workspace/users?updatedSince= (họ tên / vai trò đổi)
 CMS_WEBHOOK_TIMEOUT=5s                            # form.submit / card.action (đồng bộ)
 CMS_OUTBOX_INTERVAL=10s                           # gửi lại message.created
 AUTH_ALLOW_DEV_TOKEN=true                         # vẫn nhận token HS256 của `make token` (tắt ở prod)
@@ -190,7 +191,33 @@ Lần đầu gặp `cmsUserId`: Chat tạo user local, sinh `actor_id = u_<cmsUs
 `GET /workspace/users?ids=` lấy hồ sơ (tên, avatar, tổ, trợ lý, admin bot) và **lưu lại**
 (`users.cms_profile`) để FE/`visibleTo` dùng mà không phải hỏi CMS mỗi lần.
 
+Hồ sơ đổi trên CMS (họ tên, username, avatar, khoá/xoá, thêm/bớt tổ, trợ lý, admin bot): Chat kéo
+`GET /workspace/users?updatedSince=<nextSince>&limit=200` mỗi `CMS_USER_SYNC_INTERVAL`, gặp
+`hasMore` thì gọi tiếp ngay (`cmssync/profiles.go`). Lần đầu sau khi khởi động (chưa có mốc, mốc chỉ
+giữ trong bộ nhớ) thì tải lại theo `ids` của mọi actor đang có. Chỉ **cập nhật** actor đã có, ghi
+đè (gọi lặp không sao), đổi thật thì phát realtime `user` cho người chung nhóm.
+
+### 4b. Nhắc tên (@)
+
+- FE gửi `mentions: ["u_55"]`, `mentionAll` khi gửi tin (REST / WS). `message.Service.Send`
+  (`service/message/mention.go`): `@all` chỉ admin / trợ lý (`domain.User.CanMentionAll`) → khác thì
+  `403 mention_all_forbidden`, tin không được tạo; lọc chỉ thành viên nhóm, bỏ người gửi, bỏ trùng,
+  tối đa 100; `@all` mở rộng thành mọi thành viên. Lưu `messages.mentions` (jsonb) + `mention_all`.
+- Sau khi lưu + phát realtime: mỗi người được nhắc 1 thông báo "X nhắc đến bạn trong <nhóm>: …".
+- CMS gửi `mentions` kèm card (`POST /bot/v1/messages`, `/messages/:id/thread`) → chỉ lưu để đánh
+  dấu "@ bạn", **không** tạo thông báo.
+- `mentionCount` (nhóm, sidebar) = tin chưa đọc có `mentions @> [me]` (index GIN `ix_messages_mentions`).
+- `message.created` sang CMS kèm `message.mentions`, `message.mentionAll`.
+
 ### 5. Đồng bộ nhóm & thành viên
+
+- Nhóm CMS có thể có `type: "dm"` (chat riêng với bot) — lưu ở `conversations.cms_info.type`
+  (không đổi cột `type`, ràng buộc DB chỉ cho `direct|group`). `message.Service.Send` và
+  `card.Service.SubmitForm` chặn người dùng gửi vào nhóm `dm` (`403 bot_dm_read_only`).
+- `avatarUrl` của nhóm (CMS) → `conversations.avatar_url` (ghép base URL CMS). Không có trong
+  payload = giữ nguyên; `null` / `""` = gỡ.
+- `PUT /bot/v1/groups/:chatId` chỉ ghi đè field CMS **có gửi** (`cmssync.ApplyGroupPush`);
+  poll `GET /workspace/groups` luôn ghi đủ.
 
 - Poll `GET /workspace/groups` lúc khởi động + mỗi `CMS_SYNC_INTERVAL`.
 - CMS đẩy ngay qua `PUT /bot/v1/groups/:chatId`.
@@ -265,21 +292,36 @@ Ba endpoint tài liệu ghi "chưa dùng / tuỳ chọn" nay đã có:
   card trong thread được `PATCH`, lọc `visibleTo` và bấm nút y như card ở timeline —
   xem [FLOW.md](FLOW.md#chia-task-card-nằm-trong-thread).
 - Thông báo trả cho FE kèm `conversationId` / `groupId` / `threadRootId` của tin mà `messageId` trỏ tới.
+- `POST /messages` và `POST /messages/:id/thread` nhận `mentions: [actorId…]` (người được tag trên
+  card) → Chat lưu để đánh dấu "@ bạn" (`mentionCount`), **không** tạo thông báo; người ngoài nhóm bị bỏ.
+  `PATCH` chưa nhận `mentions`.
+- `PUT /groups/:id` nhận thêm `type` (`group` | `dm`), `avatarUrl`, `botId`, `timezone`, `isOrderHub`,
+  `orderTeamCodes`, `teams` — đều tuỳ chọn, **không gửi = giữ nguyên** (xem mục 5). Response có `type`.
 
 ### 9. API cho FE
 
 `/api/client/v1/chat/*`, envelope `{statusCode, code, message, element}`:
 
 `GET auth/me` · `GET bootstrap` · `POST groups/refresh` · `GET|POST groups/:id/messages` ·
-`POST groups/:id/read` · `POST messages/:id/actions` · `POST forms/:formId/submit` ·
+`POST groups/:id/read` · `POST groups/:id/pin` · `POST messages/:id/actions` · `POST forms/:formId/submit` ·
 `GET notifications` · `POST notifications/read`
 
 `:id` nhận cả `wg_…` và UUID. Realtime vẫn là WebSocket `/ws?token=<access token>` với tên event theo
 hợp đồng: `message` · `read` · `notification` · `presence` · `user` · `reload` (`typing`,
 `message.deleted` là mở rộng của Chat).
 
-FE gửi `team_id` trong `values` của `POST forms/create_task/submit` — Chat **không diễn giải**, chuyển
-nguyên sang CMS trong `form.submit.values`.
+| API | Điểm cần biết |
+|---|---|
+| `POST groups/:id/messages` | `mentions` (actorId[]), `mentionAll` (chỉ admin / trợ lý, khác → `403 mention_all_forbidden`). Nhóm `dm` → `403 bot_dm_read_only` |
+| `POST groups/:id/pin` | `{"pinned": true\|false}` — ghim **riêng người gọi** (`conversation_members.pinned_at`); `reload` `group.pinned` cho các tab của chính họ |
+| `POST groups/:id/read` | **bắt buộc** `messageId` — đánh dấu đọc tới tin đó (về 0 cả `unreadCount` lẫn `mentionCount`) |
+| `POST notifications/read` | `{"ids":[…]}` hoặc `{"all":true}` / body rỗng — chỉ thông báo (chuông), **không** đổi trạng thái đọc của nhóm |
+| `GET bootstrap` | `pinnedChats` (nhóm đã ghim), `chats` (không gồm nhóm đã ghim); `groups[]` có `type`, `avatarUrl`, `mentionCount`, `canMentionAll`, `pinned`, `pinnedAt` |
+| `POST forms/:formId/submit` | nhóm `dm` → `403 bot_dm_read_only` |
+
+FE gửi `teamId`, `normItemId`, `title`, `brief`, `quantity`, `size`, `urgencyCode`… trong `values` của
+`POST forms/create_task/submit` — Chat **không diễn giải**, chuyển nguyên sang CMS trong
+`form.submit.values` (danh sách field, kể cả `useAI`: `docs/frontend.md` › Tạo yêu cầu).
 
 Bộ API `/api/v1/*` (envelope `{data, meta}`) vẫn giữ cho Postman/CLI/dịch vụ nội bộ.
 
@@ -569,9 +611,9 @@ Thư mục `internal/postman/` có **4 file**:
 
 | File | Gửi cho / dùng để |
 |---|---|
-| `chat-service-fe.postman_collection.json` | **đội FE** — `FLOW · Luồng của FE` + `/api/client/v1/chat/*` + mẫu WebSocket |
-| `chat-service-cms.postman_collection.json` | **đội CMS** — `FLOW · Luồng của CMS` + `/bot/v1/*` |
-| `chat-service.postman_collection.json` | nội bộ — bản đầy đủ (83 request, 10 folder) |
+| `chat-service-fe.postman_collection.json` · **Chat Service · A Workspace [FE]** | **đội FE** — `FLOW · Luồng của FE` + `/api/client/v1/chat/*` + mẫu WebSocket |
+| `chat-service-cms.postman_collection.json` · **Chat Service · A Workspace [CMS]** | **đội CMS** — `FLOW · Luồng của CMS` + `/bot/v1/*` |
+| `chat-service.postman_collection.json` · **Chat Service · A Workspace [GRPC]** | nội bộ — bản đầy đủ (89 request, 10 folder) |
 | `chat-service.local.postman_environment.json` | environment dùng chung cho cả 3 |
 
 Hai bản tách **dùng lại đúng các request của bản đầy đủ** (`gen_postman.py --check` đối chiếu, báo
@@ -661,7 +703,7 @@ make postman-flow TOKEN=$(make -s token SUB=demo-an) KEY=$CHAT_SERVICE_KEY STOP=
 Để trống `STOP` thì chạy hết 16 bước. Bước `2.2` cố ý **không** đổi `group_id`: nhóm CMS đẩy
 sang chỉ có thành viên do CMS khai, token của bạn không ở trong đó nên các bước `3.x` sẽ 403.
 
-### 4. Nội dung collection (83 request / 10 folder)
+### 4. Nội dung collection (89 request / 10 folder)
 
 | Folder | Nội dung |
 |---|---|
@@ -672,8 +714,8 @@ sang chỉ có thành viên do CMS khai, token của bạn không ở trong đó
 | `04 · Bot @bot & gửi mẫu` | schema mẫu, `@bot` help, `@bot yeu_cau`, submit mẫu từ form, mẫu đã lưu |
 | `07 · Lỗi & quyền` | 401 thiếu token, 404 id nhóm không có, 403 không phải thành viên, 404 route sai, 400 tin nhắn rỗng |
 | `99 · Dọn dẹp` | rời nhóm / xoá thành viên (chạy sau cùng) |
-| `08 · CMS → Chat (Bot API)` | CMS gọi sang Chat: resolve user, gửi/sửa card, thread, thông báo, đẩy nhóm |
-| `09 · API cho FE (hợp đồng CMS)` | `/api/client/v1/chat/*`: bootstrap, tin nhắn, bấm nút card, gửi form, thông báo |
+| `08 · CMS → Chat (Bot API)` | CMS gọi sang Chat: resolve user, gửi/sửa card (kèm `mentions`), thread, thông báo, đẩy nhóm (kèm `avatarUrl`), tạo chat riêng với bot (`type: "dm"`) |
+| `09 · API cho FE (hợp đồng CMS)` | `/api/client/v1/chat/*`: bootstrap, tin nhắn, nhắc tên (@), ghim / bỏ ghim nhóm, bấm nút card, gửi form, thông báo |
 
 Mỗi folder cần cấu hình khác nhau:
 

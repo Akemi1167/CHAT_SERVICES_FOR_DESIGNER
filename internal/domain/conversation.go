@@ -38,6 +38,39 @@ type Conversation struct {
 
 	// Field tinh toan, khong luu DB.
 	UnreadCount int64 `gorm:"-" json:"unread_count"`
+	// MentionCount = so tin chua doc nhac toi nguoi dang xem (dau "@" canh so chua doc).
+	MentionCount int64 `gorm:"-" json:"mention_count"`
+	// AvatarSet: chi dung khi dong bo tu CMS — true = CMS co gui avatarUrl
+	// (ke ca rong = go avatar), false = khong gui -> giu avatar_url hien tai.
+	AvatarSet bool `gorm:"-" json:"-"`
+}
+
+// CMSTypeDM: cms_info.type cua nhom "chat rieng voi bot" (CMS gui type = "dm").
+const CMSTypeDM = "dm"
+
+// IsBotDM: chat rieng voi bot — chi bot (CMS qua Bot API) gui tin, nguoi dung chi doc.
+func (c *Conversation) IsBotDM() bool {
+	if c == nil || c.CMSInfo == nil {
+		return false
+	}
+	t, _ := c.CMSInfo["type"].(string)
+	return t == CMSTypeDM
+}
+
+// ClientType: loai nhom tra cho UI — "dm" (chat rieng voi bot) hoac "group".
+func (c *Conversation) ClientType() string {
+	if c.IsBotDM() {
+		return CMSTypeDM
+	}
+	return string(ConversationGroup)
+}
+
+// BotID tra botId cua CMS gan voi nhom (cms_info.botId), 0 neu khong co.
+func (c *Conversation) BotID() int64 {
+	if c == nil || c.CMSInfo == nil {
+		return 0
+	}
+	return toInt64(c.CMSInfo["botId"])
 }
 
 func (Conversation) TableName() string { return "conversations" }
@@ -60,6 +93,8 @@ type ConversationMember struct {
 	LastReadMessageID *uuid.UUID `gorm:"type:uuid" json:"last_read_message_id,omitempty"`
 	LastReadAt        *time.Time `json:"last_read_at,omitempty"`
 	Muted             bool       `gorm:"default:false" json:"muted"`
+	// PinnedAt: nguoi nay ghim nhom len dau thanh ben (rieng tung nguoi). nil = khong ghim.
+	PinnedAt *time.Time `json:"pinned_at,omitempty"`
 
 	// Sources / TeamCodes do CMS tinh: team | assistant | manual | invite.
 	Sources   JSONStrings `gorm:"type:jsonb" json:"sources,omitempty"`

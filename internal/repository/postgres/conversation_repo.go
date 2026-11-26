@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -33,6 +34,14 @@ func (r *ConversationRepo) Create(ctx context.Context, c *domain.Conversation) e
 		}
 	}
 	return wrap(r.db(ctx).Create(c).Error, "conversation.create")
+}
+
+func (r *ConversationRepo) GetMeta(ctx context.Context, id uuid.UUID) (*domain.Conversation, error) {
+	var c domain.Conversation
+	if err := r.db(ctx).First(&c, "id = ?", id).Error; err != nil {
+		return nil, mapErr(err, apperr.ErrConvNotFound)
+	}
+	return &c, nil
 }
 
 func (r *ConversationRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Conversation, error) {
@@ -198,6 +207,52 @@ func (r *ConversationRepo) UnreadCounts(ctx context.Context, userID uuid.UUID, c
 		GROUP BY m.conversation_id`, userID, convIDs, userID).Scan(&rows).Error
 	if err != nil {
 		return nil, wrap(err, "conversation.unreadCounts")
+	}
+	for _, row := range rows {
+		result[row.ConversationID] = row.Cnt
+	}
+	return result, nil
+}
+
+func (r *ConversationRepo) SetPinned(ctx context.Context, convID, userID uuid.UUID, at *time.Time) error {
+	res := r.db(ctx).Model(&domain.ConversationMember{}).
+		Where("conversation_id = ? AND user_id = ? AND left_at IS NULL", convID, userID).
+		Update("pinned_at", at)
+	if res.Error != nil {
+		return wrap(res.Error, "conversation.setPinned")
+	}
+	if res.RowsAffected == 0 {
+		return apperr.ErrNotMember
+	}
+	return nil
+}
+
+// MentionCounts dem tin chua doc nhac toi user (dau "@" tren danh sach nhom).
+// Dieu kien "chua doc" giong het UnreadCounts; dung index GIN ix_messages_mentions.
+func (r *ConversationRepo) MentionCounts(ctx context.Context, userID uuid.UUID, mentionKey string, convIDs []uuid.UUID) (map[uuid.UUID]int64, error) {
+	result := make(map[uuid.UUID]int64, len(convIDs))
+	if len(convIDs) == 0 || mentionKey == "" {
+		return result, nil
+	}
+	needle, err := json.Marshal([]string{mentionKey})
+	if err != nil {
+		return nil, wrap(err, "conversation.mentionCounts")
+	}
+	var rows []unreadRow
+	err = r.db(ctx).Raw(`
+		SELECT m.conversation_id AS conversation_id, COUNT(*) AS cnt
+		FROM messages m
+		JOIN conversation_members cm
+		  ON cm.conversation_id = m.conversation_id AND cm.user_id = ? AND cm.left_at IS NULL
+		WHERE m.conversation_id IN ?
+		  AND m.deleted_at IS NULL
+		  AND m.mentions IS NOT NULL
+		  AND m.mentions @> ?::jsonb
+		  AND (cm.last_read_at IS NULL OR m.created_at > cm.last_read_at)
+		  AND (m.sender_id IS NULL OR m.sender_id <> ?)
+		GROUP BY m.conversation_id`, userID, convIDs, string(needle), userID).Scan(&rows).Error
+	if err != nil {
+		return nil, wrap(err, "conversation.mentionCounts")
 	}
 	for _, row := range rows {
 		result[row.ConversationID] = row.Cnt

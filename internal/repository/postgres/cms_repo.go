@@ -75,6 +75,11 @@ func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Convers
 			fields["cms_info"] = in.CMSInfo
 			changed = changed || !sameJSONMap(existing.CMSInfo, in.CMSInfo)
 		}
+		// AvatarURL nil = CMS khong gui -> giu nguyen; "" = go avatar.
+		if in.AvatarSet {
+			fields["avatar_url"] = in.AvatarURL
+			changed = changed || in.AvatarURL != existing.AvatarURL
+		}
 		if uerr := r.db(ctx).Model(&domain.Conversation{}).
 			Where("id = ?", existing.ID).Updates(fields).Error; uerr != nil {
 			return nil, false, wrap(uerr, "conversation.upsertFromCMS.update")
@@ -88,6 +93,9 @@ func (r *ConversationRepo) UpsertFromCMS(ctx context.Context, in *domain.Convers
 		}
 		if in.CMSInfo != nil {
 			existing.CMSInfo = in.CMSInfo
+		}
+		if in.AvatarSet {
+			existing.AvatarURL = in.AvatarURL
 		}
 		return &existing, changed, nil
 

@@ -68,9 +68,14 @@ func (r *MessageRepo) ListSidebar(ctx context.Context, f repository.SidebarFilte
 		args["cur_at"], args["cur_id"] = p.Cursor.CreatedAt, p.Cursor.ID
 	}
 
+	pinFilter := ""
+	if f.ExcludePinnedGroups {
+		pinFilter = " AND my.pinned_at IS NULL"
+	}
+
 	q := `
 WITH my AS (
-	SELECT conversation_id FROM conversation_members
+	SELECT conversation_id, pinned_at FROM conversation_members
 	 WHERE user_id = @uid AND left_at IS NULL
 ),
 agg AS (
@@ -89,7 +94,8 @@ threads AS (
 	       r.conversation_id                 AS conversation_id,
 	       COALESCE(a.last_at, r.created_at) AS last_activity_at,
 	       COALESCE(a.thread_count, 0)       AS thread_count,
-	       COALESCE(a.user_reply_count, 0)   AS user_reply_count
+	       COALESCE(a.user_reply_count, 0)   AS user_reply_count,
+	       NULL::timestamptz                 AS pinned_at
 	  FROM messages r
 	  LEFT JOIN agg a ON a.root_id = r.id
 	 WHERE r.conversation_id IN (SELECT conversation_id FROM my)
@@ -105,9 +111,10 @@ groups AS (
 	                    AND m.thread_id IS NULL AND m.deleted_at IS NULL),
 	                c.created_at) AS last_activity_at,
 	       0 AS thread_count,
-	       0 AS user_reply_count
+	       0 AS user_reply_count,
+	       my.pinned_at AS pinned_at
 	  FROM conversations c
-	 WHERE c.id IN (SELECT conversation_id FROM my)
+	  JOIN my ON my.conversation_id = c.id` + pinFilter + `
 )
 SELECT * FROM (SELECT * FROM threads UNION ALL SELECT * FROM groups) f
 ` + cursor + `
@@ -117,6 +124,29 @@ SELECT * FROM (SELECT * FROM threads UNION ALL SELECT * FROM groups) f
 	var out []repository.SidebarRow
 	if err := r.db(ctx).Raw(q, args).Scan(&out).Error; err != nil {
 		return nil, wrap(err, "message.listSidebar")
+	}
+	return out, nil
+}
+
+func (r *MessageRepo) ListPinnedSidebar(ctx context.Context, userID uuid.UUID) ([]repository.SidebarRow, error) {
+	var out []repository.SidebarRow
+	err := r.db(ctx).Raw(`
+SELECT 'group' AS kind,
+       c.id    AS id,
+       c.id    AS conversation_id,
+       COALESCE((SELECT MAX(m.created_at) FROM messages m
+                  WHERE m.conversation_id = c.id
+                    AND m.thread_id IS NULL AND m.deleted_at IS NULL),
+                c.created_at) AS last_activity_at,
+       0 AS thread_count,
+       0 AS user_reply_count,
+       cm.pinned_at AS pinned_at
+  FROM conversation_members cm
+  JOIN conversations c ON c.id = cm.conversation_id
+ WHERE cm.user_id = ? AND cm.left_at IS NULL AND cm.pinned_at IS NOT NULL
+ ORDER BY cm.pinned_at DESC, c.id DESC`, userID).Scan(&out).Error
+	if err != nil {
+		return nil, wrap(err, "message.listPinnedSidebar")
 	}
 	return out, nil
 }

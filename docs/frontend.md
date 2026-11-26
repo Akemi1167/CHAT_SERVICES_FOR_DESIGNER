@@ -143,6 +143,27 @@ Một nhóm trả về (rút gọn):
 `source`: `local` (nhóm tạo trong Chat) hoặc `cms` (CMS quản lý — FE **không** sửa thành viên).
 Ở chế độ CMS, mỗi thành viên còn có `sources` (`team`/`assistant`/`manual`/`invite`) và `teamCodes`.
 
+Bề mặt (B) — mỗi phần tử `bootstrap.groups[]` (và `chats[].group`) có thêm:
+
+| Field | Ý nghĩa |
+|---|---|
+| `type` | `"group"` = nhóm Web thường · `"dm"` = **chat riêng với bot** (xem dưới) |
+| `avatarUrl` | avatar nhóm do admin / trợ lý đổi trên CMS (URL tuyệt đối). `""` = chưa có → FE vẽ chữ cái đầu tên nhóm |
+
+Đổi avatar nhóm: FE gọi API của **CMS** (`/workspace/groups/:chatId/avatar/presign` → PUT S3 →
+`/confirm`). CMS báo Chat (`PUT /bot/v1/groups/:chatId` hoặc lần poll kế tiếp) → mọi thành viên nhận
+`reload` (`reason: "group.updated"`) → gọi lại `bootstrap` là thấy avatar mới.
+
+#### Chat riêng với bot (`type: "dm"`)
+
+Mỗi người có thể có một "nhóm" chỉ gồm chính mình, nơi bot CMS gửi nhắc việc (task mới, quá hạn,
+xếp hàng, Drive…). Tin đến như mọi nhóm: realtime `message`, đọc bằng `GET …/groups/:id/messages`,
+đánh dấu đọc bằng `POST …/groups/:id/read`, card trong đó vẫn bấm nút được (`/messages/:id/actions`).
+
+FE nên: **ẩn ô nhập tin và nút "Tạo yêu cầu"**, hiện nhãn BOT, avatar `BOT` nếu `avatarUrl` rỗng.
+Server cũng chặn: gửi tin hoặc gửi form vào nhóm `dm` → `403 BOT_DM_READ_ONLY`
+"Chat riêng với bot chỉ nhận thông báo, không gửi tin được". `canMentionAll` luôn `false`.
+
 ---
 
 ### 5. Tin nhắn, reply và thread
@@ -218,13 +239,32 @@ Thanh bên là **một danh sách trộn nhóm và thread**, hoạt động gầ
 có API riêng**: trang đầu nằm sẵn trong `GET /api/client/v1/chat/bootstrap`, cuộn xuống thì lazy load:
 
 ```
-GET /bootstrap                              → me, groups, chats (trang đầu), chatsPageInfo, notifications…
+GET /bootstrap                              → me, groups, pinnedChats, chats (trang đầu), chatsPageInfo, notifications…
 GET /bootstrap?chatCursor=<nextCursor>      → CHỈ {chats, chatsPageInfo} (không tải lại nhóm / thông báo)
     &chatLimit=20                             mặc định 20, tối đa 100
 ```
 
 `chatsPageInfo.hasMore = false` → hết, ngừng lazy load. `groups` vẫn trả đủ (thành viên, `cms.teams`)
-để tra cứu — **vẽ thanh bên bằng `chats`**, không phải `groups`.
+để tra cứu — **vẽ thanh bên bằng `pinnedChats` + `chats`**, không phải `groups`.
+
+**Ghim nhóm** (mỗi người tự ghim, người khác không bị ảnh hưởng):
+
+```
+POST /api/client/v1/chat/groups/:id/pin        {}                 → ghim (mặc định)
+POST /api/client/v1/chat/groups/:id/pin        {"pinned": false}  → bỏ ghim
+→ { "groupId": "4075d650-…", "chatId": "wg_…", "pinned": true, "pinnedAt": "2026-11-26T15:15:52Z" }
+```
+
+- `pinnedChats`: các nhóm đã ghim, **ghim gần nhất trên cùng**, trả đủ (không phân trang), chỉ có ở
+  `bootstrap` trang đầu. Cùng hình dạng dòng `group` của `chats`, kèm `pinned: true`, `pinnedAt`.
+- Nhóm đã ghim **không lặp lại** trong `chats` (kể cả các trang `chatCursor`). Thread của nhóm đã
+  ghim vẫn nằm trong `chats` như thường.
+- `groups[]` và dòng `group` trong `chats` có `pinned` / `pinnedAt`.
+- Ghim lại một nhóm đã ghim = đưa nó lên trên cùng. Không giới hạn số nhóm ghim.
+- Ghim / bỏ ghim → các tab / thiết bị khác của **chính người đó** nhận `reload`
+  `{reason: "group.pinned", conversationId, chatId, pinned, pinnedAt}` → gọi lại `bootstrap`.
+- Nhóm mình không thuộc → `403 NOT_CONVERSATION_MEMBER` / `404 CONVERSATION_NOT_FOUND`.
+  CMS đồng bộ lại nhóm (`groups/refresh`, poll, `PUT`) **không** làm mất ghim.
 
 ```json
 { "chats": [
@@ -245,7 +285,8 @@ GET /bootstrap?chatCursor=<nextCursor>      → CHỈ {chats, chatsPageInfo} (kh
       "lastActivityAt": "2026-11-23T08:53:55Z",
       "group": { …chính nhóm… },
       "lastMessage": { …tin GỐC mới nhất của nhóm… },
-      "unreadCount": 4 }
+      "unreadCount": 4, "mentionCount": 0,
+      "pinned": false, "pinnedAt": null }
   ],
   "chatsPageInfo": { "hasMore": true, "nextCursor": "…" } }
 ```
@@ -334,13 +375,70 @@ Khuyên dùng WebSocket khi socket đang mở (mục 7), REST làm fallback:
 ```
 
 **(B)** `POST /api/client/v1/chat/groups/:id/messages` — cùng ý nghĩa, camelCase:
-`{ "text", "replyToId", "threadRootId", "attachments", "clientMsgId" }`.
+`{ "text", "replyToId", "threadRootId", "attachments", "clientMsgId", "mentions", "mentionAll" }`.
+(A) dùng `mentions` / `mention_all`. Chi tiết nhắc tên: mục [Nhắc tên (@)](#nhắc-tên-) ngay dưới.
 
 > **`client_msg_id` phải duy nhất cho mỗi tin.** Gửi lại đúng giá trị cũ bị coi là retry: server trả
 > tin cũ với `duplicated: true` và **không phát cho ai cả**. Sinh `crypto.randomUUID()` mỗi lần bấm
 > gửi, chỉ giữ nguyên khi **gửi lại chính tin đó** sau khi mất mạng.
 
 Upload tệp là service khác: FE upload xong lấy URL rồi gửi URL trong `attachments`.
+
+#### Nhắc tên (@)
+
+Định danh bằng **`actorId`** (`u_<cmsUserId>`), hiển thị bằng họ tên — không bao giờ nhắc theo
+chuỗi họ tên/username. User chưa có `actorId` (token dev, nhóm nội bộ) thì dùng `id` (UUID).
+
+```json
+POST /api/client/v1/chat/groups/:id/messages
+{ "text": "Nhờ @Trần Designer xem giúp", "threadRootId": "<uuid>",
+  "mentions": ["u_55"], "mentionAll": false, "clientMsgId": "<uuid>" }
+```
+
+Qua WebSocket (khuyên dùng khi socket đang mở) — cùng field, cùng luật:
+
+```json
+// ws://…/api/client/v1/chat/ws?token=…   (camelCase)
+{"id":"c1","type":"message.send","payload":{
+  "groupId":"wg_…","text":"Nhờ @Trần Designer xem giúp","threadRootId":"<uuid>",
+  "mentions":["u_55"],"mentionAll":false,"clientMsgId":"<uuid>"}}
+// ws://…/ws?token=…   (snake_case): "mentions":[…], "mention_all":false
+```
+
+Không được `@all` → frame `error` `{code:"mention_all_forbidden"}` kèm `ref` = `id` request. Thành
+công → `ack` cho người gửi, và mọi người trong nhóm (cả người gửi) nhận frame `message` có
+`mentions`, `mentionAll`, `mentionedMe` tính theo từng người nhận.
+
+| Trường | Server làm gì |
+|---|---|
+| `mentions` | `actorId[]`. Chỉ giữ thành viên nhóm, bỏ chính người gửi, bỏ trùng, tối đa 100. Người ngoài nhóm bị bỏ qua, **không** báo lỗi |
+| `mentionAll` | `@all` → `mentions` = mọi thành viên (trừ người gửi). Chỉ admin / trợ lý của nhóm; người khác → `403 MENTION_ALL_FORBIDDEN` "Chỉ admin / trợ lý được nhắc @all" (tin **không** được tạo) |
+
+Ai được `@all` (server kiểm, FE chỉ dùng để ẩn/hiện dòng `@all`): `role = "admin"`, hoặc admin bot
+sở hữu nhóm (`botAdminOf` chứa `cms.botId`), hoặc trợ lý nhóm (`assistantOf` chứa `chatId`).
+`bootstrap` trả sẵn `groups[].canMentionAll`.
+
+**Tin trả về / realtime `message`** có thêm (chỉ khi tin có nhắc):
+
+```json
+{ "mentions": ["u_55"], "mentionAll": false, "mentionedMe": true }
+```
+
+`mentionedMe` tính theo người đang xem → tô viền nổi bật. Card của CMS cũng có `mentions` (người
+làm, TL, Trợ lý — xem phần tử `{"type":"mentions"}` đầu card); Chat không gửi thêm thông báo cho
+card vì CMS đã gửi.
+
+**Danh sách nhóm**: `groups[]` và dòng `group` trong `chats` có `mentionCount` = số tin **chưa đọc**
+nhắc tới mình → hiện dấu "@" cạnh `unreadCount`. Về 0 khi gọi `POST …/groups/:id/read` tới tin mới
+nhất. Popup gợi ý lấy từ `groups[].members` (`actorId`, `name`, `username`, `avatarUrl`).
+
+**Thông báo**: mỗi người được nhắc nhận 1 frame `notification`
+`"<Người gửi> nhắc đến bạn trong <tên nhóm>: <80 ký tự đầu>"`, `payload.kind = "mention"`, kèm
+`messageId` + `threadRootId` (nếu tin trong thread) để mở đúng chỗ.
+
+**Đổi họ tên trên CMS**: Chat kéo hồ sơ mỗi `CMS_USER_SYNC_INTERVAL` (mặc định 30s) và gửi frame
+`user` `{userId, actorId, name, username, avatarUrl, role, status}` cho người chung nhóm → FE cập
+nhật tên ở chip @ (cả chip trên card cũ, vì chip lấy tên theo `actor`).
 
 #### Các API khác
 
@@ -386,9 +484,30 @@ Card do backend dựng; **FE chỉ render, không tự suy luận quyền**.
 **Tạo yêu cầu**: `POST /api/client/v1/chat/forms/create_task/submit`
 
 ```json
-{ "values": { "kind":"task", "title":"Banner Tết 2027", "teamId":"9", "useAI": false },
-  "context": { "groupId": "<chatId hoặc id nhóm>" } }
+{ "values": { "kind": "task", "teamId": "27", "normItemId": "74",
+              "title": "Banner Tết 2027", "brief": "Tông đỏ vàng, có logo",
+              "quantity": "2", "size": "1200x628", "urgencyCode": "normal", "useAI": false },
+  "context": { "groupId": "<chatId hoặc id nhóm>", "threadRootId": "<tuỳ chọn>" } }
 ```
+
+| Trường | Bắt buộc | Ghi chú |
+|---|---|---|
+| `context.groupId` | ✔ | `wg_…` hoặc UUID nhóm; người gửi phải là thành viên (không thì `403`) |
+| `context.threadRootId` | | UUID tin gốc — gửi từ trong thread thì tin `form_submitted` ghi vào thread đó |
+| `values.kind` | | `"task"` — nên gửi như spec CMS (6.2) |
+| `values.teamId` | ✔ (CMS) | tổ thực hiện, từ `groups[].cms.teams[].id` |
+| `values.normItemId` | | hạng mục định mức (id của CMS) |
+| `values.title` | ✔ (CMS) | tên yêu cầu |
+| `values.brief` | | mô tả |
+| `values.quantity` | | số lượng — chuỗi hay số đều được, Chat giữ nguyên kiểu |
+| `values.size` | | kích thước, vd `"1200x628"` |
+| `values.urgencyCode` | | mức độ gấp, vd `"normal"` (mã do CMS định nghĩa) |
+| `values.useAI` | | bật/tắt AI cho yêu cầu (`true`/`false`) — nằm **trong** `values`, không có object `ai` riêng |
+| `values.assigneeOpenId`, `assigneeName` | | tuỳ chọn theo spec CMS |
+
+Cột "Bắt buộc (CMS)" là CMS kiểm — Chat **không** kiểm `values`, chuyển nguyên từng field (kể
+cả field FE thêm sau này) sang `form.submit.values`. Thiếu/sai thì CMS trả `toast.type: "error"`
++ `closeForm: false`.
 
 CMS trả `ok: true` → server ghi 1 tin `type: "system"` vào nhóm (vào thread nếu gửi
 `context.threadRootId`): `text` = `"<tên> · <toast.text>"`, `metadata.kind = "form_submitted"`,
@@ -481,7 +600,7 @@ Nhận `ready` là kết nối thành công — **frame này nói rõ tab đang 
 | `typing` | người khác đang nhập (không gửi lại cho chính mình) |
 | `presence` | `{user_id, actor_id, presence: "online"\|"offline"\|"off_duty", reason, online}` — `off_duty` là nghỉ theo lịch (hiện chữ OFF cạnh tên), kèm `reason` |
 | `notification` | thông báo riêng cho mình: `{id, text, read, createdAt, messageId, conversationId, groupId, threadRootId}` — có `threadRootId` thì mở thread đó rồi cuộn tới `messageId` (card của một phần khi chia task) |
-| `reload` | cần gọi lại `bootstrap`/danh sách nhóm (được thêm/gỡ khỏi nhóm) |
+| `reload` | cần gọi lại `bootstrap`/danh sách nhóm. `reason`: `group.members_changed` (được thêm/gỡ khỏi nhóm), `group.updated` (tên / avatar / loại nhóm đổi), `group.pinned` (mình ghim / bỏ ghim ở tab khác) |
 
 Luồng gửi lạc quan chuẩn:
 
@@ -618,7 +737,9 @@ Server → Client:
   "reply_to_id":"uuid|null",
   "metadata":{"task_code":"T-100"},    // tuỳ ý, lưu jsonb
   "attachments":[{"kind":"image","url":"https://...","name":"a.png","mime_type":"image/png","size_bytes":1024,"width":800,"height":600}],
-  "client_msg_id":"uuid-do-FE-sinh"    // nên luôn gửi: chống trùng khi retry
+  "client_msg_id":"uuid-do-FE-sinh",   // nên luôn gửi: chống trùng khi retry
+  "mentions":["u_55"],                 // tuỳ chọn: actorId người được nhắc @
+  "mention_all":false                  // tuỳ chọn: @all (chỉ admin / trợ lý) — dialect client: mentionAll
 }}
 ```
 
@@ -673,6 +794,7 @@ Server → Client:
 | `message.deleted` | tin nhắn bị xoá | `{conversation_id, message_id}` |
 | `message.read` | có người đọc tin | `{conversation_id, message_id, user_id, seen_at}` |
 | `typing` | người khác đang nhập (không gửi lại cho chính người đó) | `{conversation_id, user_id, typing}` |
+| `user` | hồ sơ người chung nhóm đổi trên CMS (họ tên, username, avatar, vai trò) | `{user_id, actor_id, name, username, avatar_url, role, status}` |
 | `presence` | user đổi trạng thái (mở/đóng WebSocket, hoặc CMS báo lịch OFF) | `{user_id, actor_id, presence: "online"\|"offline"\|"off_duty", reason, online}` — chỉ gửi cho người **chung hội thoại** |
 | `conversation.created` / `conversation.updated` | được thêm vào nhóm, nhóm đổi thành viên | object conversation |
 | `bot.submission.stored` | bot đã lưu 1 mẫu | object submission |
@@ -973,14 +1095,20 @@ Vào nhóm bằng link mời: FE gọi CMS `POST /workspace/groups/join {token}`
 | Thời điểm | Request |
 |---|---|
 | Mở app | CMS `auth/login` → CHAT `GET /chat/bootstrap` → mở `/ws` |
-| Mở nhóm | `GET /chat/groups/{id}/messages` → `POST /chat/groups/{id}/read` |
+| Mở nhóm | `GET /chat/groups/{id}/messages` → `POST /chat/groups/{id}/read` `{messageId: <tin mới nhất>}` (về 0 `unreadCount` + dấu "@") |
 | Cuộn lên | `GET …/messages?cursor=<nextCursor>` |
 | Gửi tin | WS `message.send` (fallback `POST /chat/groups/{id}/messages`) |
+| Nhắc tên @ | gửi tin kèm `mentions: [actorId]` / `mentionAll: true` (chỉ khi `groups[].canMentionAll`) |
+| Ghim / bỏ ghim nhóm | `POST /chat/groups/{id}/pin` `{pinned: true\|false}` → vẽ lại từ `pinnedChats` |
 | Mở thread | `GET /chat/messages/{id}/replies?mode=thread` |
-| Thanh bên (nhóm + thread kiểu Lark) | `GET /chat/bootstrap` → `chats`; cuộn tiếp `?chatCursor=` |
+| Thanh bên (nhóm + thread kiểu Lark) | `GET /chat/bootstrap` → `pinnedChats` (trên cùng) + `chats`; cuộn tiếp `?chatCursor=` |
+| Nhóm `type: "dm"` (chat riêng với bot) | chỉ đọc: ẩn ô nhập + "Tạo yêu cầu" (server trả `403 BOT_DM_READ_ONLY`) |
 | Mở chi tiết đơn theo mã | `GET /chat/cards/{code}` → card + `links` (Drive) + `activity` + `discussion` |
 | Tạo yêu cầu | `POST /chat/forms/create_task/submit` |
 | Bấm nút card | `POST /chat/messages/{id}/actions` |
+| Nhận `notification` | hiện toast; `payload.kind = "mention"` = bị nhắc tên |
+| Mở chuông / bấm thông báo | `POST /chat/notifications/read` `{all: true}` hoặc `{ids: [...]}` (không đổi trạng thái đọc của nhóm) |
+| Nhận `user` | cập nhật tên / avatar của người đó (chip @, danh sách thành viên) |
 | Nhận `reload` | `GET /chat/bootstrap` lại |
 | 401 | CMS `auth/refresh` → mở lại `/ws` |
 

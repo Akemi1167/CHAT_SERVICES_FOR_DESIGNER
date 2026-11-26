@@ -110,9 +110,11 @@ func GRPCCode(err error) codes.Code {
 
 // Cac loi dung lai nhieu noi.
 var (
-	ErrUnauthenticated    = Unauthorized("unauthenticated", "Token khong hop le hoac da het han")
-	ErrNotMember          = Forbidden("not_conversation_member", "Ban khong thuoc cuoc hoi thoai nay")
-	ErrConvNotFound       = NotFound("conversation_not_found", "Khong tim thay cuoc hoi thoai")
+	ErrUnauthenticated = Unauthorized("unauthenticated", "Token khong hop le hoac da het han")
+	ErrNotMember       = Forbidden("not_conversation_member", "Ban khong thuoc cuoc hoi thoai nay")
+	ErrConvNotFound    = NotFound("conversation_not_found", "Khong tim thay cuoc hoi thoai")
+	// ErrBotDMReadOnly: chat rieng voi bot chi nhan tin cua bot (CMS chua nhan lenh trong chat rieng).
+	ErrBotDMReadOnly      = Forbidden("bot_dm_read_only", "Chat riêng với bot chỉ nhận thông báo, không gửi tin được")
 	ErrMessageNotFound    = NotFound("message_not_found", "Khong tim thay tin nhan")
 	ErrCardNotFound       = NotFound("card_not_found", "Khong tim thay card voi ma nay")
 	ErrBotNotFound        = NotFound("bot_not_found", "Bot khong ton tai hoac dang tat")

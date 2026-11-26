@@ -75,19 +75,13 @@ func (s *Service) SubmitForm(ctx context.Context, in SubmitFormInput) (*Result, 
 	if err != nil {
 		return nil, err
 	}
+	// Tao yeu cau chi trong nhom Web; chat rieng voi bot chi nhan thong bao.
+	if conv.IsBotDM() {
+		return nil, apperr.ErrBotDMReadOnly
+	}
 
-	fields := map[string]any{
-		"botId":  botIDOf(conv),
-		"formId": in.FormID,
-		"values": map[string]any(in.Values),
-		"actor":  cms.Actor(actor.ActorID, actor.OpenID, actor.CMSUserID, actor.DisplayName),
-		"context": map[string]any{
-			"groupId": groupID(conv),
-		},
-	}
-	if in.ThreadID != nil {
-		fields["context"].(map[string]any)["threadRootId"] = in.ThreadID.String()
-	}
+	fields := formSubmitFields(in, botIDOf(conv), groupID(conv),
+		cms.Actor(actor.ActorID, actor.OpenID, actor.CMSUserID, actor.DisplayName))
 
 	resp, err := s.client.SendEvent(ctx, cms.EventFormSubmit, fields, s.timeout)
 	if err != nil {
@@ -114,6 +108,23 @@ func (s *Service) SubmitForm(ctx context.Context, in SubmitFormInput) (*Result, 
 		})
 	}
 	return &Result{OK: resp.OK, Toast: resp.Toast, CloseForm: resp.CloseForm}, nil
+}
+
+// formSubmitFields dung phan rieng cua event form.submit (khung chung do cms.BuildEvent them).
+// values chuyen NGUYEN (ke ca useAI) — Chat khong doc noi dung.
+func formSubmitFields(in SubmitFormInput, botID, groupID string, actor map[string]any) map[string]any {
+	ctx := map[string]any{"groupId": groupID}
+	if in.ThreadID != nil {
+		ctx["threadRootId"] = in.ThreadID.String()
+	}
+	fields := map[string]any{
+		"botId":   botID,
+		"formId":  in.FormID,
+		"values":  map[string]any(in.Values),
+		"actor":   actor,
+		"context": ctx,
+	}
+	return fields
 }
 
 type ActionInput struct {

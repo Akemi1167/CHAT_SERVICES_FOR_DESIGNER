@@ -1,6 +1,7 @@
 package botapi
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -117,6 +118,8 @@ type postMessageReq struct {
 	CardVersion  int            `json:"cardVersion"`
 	ThreadRootID string         `json:"threadRootId"`
 	Bot          *botInfo       `json:"bot"`
+	// Mentions: actorId CMS tag tren card -> danh dau "@ ban" (Chat khong gui thong bao).
+	Mentions []string `json:"mentions"`
 }
 
 // PostMessage: CMS gui tin / card vao nhom.
@@ -146,6 +149,7 @@ func (h *Handler) PostMessage(c *fiber.Ctx) error {
 			Card:           req.Card,
 			CardVersion:    req.CardVersion,
 			BotSender:      botSender(req.Bot),
+			Mentions:       req.Mentions,
 		})
 		if err != nil {
 			return 0, nil, err
@@ -258,6 +262,7 @@ func (h *Handler) addThreadLine(c *fiber.Ctx, root *domain.Message, req threadRe
 		Card:           req.Card,
 		CardVersion:    req.CardVersion,
 		BotSender:      botSender(req.Bot),
+		Mentions:       req.Mentions,
 	})
 	if err != nil {
 		return nil, err
@@ -319,6 +324,7 @@ type threadReq struct {
 	// thi card bat dau tu 1.
 	Card        domain.JSONMap `json:"card"`
 	CardVersion int            `json:"cardVersion"`
+	Mentions    []string       `json:"mentions"`
 }
 
 // ThreadReply: CMS ghi dong he thong HOAC card vao thread cua card.
@@ -463,9 +469,18 @@ func (h *Handler) CreateNotification(c *fiber.Ctx) error {
 
 // ---------------- groups ----------------
 
+// putGroupReq: cung hinh dang voi 1 nhom cua GET /workspace/groups. Field nhom
+// (type, avatarUrl, botId, teams...) deu TUY CHON — khong gui thi Chat giu nguyen.
 type putGroupReq struct {
-	Name    string `json:"name"`
-	Members []struct {
+	Name           string        `json:"name"`
+	Type           string        `json:"type"`
+	AvatarURL      cms.OptString `json:"avatarUrl"`
+	BotID          int64         `json:"botId"`
+	Timezone       string        `json:"timezone"`
+	IsOrderHub     bool          `json:"isOrderHub"`
+	OrderTeamCodes []string      `json:"orderTeamCodes"`
+	Teams          []cms.Team    `json:"teams"`
+	Members        []struct {
 		OpenID    string   `json:"openId"`
 		CMSUserID int64    `json:"cmsUserId"`
 		Name      string   `json:"name"`
@@ -487,7 +502,22 @@ func (h *Handler) PutGroup(c *fiber.Ctx) error {
 			return 0, nil, apperr.Invalid("invalid_body", "Body khong hop le")
 		}
 
-		group := cms.Group{ChatID: chatID, Name: req.Name}
+		// Ghi lai field nao CMS THAT SU gui, de PUT khong xoa botId / teams / type
+		// cua nhom chi vi CMS chi day danh sach thanh vien.
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(c.Body(), &raw); err != nil {
+			return 0, nil, apperr.Invalid("invalid_body", "Body khong hop le")
+		}
+		present := make(map[string]bool, len(raw))
+		for k := range raw {
+			present[k] = true
+		}
+
+		group := cms.Group{
+			ChatID: chatID, Name: req.Name, Type: req.Type, AvatarURL: req.AvatarURL,
+			BotID: req.BotID, Timezone: req.Timezone, IsOrderHub: req.IsOrderHub,
+			OrderTeamCodes: req.OrderTeamCodes, Teams: req.Teams,
+		}
 		for _, m := range req.Members {
 			group.Members = append(group.Members, cms.Member{
 				Person: cms.Person{
@@ -499,12 +529,13 @@ func (h *Handler) PutGroup(c *fiber.Ctx) error {
 			})
 		}
 
-		conv, err := h.sync.ApplyGroup(c.UserContext(), group)
+		conv, err := h.sync.ApplyGroupPush(c.UserContext(), group, present)
 		if err != nil {
 			return 0, nil, err
 		}
 		return fiber.StatusOK, fiber.Map{
 			"id":          chatID,
+			"type":        conv.ClientType(),
 			"memberCount": len(conv.Members),
 		}, nil
 	})

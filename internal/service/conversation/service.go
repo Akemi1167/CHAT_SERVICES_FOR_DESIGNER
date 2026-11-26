@@ -143,10 +143,27 @@ func (s *Service) List(ctx context.Context, actorID uuid.UUID, f repository.Conv
 	if err != nil {
 		return nil, paging.PageInfo{}, err
 	}
+	mentions, err := s.MentionCounts(ctx, actorID, ids)
+	if err != nil {
+		return nil, paging.PageInfo{}, err
+	}
 	for i := range items {
 		items[i].UnreadCount = unread[items[i].ID]
+		items[i].MentionCount = mentions[items[i].ID]
 	}
 	return items, info, nil
+}
+
+// MentionCounts dem tin chua doc nhac toi actorID (dau "@" canh so chua doc).
+func (s *Service) MentionCounts(ctx context.Context, actorID uuid.UUID, convIDs []uuid.UUID) (map[uuid.UUID]int64, error) {
+	if len(convIDs) == 0 {
+		return map[uuid.UUID]int64{}, nil
+	}
+	me, err := s.store.Users().GetByID(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.Conversations().MentionCounts(ctx, actorID, me.MentionKey(), convIDs)
 }
 
 // EnsureMember la "cong kiem soat quyen" dung chung cho message/bot service.
@@ -239,6 +256,11 @@ func (s *Service) decorate(ctx context.Context, actorID uuid.UUID, conv *domain.
 		return nil, err
 	}
 	conv.UnreadCount = counts[conv.ID]
+	mentions, err := s.MentionCounts(ctx, actorID, []uuid.UUID{conv.ID})
+	if err != nil {
+		return nil, err
+	}
+	conv.MentionCount = mentions[conv.ID]
 	return conv, nil
 }
 

@@ -31,6 +31,8 @@ type sendMessageReq struct {
 	Metadata    domain.JSONMap      `json:"metadata"`
 	Attachments []attachmentPayload `json:"attachments"`
 	ClientMsgID string              `json:"client_msg_id"`
+	Mentions    []string            `json:"mentions"`
+	MentionAll  bool                `json:"mention_all"`
 }
 
 type attachmentPayload struct {
@@ -95,6 +97,8 @@ func (h *MessageHandler) Send(c *fiber.Ctx) error {
 		Metadata:       req.Metadata,
 		Attachments:    attachmentsToDomain(req.Attachments),
 		ClientMsgID:    req.ClientMsgID,
+		Mentions:       req.Mentions,
+		MentionAll:     req.MentionAll,
 	})
 	if err != nil {
 		return httpresp.Fail(c, err)

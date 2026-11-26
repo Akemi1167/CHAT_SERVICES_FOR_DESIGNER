@@ -84,6 +84,10 @@ type sendMessagePayload struct {
 	Attachments     []attachmentPayload `json:"attachments"`
 	ClientMsgID     string              `json:"client_msg_id"`
 	ClientMsgID2    string              `json:"clientMsgId"`
+	// Nhac ten @ (giong REST): actorId nguoi duoc nhac; @all chi admin / tro ly.
+	Mentions    []string `json:"mentions"`
+	MentionAll  bool     `json:"mention_all"`
+	MentionAll2 bool     `json:"mentionAll"`
 }
 
 // normalize gop 2 cach dat ten ve 1 field duy nhat.
@@ -93,6 +97,7 @@ func (p *sendMessagePayload) normalize() {
 	p.ThreadID = firstNonEmpty(p.ThreadRootID, p.ThreadID)
 	p.ReplyToID = firstNonEmpty(p.ReplyToID2, p.ReplyToID)
 	p.ClientMsgID = firstNonEmpty(p.ClientMsgID2, p.ClientMsgID)
+	p.MentionAll = p.MentionAll || p.MentionAll2
 }
 
 func firstNonEmpty(values ...string) string {

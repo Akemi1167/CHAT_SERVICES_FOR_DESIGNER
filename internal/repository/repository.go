@@ -25,6 +25,9 @@ type MessageFilter struct {
 // chung, moi hoat dong nhat truoc.
 type SidebarFilter struct {
 	UserID uuid.UUID // chi nhom (va thread trong nhom) nguoi nay con la thanh vien
+	// ExcludePinnedGroups: bo nhom nguoi nay da ghim (chung nam o danh sach ghim rieng,
+	// xem ListPinnedSidebar) — tranh hien 2 lan.
+	ExcludePinnedGroups bool
 }
 
 type SidebarKind string
@@ -45,8 +48,9 @@ type SidebarRow struct {
 	ID             uuid.UUID
 	ConversationID uuid.UUID
 	LastActivityAt time.Time
-	ThreadCount    int64 // chi thread: moi tin trong thread
-	UserReplyCount int64 // chi thread: tin nguoi dung ("Chua co phan hoi" khi = 0)
+	ThreadCount    int64      // chi thread: moi tin trong thread
+	UserReplyCount int64      // chi thread: tin nguoi dung ("Chua co phan hoi" khi = 0)
+	PinnedAt       *time.Time // chi group: nguoi xem ghim nhom nay luc nao (nil = khong ghim)
 }
 
 // ReplyMode quyet dinh "reply cua mot tin nhan" nghia la gi:
@@ -124,11 +128,16 @@ type UserRepository interface {
 	ListByOpenIDs(ctx context.Context, openIDs []string) ([]domain.User, error)
 	ListByCMSUserIDs(ctx context.Context, ids []int64) ([]domain.User, error)
 	ListByActorIDs(ctx context.Context, actorIDs []string) ([]domain.User, error)
+	// ListCMSUserIDs tra cms_user_id cua moi user da dong bo tu CMS
+	// (lan dong bo ho so dau tien tai lai theo danh sach nay).
+	ListCMSUserIDs(ctx context.Context) ([]int64, error)
 }
 
 type ConversationRepository interface {
 	Create(ctx context.Context, c *domain.Conversation) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Conversation, error)
+	// GetMeta tra nhom KHONG kem thanh vien (nhe — dung tren duong gui tin).
+	GetMeta(ctx context.Context, id uuid.UUID) (*domain.Conversation, error)
 	GetByDirectKey(ctx context.Context, key string) (*domain.Conversation, error)
 	ListByUser(ctx context.Context, userID uuid.UUID, f ConversationFilter, p paging.Page) ([]domain.Conversation, error)
 	UpdateLastMessage(ctx context.Context, convID, msgID uuid.UUID, at time.Time) error
@@ -140,7 +149,12 @@ type ConversationRepository interface {
 	ListMemberUserIDs(ctx context.Context, convID uuid.UUID) ([]uuid.UUID, error)
 
 	MarkRead(ctx context.Context, convID, userID, msgID uuid.UUID, at time.Time) error
+	// SetPinned ghim (at != nil) / bo ghim (at == nil) nhom cho RIENG userID.
+	SetPinned(ctx context.Context, convID, userID uuid.UUID, at *time.Time) error
 	UnreadCounts(ctx context.Context, userID uuid.UUID, convIDs []uuid.UUID) (map[uuid.UUID]int64, error)
+	// MentionCounts dem tin CHUA DOC nhac toi user (mentions chua mentionKey) cho tung
+	// hoi thoai — cung dieu kien "chua doc" voi UnreadCounts.
+	MentionCounts(ctx context.Context, userID uuid.UUID, mentionKey string, convIDs []uuid.UUID) (map[uuid.UUID]int64, error)
 
 	// ListPeerUserIDs: nhung nguoi dung chung it nhat 1 hoi thoai voi user nay
 	// (dung de phat su kien presence dung pham vi).
@@ -175,6 +189,8 @@ type MessageRepository interface {
 	ListByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.Message, error)
 	// ListSidebar: nhom + thread tron chung, moi hoat dong nhat truoc, cursor = (LastActivityAt, ID).
 	ListSidebar(ctx context.Context, f SidebarFilter, p paging.Page) ([]SidebarRow, error)
+	// ListPinnedSidebar: cac NHOM nguoi nay da ghim, ghim gan nhat truoc (khong phan trang).
+	ListPinnedSidebar(ctx context.Context, userID uuid.UUID) ([]SidebarRow, error)
 	// LastRootMessages: tin GOC moi nhat cua tung nhom (dong xem truoc cua dong nhom).
 	LastRootMessages(ctx context.Context, convIDs []uuid.UUID) (map[uuid.UUID]domain.Message, error)
 	// LastInThreads: tin moi nhat cua tung thread (de hien dong xem truoc tren sidebar).

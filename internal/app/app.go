@@ -148,6 +148,8 @@ func New(cfg *config.Config) (*App, error) {
 
 	// 3b) Tich hop CMS: dong bo nhom/user, card, thong bao, outbox.
 	notifSvc := notification.New(store, hub)
+	// Nhac ten @ trong tin nhan -> thong bao "X nhac den ban trong ..." (Chat tu gui).
+	msgSvc.SetNotifier(notifSvc)
 	// Nguong "online da cu" dung chung cho moi cho tra presence ra ngoai.
 	domain.SetPresenceTTL(cfg.Presence.TTL)
 	presenceSvc := presence.New(store, hub)
@@ -220,6 +222,8 @@ func (a *App) Run() error {
 	// Dong bo nhom tu CMS + gui event bat dong bo (chi khi bat tich hop).
 	if a.cfg.CMS.Enabled {
 		g.Go(func() error { return a.cmsSync.Run(gctx) })
+		// Ho ten / vai tro doi tren CMS -> cap nhat actor (chip @ hien ten moi).
+		g.Go(func() error { return a.cmsSync.RunProfileSync(gctx, a.cfg.CMS.UserSyncInterval) })
 		g.Go(func() error { return a.outbox.Run(gctx) })
 	}
 	g.Go(func() error { return a.http.Start() })

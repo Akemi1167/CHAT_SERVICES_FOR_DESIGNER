@@ -20,6 +20,7 @@ viết lại theo đúng những gì Chat **đã cài thật** — có chỗ Cha
 - [Thông báo](#thông-báo)
 - [Trạng thái nhân sự (presence)](#trạng-thái-nhân-sự-presence)
 - [Tra cứu](#tra-cứu)
+- [Chat gọi CMS — CMS cần cung cấp](#chat-gọi-cms--cms-cần-cung-cấp)
 - [Lỗi và retry](#lỗi-và-retry)
 - [Ví dụ trọn vòng: tạo đơn đến khi xong](#ví-dụ-trọn-vòng-tạo-đơn-đến-khi-xong)
 
@@ -69,12 +70,15 @@ dạng `wg_<hex>`.
 
 | Bên CMS vừa xảy ra | Gọi | Kết quả người dùng thấy |
 |---|---|---|
-| Tạo đơn mới | `POST /messages` (kèm `card`) | card đơn hiện trong nhóm, realtime |
+| Tạo đơn mới | `POST /messages` (kèm `card`, `mentions` = người làm / TL / Trợ lý) | card đơn hiện trong nhóm, realtime; người được tag thấy dấu "@" |
 | **Đổi trạng thái đơn** (nhận / tạm dừng / treo / nộp bài / xong / huỷ) | `PATCH /messages/:id` — **một request làm cả 3 việc**: đổi card + ghi thread + thông báo | card cập nhật tại chỗ, thêm dòng diễn biến, người liên quan nhận chuông |
 | Chỉ ghi một dòng diễn biến | `POST /messages/:id/thread` | dòng chữ trong thread của card |
 | **Chia task thành N phần** | `POST /messages/:cardGốc/thread` kèm `card` × (N−1), rồi `PATCH` card gốc | card từng phần hiện trong thread của card gốc |
 | Chỉ thông báo cho ai đó | `POST /notifications` | chuông đỏ + badge của riêng người đó |
 | Đổi tên nhóm / thêm / bớt thành viên | `PUT /groups/:id` | sidebar của người liên quan tự tải lại |
+| Đổi / gỡ avatar nhóm | `PUT /groups/:id` `{avatarUrl, members}` (`null` = gỡ) | avatar mới trên sidebar + đầu nhóm |
+| Tạo chat riêng bot ↔ 1 người | `PUT /groups/:id` `{type: "dm", members: [1 người]}`, rồi `POST /messages` vào đó | nhóm "BOT" chỉ đọc trong sidebar của người đó |
+| Đổi họ tên / avatar / vai trò user | *(không cần gọi)* — Chat tự kéo `GET /workspace/users?updatedSince=` | tên mới trên chip @, card cũ, danh sách thành viên |
 | User mới chưa từng vào Chat | `POST /users/resolve` | có `actorId` để dùng trong `visibleTo` |
 | Ghim / bỏ ghim card quan trọng | `POST /messages/:id/pin` | card hiện ở mục đã ghim |
 | Lịch OFF / hết ca | `PUT /presence` | chữ **OFF** cạnh tên |
@@ -111,6 +115,28 @@ curl -X PUT "$CHAT_API_BASE/groups/wg_95f6fdbfaa17593e" \
 ```json
 { "id": "wg_95f6fdbfaa17593e", "memberCount": 2 }
 ```
+
+Field của nhóm — đều **tuỳ chọn**, cùng tên với `GET /workspace/groups`. **Không gửi = Chat giữ
+nguyên** giá trị đang lưu (trước đây `PUT` chỉ có `name` + `members` sẽ xoá `botId` / `teams` tới lần
+poll sau — đã sửa):
+
+| Field | Ý nghĩa |
+|---|---|
+| `type` | `"group"` (mặc định) · `"dm"` = chat riêng với bot: thành viên là 1 người, chỉ bot gửi tin (qua `POST /messages` như nhóm thường); người dùng gửi tin / form vào đó bị `403 BOT_DM_READ_ONLY` |
+| `avatarUrl` | avatar nhóm (đường dẫn tương đối `/api/avatars/…` được ghép base URL CMS). `null` / `""` = gỡ avatar |
+| `botId`, `timezone`, `isOrderHub`, `orderTeamCodes`, `teams` | như `GET /workspace/groups` |
+
+```json
+// Chat riêng với bot của user 68
+{ "type": "dm", "name": "Designer Bot", "avatarUrl": "/api/avatars/bot.png", "botId": 1,
+  "members": [ { "openId": "local:c6816fc4-…", "cmsUserId": 68, "name": "Trần Designer" } ] }
+```
+
+Response có thêm `type`: `{ "id": "…", "type": "dm", "memberCount": 1 }`. Đổi `avatarUrl` / `type`
+tính là "đổi dữ liệu nhóm" → thành viên nhận `reload` `group.updated`.
+
+`GET /workspace/groups` (Chat poll) cũng đọc `type` và `avatarUrl` của từng nhóm; nhóm không có
+`avatarUrl` trong response thì Chat giữ avatar đang có.
 
 - `openId` là **bắt buộc** — Chat dùng nó để khớp người; `cmsUserId`, `name`, `avatarUrl` dùng để
   tạo/cập nhật hồ sơ nếu người đó chưa có trong Chat.
@@ -195,6 +221,19 @@ curl -X POST "$CHAT_API_BASE/messages" \
 
 > ⚠️ **Khoá của nút là `action`, không phải `actionId`.** Dùng sai tên thì card vẫn tạo được nhưng
 > người bấm sẽ nhận `403 action_not_allowed` — vì Chat không tìm thấy action nào khớp.
+
+**`mentions`** (tuỳ chọn): `actorId[]` được tag trên card (người làm, TL, Trợ lý — bỏ người vừa tạo).
+Chat lưu vào tin và đánh dấu **"@ bạn"** cho họ tới khi đọc (`mentionCount` của nhóm). Chat **không**
+gửi thêm thông báo cho những người này — CMS tự gửi qua `POST /notifications`. Ai không phải thành
+viên nhóm thì bị bỏ qua. `POST /messages/:id/thread` nhận cùng field (card phần chia task, đơn
+Edit / -R). `PATCH` **chưa** nhận `mentions`.
+
+```json
+{ "groupId": "wg_…", "bot": {…}, "card": {…}, "mentions": ["u_55", "u_9", "u_106"] }
+```
+
+Phần tử `{"type":"mentions","items":[…]}` đầu card Chat **giữ nguyên** (không có `visibleTo` nên ai
+cũng thấy); UI vẽ chip theo `actor`, lấy tên mới nhất của actor trong Chat.
 
 **`visibleTo`**: danh sách `actorId` được thấy nút đó. Chat **lọc nút theo từng người xem** trước
 khi gửi xuống UI, và **chặn** action không nằm trong `visibleTo`. Để `null` / bỏ trống = ai cũng
@@ -424,6 +463,22 @@ Dùng khi debug hoặc đối chiếu đồng bộ, không cần cho luồng ch�
 Chat **không lưu file**, chỉ lưu URL do service upload/CDN cung cấp.
 
 ---
+
+## Chat gọi CMS — CMS cần cung cấp
+
+Ngoài các API ở trên (CMS gọi Chat), Chat tự gọi Workspace API của CMS (header `X-Chat-Service-Key`):
+
+| Chat gọi | Khi nào | Dùng để |
+|---|---|---|
+| `GET /workspace/groups` | khởi động + mỗi `CMS_SYNC_INTERVAL` (60s) | nhóm + thành viên; đọc thêm `type` (`dm`) và `avatarUrl` của nhóm |
+| `GET /workspace/users?ids=&openIds=` | user mới đăng nhập / được resolve | hồ sơ đầy đủ (tên, avatar, tổ, trợ lý, admin bot) |
+| `GET /workspace/users?updatedSince=<ISO>&limit=200` | mỗi `CMS_USER_SYNC_INTERVAL` (30s) | hồ sơ **đổi** sau mốc → cập nhật tên / avatar / vai trò, phát `user` cho FE |
+
+`updatedSince` phải trả `{ users: [...], nextSince, hasMore }` (bọc trong `element`), xếp cũ → mới,
+gồm cả user đã xoá (`status: "deleted"`), và tính cả đổi vai trò (thêm/bớt tổ, trợ lý, admin bot
+→ CMS chạm `users.updatedAt`). `hasMore = true` → Chat gọi tiếp ngay bằng `nextSince`. Chat chỉ cập
+nhật user đã có trong Chat, ghi đè nên gọi lặp không sao. Mốc chỉ giữ trong bộ nhớ: khởi động lại
+thì Chat tải lại theo `ids` của mọi actor đang có.
 
 ## Lỗi và retry
 

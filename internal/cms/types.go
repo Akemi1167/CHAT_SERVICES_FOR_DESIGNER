@@ -42,17 +42,28 @@ type Member struct {
 	TeamCodes []string `json:"teamCodes"`
 }
 
+// Loai nhom CMS gui trong Group.Type.
+const (
+	GroupTypeGroup = "group" // nhom Web thuong (mac dinh khi CMS khong gui)
+	GroupTypeDM    = "dm"    // chat rieng voi bot: chi bot gui (nhac nhan task, qua han, Drive...)
+)
+
 // Group = nhom Web (chatId dang wg_<hex>). Chat khong tu tao nhom nay.
 type Group struct {
-	ChatID         string   `json:"chatId"`
-	Name           string   `json:"name"`
-	BotID          int64    `json:"botId"`
-	Timezone       string   `json:"timezone"`
-	IsOrderHub     bool     `json:"isOrderHub"`
-	OrderTeamCodes []string `json:"orderTeamCodes"`
-	Teams          []Team   `json:"teams"`
-	Assistants     []Person `json:"assistants"`
-	Members        []Member `json:"members"`
+	ChatID string `json:"chatId"`
+	Name   string `json:"name"`
+	// Type: "group" (mac dinh) | "dm" (chat rieng voi bot).
+	Type string `json:"type"`
+	// AvatarURL: avatar nhom (admin / tro ly doi tren CMS). Khong gui = giu nguyen,
+	// null / "" = go avatar. Co the la duong dan tuong doi cua CMS.
+	AvatarURL      OptString `json:"avatarUrl"`
+	BotID          int64     `json:"botId"`
+	Timezone       string    `json:"timezone"`
+	IsOrderHub     bool      `json:"isOrderHub"`
+	OrderTeamCodes []string  `json:"orderTeamCodes"`
+	Teams          []Team    `json:"teams"`
+	Assistants     []Person  `json:"assistants"`
+	Members        []Member  `json:"members"`
 }
 
 // Info gom cac truong phu cua nhom, luu vao conversations.cms_info de FE dung lai.
@@ -61,7 +72,12 @@ func (g Group) Info() domain.JSONMap {
 	for _, t := range g.Teams {
 		teams = append(teams, map[string]any{"id": t.ID, "code": t.Code, "name": t.Name})
 	}
+	groupType := GroupTypeGroup
+	if strings.EqualFold(strings.TrimSpace(g.Type), GroupTypeDM) {
+		groupType = GroupTypeDM
+	}
 	return domain.JSONMap{
+		"type":           groupType,
 		"botId":          g.BotID,
 		"timezone":       g.Timezone,
 		"isOrderHub":     g.IsOrderHub,
@@ -84,6 +100,14 @@ type User struct {
 	WebTeams    []any    `json:"webTeams"`
 	AssistantOf []string `json:"assistantOf"`
 	BotAdminOf  []any    `json:"botAdminOf"`
+	UpdatedAt   string   `json:"updatedAt,omitempty"`
+}
+
+// UsersPage: mot trang GET /workspace/users?updatedSince= (cu -> moi, gom ca user da xoa).
+type UsersPage struct {
+	Users     []User `json:"users"`
+	NextSince string `json:"nextSince"`
+	HasMore   bool   `json:"hasMore"`
 }
 
 // ToDomain doi ho so CMS sang user cua Chat (chua co ID noi bo).
@@ -160,4 +184,30 @@ func toAnySlice(in []string) []any {
 		out = append(out, v)
 	}
 	return out
+}
+
+// OptString phan biet 3 trang thai cua mot field JSON: khong gui (Set=false),
+// null hoac "" (Set=true, Value="") va co gia tri.
+type OptString struct {
+	Set   bool
+	Value string
+}
+
+// SetString tao OptString da gan gia tri (dung khi dung Group tu body Bot API).
+func SetString(v string) OptString { return OptString{Set: true, Value: v} }
+
+func (o *OptString) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(b) == "null" {
+		o.Value = ""
+		return nil
+	}
+	return json.Unmarshal(b, &o.Value)
+}
+
+func (o OptString) MarshalJSON() ([]byte, error) {
+	if !o.Set || o.Value == "" {
+		return []byte("null"), nil
+	}
+	return json.Marshal(o.Value)
 }

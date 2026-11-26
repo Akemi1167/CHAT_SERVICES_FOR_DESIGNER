@@ -2,6 +2,7 @@ package clientapi
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -47,6 +48,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/groups/:id/messages", h.ListMessages)
 	router.Post("/groups/:id/messages", h.SendMessage)
 	router.Post("/groups/:id/read", h.MarkRead)
+	router.Post("/groups/:id/pin", h.PinGroup)
 	router.Get("/messages/:id/replies", h.Replies)
 	router.Get("/cards/:code", h.CardThread)
 	router.Post("/messages/:id/actions", h.RunAction)
@@ -92,6 +94,16 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 		return ok(c, fiber.Map{"chats": chats, "chatsPageInfo": chatsPage})
 	}
 
+	// Nhom da ghim: tra du (khong phan trang), ghim gan nhat truoc. Khong lap lai trong chats.
+	pinnedItems, err := h.msgs.ListPinnedSidebar(ctx, me.ID)
+	if err != nil {
+		return fail(c, err)
+	}
+	pinnedChats := make([]fiber.Map, 0, len(pinnedItems))
+	for _, it := range pinnedItems {
+		pinnedChats = append(pinnedChats, h.chatItem(it, me))
+	}
+
 	convs, _, err := h.convs.List(ctx, me.ID, repository.ConversationFilter{}, paging.Normalize("", 100))
 	if err != nil {
 		return fail(c, err)
@@ -114,6 +126,7 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 	return ok(c, fiber.Map{
 		"me":                  userView(me),
 		"groups":              groups,
+		"pinnedChats":         pinnedChats,
 		"chats":               chats,
 		"chatsPageInfo":       chatsPage,
 		"notifications":       clientview.Notifications(notifs),
@@ -191,6 +204,9 @@ type sendMessageReq struct {
 	Attachments  []attachmentPayload `json:"attachments"`
 	Metadata     domain.JSONMap      `json:"metadata"`
 	ClientMsgID  string              `json:"clientMsgId"`
+	// mentions = actorId nguoi duoc nhac @; mentionAll = @all (chi admin / tro ly).
+	Mentions   []string `json:"mentions"`
+	MentionAll bool     `json:"mentionAll"`
 }
 
 type attachmentPayload struct {
@@ -255,6 +271,8 @@ func (h *Handler) SendMessage(c *fiber.Ctx) error {
 		Attachments:    toDomainAttachments(req.Attachments),
 		Metadata:       req.Metadata,
 		ClientMsgID:    req.ClientMsgID,
+		Mentions:       req.Mentions,
+		MentionAll:     req.MentionAll,
 	})
 	if err != nil {
 		return fail(c, err)
@@ -263,6 +281,42 @@ func (h *Handler) SendMessage(c *fiber.Ctx) error {
 		"message":    h.messageView(res.Message, me.ActorID),
 		"duplicated": res.Duplicated,
 	})
+}
+
+type pinGroupReq struct {
+	// Mac dinh true. {"pinned": false} = bo ghim.
+	Pinned *bool `json:"pinned"`
+}
+
+// PinGroup: ghim / bo ghim nhom len dau thanh ben — RIENG nguoi goi.
+func (h *Handler) PinGroup(c *fiber.Ctx) error {
+	me, err := h.currentUser(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	conv, err := h.resolveGroup(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	pinned := true
+	if len(c.Body()) > 0 {
+		var req pinGroupReq
+		if err := c.BodyParser(&req); err != nil {
+			return fail(c, apperr.Invalid("invalid_body", "Body khong hop le"))
+		}
+		if req.Pinned != nil {
+			pinned = *req.Pinned
+		}
+	}
+	at, err := h.convs.SetPinned(c.UserContext(), me.ID, conv.ID, pinned)
+	if err != nil {
+		return fail(c, err)
+	}
+	chatID := ""
+	if conv.ExternalID != nil {
+		chatID = *conv.ExternalID
+	}
+	return ok(c, fiber.Map{"groupId": conv.ID.String(), "chatId": chatID, "pinned": at != nil, "pinnedAt": at})
 }
 
 type markReadReq struct {
@@ -337,39 +391,48 @@ func (h *Handler) chatsPage(c *fiber.Ctx, me *domain.User, p paging.Page) ([]fib
 	}
 	chats := make([]fiber.Map, 0, len(items))
 	for _, it := range items {
-		group := fiber.Map{}
-		if it.Conversation != nil {
-			chatID := ""
-			if it.Conversation.ExternalID != nil {
-				chatID = *it.Conversation.ExternalID
-			}
-			group = fiber.Map{"id": it.Conversation.ID.String(), "chatId": chatID,
-				"name": it.Conversation.Name, "avatarUrl": it.Conversation.AvatarURL}
-		}
-		item := fiber.Map{
-			"type":           string(it.Kind),
-			"group":          group,
-			"lastActivityAt": it.LastActivityAt,
-			"preview":        clientview.Preview(it.LastMessage),
-			"lastMessage":    nil,
-		}
-		if it.LastMessage != nil {
-			item["lastMessage"] = h.messageView(it.LastMessage, me.ActorID)
-		}
-		if it.Kind == repository.SidebarThread {
-			item["id"] = it.Root.ID.String() // = threadRootId
-			item["title"] = clientview.ThreadTitle(it.Root)
-			item["root"] = h.messageView(it.Root, me.ActorID)
-			item["threadCount"] = it.ThreadCount
-			item["replyCount"] = it.UserReplyCount
-		} else {
-			item["id"] = it.Conversation.ID.String()
-			item["title"] = it.Conversation.Name
-			item["unreadCount"] = it.UnreadCount
-		}
-		chats = append(chats, item)
+		chats = append(chats, h.chatItem(it, me))
 	}
 	return chats, pageView(info), nil
+}
+
+// chatItem: 1 dong thanh ben (nhom hoac thread) cho be mat FE.
+func (h *Handler) chatItem(it message.SidebarItem, me *domain.User) fiber.Map {
+	group := fiber.Map{}
+	if it.Conversation != nil {
+		chatID := ""
+		if it.Conversation.ExternalID != nil {
+			chatID = *it.Conversation.ExternalID
+		}
+		group = fiber.Map{"id": it.Conversation.ID.String(), "chatId": chatID,
+			"name": it.Conversation.Name, "avatarUrl": it.Conversation.AvatarURL,
+			"type": it.Conversation.ClientType()}
+	}
+	item := fiber.Map{
+		"type":           string(it.Kind),
+		"group":          group,
+		"lastActivityAt": it.LastActivityAt,
+		"preview":        clientview.Preview(it.LastMessage),
+		"lastMessage":    nil,
+	}
+	if it.LastMessage != nil {
+		item["lastMessage"] = h.messageView(it.LastMessage, me.ActorID)
+	}
+	if it.Kind == repository.SidebarThread {
+		item["id"] = it.Root.ID.String() // = threadRootId
+		item["title"] = clientview.ThreadTitle(it.Root)
+		item["root"] = h.messageView(it.Root, me.ActorID)
+		item["threadCount"] = it.ThreadCount
+		item["replyCount"] = it.UserReplyCount
+	} else {
+		item["id"] = it.Conversation.ID.String()
+		item["title"] = it.Conversation.Name
+		item["unreadCount"] = it.UnreadCount
+		item["mentionCount"] = it.MentionCount
+		item["pinned"] = it.PinnedAt != nil
+		item["pinnedAt"] = it.PinnedAt
+	}
+	return item
 }
 
 // CardThread: panel chi tiet 1 don theo ma (card.header.code), vd WEB-20261123-0001.
@@ -536,7 +599,11 @@ func userView(u *domain.User) fiber.Map {
 
 func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.User) fiber.Map {
 	members := make([]fiber.Map, 0, len(conv.Members))
-	for _, m := range conv.Members {
+	var myMember *domain.ConversationMember
+	for i, m := range conv.Members {
+		if m.UserID == me.ID {
+			myMember = &conv.Members[i]
+		}
 		item := fiber.Map{
 			"userId":    m.UserID.String(),
 			"role":      string(m.Role),
@@ -546,6 +613,7 @@ func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.
 		if m.User != nil {
 			item["actorId"] = m.User.ActorID
 			item["name"] = m.User.DisplayName
+			item["username"] = m.User.Username
 			item["avatarUrl"] = m.User.AvatarURL
 			item["presence"] = string(m.User.LivePresence())
 			item["title"] = m.User.DisplayRole()
@@ -558,14 +626,29 @@ func (h *Handler) groupView(c *fiber.Ctx, conv *domain.Conversation, me *domain.
 		chatID = *conv.ExternalID
 	}
 	return fiber.Map{
-		"id":          conv.ID.String(),
-		"chatId":      chatID,
-		"name":        conv.Name,
-		"source":      conv.Source,
-		"unreadCount": conv.UnreadCount,
-		"cms":         map[string]any(conv.CMSInfo),
-		"members":     members,
+		"id":     conv.ID.String(),
+		"chatId": chatID,
+		"name":   conv.Name,
+		// type: "group" | "dm" (chat rieng voi bot — an o nhap tin, nut "Tao yeu cau").
+		"type":         conv.ClientType(),
+		"avatarUrl":    conv.AvatarURL,
+		"source":       conv.Source,
+		"unreadCount":  conv.UnreadCount,
+		"mentionCount": conv.MentionCount,
+		"pinned":       myMember != nil && myMember.PinnedAt != nil,
+		"pinnedAt":     pinnedAtOf(myMember),
+		// FE chi hien dong "@all — Nhac ca nhom" khi true (server van kiem lai).
+		"canMentionAll": !conv.IsBotDM() && me.CanMentionAll(conv, myMember),
+		"cms":           map[string]any(conv.CMSInfo),
+		"members":       members,
 	}
+}
+
+func pinnedAtOf(m *domain.ConversationMember) *time.Time {
+	if m == nil {
+		return nil
+	}
+	return m.PinnedAt
 }
 
 // pageView doi pageInfo sang camelCase cho be mat /api/client/v1 (hop dong voi CMS/FE).

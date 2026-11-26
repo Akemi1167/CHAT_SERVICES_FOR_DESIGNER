@@ -21,6 +21,12 @@ type Message struct {
 
 	Metadata JSONMap `gorm:"type:jsonb" json:"metadata,omitempty"`
 
+	// Mentions = khoa nhac ten (MentionKey: actorId, hoac UUID khi user chua co actorId)
+	// cua nguoi duoc nhac @. Da loc: chi thanh vien nhom, bo nguoi gui, bo trung.
+	// MentionAll = nguoi gui dung @all (Mentions da gom moi thanh vien).
+	Mentions   JSONStrings `gorm:"type:jsonb" json:"mentions,omitempty"`
+	MentionAll bool        `gorm:"default:false" json:"mention_all,omitempty"`
+
 	// ---- card abc.card/v1 do CMS dung (Chat chi luu va loc nut theo visibleTo) ----
 	Card        JSONMap `gorm:"type:jsonb" json:"card,omitempty"`
 	CardVersion int     `gorm:"default:0" json:"card_version"`

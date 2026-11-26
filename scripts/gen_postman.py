@@ -25,6 +25,20 @@ ENV_ID = "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e2001"
 FE_ID = "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e1002"
 CMS_ID = "6f1a0c54-3c9f-4f0e-9a2a-1b7c5d0e1003"
 
+# values mau cua form create_task (FE gui, Chat chuyen nguyen sang CMS).
+# Them truong moi vao form: sua o day + docs/frontend.md, khong phai sua Go.
+CREATE_TASK_VALUES_SAMPLE = {
+    "kind": "task",
+    "teamId": "27",
+    "normItemId": "74",
+    "title": "Banner Tết 2027",
+    "brief": "Tông đỏ vàng, có logo",
+    "quantity": "2",
+    "size": "1200x628",
+    "urgencyCode": "normal",
+    "useAI": False,
+}
+
 
 def js(*lines):
     """Script test/prerequest: tra ve dang Postman event."""
@@ -362,9 +376,19 @@ cms_bot = folder(
                                       "title": "Banner Tết 2027",
                                       "status": {"text": "Chưa nhận", "tone": "warning"}},
                            "visibleTo": None,
-                           "elements": [{"type": "button", "text": "Nhận task",
-                                         "action": "accept_task", "visibleTo": ["{{actor_id}}"]}]}},
-            desc="`groupId` nhận cả `wg_…` của CMS lẫn UUID nội bộ. Trả `{messageId, cardVersion}`.",
+                           "elements": [
+                               {"type": "mentions", "items": [
+                                   {"role": "code", "text": "WEB-20261118-0006"},
+                                   {"role": "assignee", "actor": "{{actor_id}}", "name": "Trần Designer",
+                                    "username": "des3"}]},
+                               {"type": "button", "text": "Nhận task",
+                                "action": "accept_task", "visibleTo": ["{{actor_id}}"]}]},
+                  "mentions": ["{{actor_id}}"]},
+            desc="`groupId` nhận cả `wg_…` của CMS lẫn UUID nội bộ. Trả `{messageId, cardVersion}`.\n\n"
+                 "`mentions` (tuỳ chọn) = actorId được tag trên card → Chat đánh dấu \"@ bạn\" "
+                 "(`mentionCount` của nhóm) cho tới khi họ đọc. Chat **không** gửi thông báo cho "
+                 "những người này (CMS đã gửi qua `/bot/v1/notifications`). Người ngoài nhóm bị bỏ qua. "
+                 "`POST /bot/v1/messages/:id/thread` nhận cùng field.",
             auth={"type": "noauth"},
             tests=(OK, 'const d = pm.response.json();',
                    'pm.collectionVariables.set("card_message_id", d.messageId);',
@@ -435,12 +459,23 @@ cms_bot = folder(
             auth={"type": "noauth"},
             tests=(OK,)),
         req("Đẩy nhóm + thành viên", "PUT", "/bot/v1/groups/{{cms_chat_id}}",
-            body={"name": "Nhóm Thiết kế Web",
+            body={"name": "Nhóm Thiết kế Web", "avatarUrl": "/api/avatars/group-web.png",
                   "members": [{"openId": "local:designer-1", "cmsUserId": 68, "name": "Trần Designer",
                                "sources": ["team"], "teamCodes": ["DESIGN"]}]},
-            desc="**Thay thế toàn bộ** danh sách thành viên: ai không còn trong danh sách mất quyền xem nhóm ngay.",
+            desc="**Thay thế toàn bộ** danh sách thành viên: ai không còn trong danh sách mất quyền xem nhóm ngay.\n\n"
+                 "Field nhóm (`type`, `avatarUrl`, `botId`, `teams`…) đều tuỳ chọn — **không gửi = giữ nguyên**. "
+                 "`avatarUrl: null` = gỡ avatar nhóm.",
             auth={"type": "noauth"},
             tests=(OK, 'pm.test("co memberCount", () => pm.expect(pm.response.json()).to.have.property("memberCount"));')),
+        req("Tạo chat riêng với bot (dm)", "PUT", "/bot/v1/groups/dm_{{actor_id}}",
+            body={"type": "dm", "name": "Designer Bot", "avatarUrl": "/api/avatars/bot.png", "botId": 1,
+                  "members": [{"openId": "local:designer-1", "cmsUserId": 68, "name": "Trần Designer"}]},
+            desc="`type: \"dm\"` = chat riêng giữa bot và **1 người** (nhắc nhận task, quá hạn, Drive…). "
+                 "Bot gửi tin vào đó bằng `POST /bot/v1/messages` với `groupId` = chatId này.\n\n"
+                 "Người dùng **không** gửi tin / form vào nhóm dm được: `403 BOT_DM_READ_ONLY`. "
+                 "FE thấy `bootstrap.groups[].type = \"dm\"` để ẩn ô nhập.",
+            auth={"type": "noauth"},
+            tests=(OK, 'pm.test("type = dm", () => pm.expect(pm.response.json().type).to.eql("dm"));')),
         req("Ghim tin nhắn", "POST", "/bot/v1/messages/{{card_message_id}}/pin",
             body={},
             desc="CMS ghim card/tin quan trọng. `{\"pinned\": false}` để bỏ ghim.",
@@ -506,12 +541,18 @@ cms_client = folder(
     [
         req("Bootstrap", "GET", "/api/client/v1/chat/bootstrap",
             desc="Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, "
-                 "kèm `members` + `sources`/`teamCodes`), `chats` (thanh bên kiểu Lark: nhóm + thread "
-                 "trộn chung, trang đầu) + `chatsPageInfo`, `notifications`, `unreadNotifications`.\n\n"
+                 "kèm `members` + `sources`/`teamCodes`), `pinnedChats` (nhóm mình đã ghim, ghim gần nhất "
+                 "trước), `chats` (thanh bên kiểu Lark: nhóm + thread trộn chung, trang đầu, **không gồm "
+                 "nhóm đã ghim**) + `chatsPageInfo`, `notifications`, `unreadNotifications`.\n\n"
+                 "Mỗi `groups[]` có thêm: `type` (`group` | `dm` = chat riêng với bot → ẩn ô nhập), "
+                 "`avatarUrl` (avatar nhóm từ CMS, rỗng = chưa có), `unreadCount`, `mentionCount` "
+                 "(tin chưa đọc nhắc tới mình → dấu \"@\"), `canMentionAll` (hiện dòng `@all`), "
+                 "`pinned` / `pinnedAt`. `members[]` có `actorId`, `name`, `username`, `avatarUrl` — "
+                 "dùng cho popup gợi ý khi gõ `@`.\n\n"
                  "Trang sau: `?chatCursor=<chatsPageInfo.nextCursor>` (xem request lazy load).",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=(OK, 'const el = pm.response.json().element;',
-                   'pm.test("co me + groups", () => pm.expect(el).to.have.keys(["me","groups","chats","chatsPageInfo","notifications","unreadNotifications"]));',
+                   'pm.test("co me + groups", () => pm.expect(el).to.include.all.keys(["me","groups","pinnedChats","chats","chatsPageInfo","notifications","unreadNotifications"]));',
                    'if (el.groups && el.groups[0]) pm.collectionVariables.set("group_id", el.groups[0].chatId || el.groups[0].id);',
                    'pm.collectionVariables.set("chat_cursor", (el.chatsPageInfo || {}).nextCursor || "");')),
         req("Tôi là ai", "GET", "/api/client/v1/chat/auth/me",
@@ -540,6 +581,34 @@ cms_client = folder(
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (token thuoc nhom) hoac 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
+        req("Ghim nhóm", "POST", "/api/client/v1/chat/groups/{{group_id}}/pin",
+            body={"pinned": True},
+            desc="Ghim nhóm lên đầu thanh bên — **riêng người gọi**, người khác không bị ảnh hưởng. "
+                 "`{\"pinned\": false}` = bỏ ghim; body rỗng = ghim. Ghim lại nhóm đã ghim = đưa lên trên cùng.\n\n"
+                 "Sau đó `bootstrap` trả nhóm trong `pinnedChats` (ghim gần nhất trước) và **bỏ** nó khỏi "
+                 "`chats`; `groups[].pinned = true`. Các tab khác của chính người đó nhận `reload` "
+                 "`{reason: \"group.pinned\"}`.",
+            auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
+            tests=('pm.test("200 (OK) / 403 (khong thuoc nhom)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));',)),
+        req("Bỏ ghim nhóm", "POST", "/api/client/v1/chat/groups/{{group_id}}/pin",
+            body={"pinned": False},
+            desc="Bỏ ghim — nhóm quay về `chats`, xếp theo hoạt động gần nhất.",
+            auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
+            tests=('pm.test("200 (OK) / 403 (khong thuoc nhom)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));',)),
+        req("Gửi tin nhắc tên (@)", "POST", "/api/client/v1/chat/groups/{{group_id}}/messages",
+            body={"text": "Nhờ @Trần Designer xem giúp", "mentions": ["{{actor_id}}"],
+                  "mentionAll": False, "clientMsgId": "{{$guid}}"},
+            desc="`mentions` = actorId người được nhắc: Chat chỉ giữ thành viên nhóm, bỏ người gửi, "
+                 "bỏ trùng (tối đa 100), rồi gửi mỗi người 1 thông báo "
+                 "\"<Người gửi> nhắc đến bạn trong <nhóm>: …\".\n\n"
+                 "`mentionAll: true` = @all — chỉ admin / trợ lý của nhóm; người khác nhận "
+                 "`403 MENTION_ALL_FORBIDDEN`. Tin trả về có `mentions`, `mentionAll`, `mentionedMe`; "
+                 "`message.created` sang CMS cũng kèm `mentions`/`mentionAll`.",
+            auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
+            tests=('pm.test("200 (OK) / 403 (khong thuoc nhom / khong duoc @all)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));',)),
         req("Phản hồi của 1 tin nhắn", "GET", "/api/client/v1/chat/messages/{{card_message_id}}/replies",
             query=[("mode", "thread"), ("limit", "50")],
             desc="Trả `root`, `replies` (card đã lọc `visibleTo`), `replyCount`, `threadCount`. "
@@ -554,8 +623,10 @@ cms_client = folder(
                  "`chatCursor = chatsPageInfo.nextCursor`.\n\n"
                  "Có `chatCursor` → **chỉ trả `chats` + `chatsPageInfo`**, không tải lại nhóm / thông báo.\n\n"
                  "Mỗi dòng: `type` (`group`|`thread`), `id`, `title`, `preview` (\"Người gửi: nội dung\"), "
-                 "`lastActivityAt`, `lastMessage`, `group`. Nhóm thêm `unreadCount`; thread thêm `root`, "
-                 "`threadCount`, `replyCount`.",
+                 "`lastActivityAt`, `lastMessage`, `group` (có `type`, `avatarUrl`). Nhóm thêm "
+                 "`unreadCount`, `mentionCount`, `pinned`, `pinnedAt`; thread thêm `root`, `threadCount`, "
+                 "`replyCount`.\n\nNhóm đã ghim không có trong `chats` — chúng nằm ở `pinnedChats` của "
+                 "`bootstrap` trang đầu.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=(OK, 'const el = pm.response.json().element;',
                    'pm.test("chats la mang", () => pm.expect(el.chats).to.be.an("array"));',
@@ -590,10 +661,11 @@ cms_client = folder(
             tests=('pm.test("200 (CMS) hoac 400/403 (fake / khong co quyen)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
         req("Gửi form tạo yêu cầu", "POST", "/api/client/v1/chat/forms/create_task/submit",
-            body={"values": {"kind": "task", "title": "Banner Tết 2027", "teamId": "27", "useAI": False},
+            body={"values": CREATE_TASK_VALUES_SAMPLE,
                   "context": {"groupId": "{{group_id}}"}},
-            desc="FE gửi `teamId` trong `values`; Chat **không diễn giải**, chuyển nguyên sang CMS "
-                 "trong event `form.submit` rồi trả `toast`/`closeForm` cho UI.",
+            desc="FE gửi `teamId`, `normItemId`, `quantity`, `size`, `urgencyCode`… trong `values`; "
+                 "Chat **không diễn giải**, chuyển nguyên sang CMS trong event `form.submit` rồi trả "
+                 "`toast`/`closeForm` cho UI. Gửi trong thread thì thêm `context.threadRootId`.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (OK) / 400 (chua bat CMS) / 403 (token khong thuoc nhom)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',)),
@@ -753,8 +825,8 @@ flow = folder(
                   "Bước này lưu `group_id` = nhóm đầu tiên, và `team_id_cms` = tổ đầu tiên của nhóm đó "
                   "(`groups[].cms.teams[].id`) — bước 4.1 cần đúng tổ **thuộc nhóm này**.",
              tests=(OK, 'const el = pm.response.json().element;',
-                    'pm.test("co me + groups", () => pm.expect(el).to.have.keys('
-                    '["me","groups","chats","chatsPageInfo","notifications","unreadNotifications"]));',
+                    'pm.test("co me + groups", () => pm.expect(el).to.include.all.keys('
+                    '["me","groups","pinnedChats","chats","chatsPageInfo","notifications","unreadNotifications"]));',
                     'const g = (el.groups || [])[0];',
                     'if (g) {',
                     '  pm.collectionVariables.set("group_id", g.chatId || g.id);',
@@ -814,8 +886,8 @@ flow = folder(
 
         # ---- 4 · vong doi mot don ----
         step("4.1", "FE gửi form tạo đơn", "POST", "/api/client/v1/chat/forms/create_task/submit",
-             body={"values": {"kind": "task", "title": "FLOW · Banner Tết",
-                              "teamId": "{{team_id_cms}}", "useAI": False},
+             body={"values": {**CREATE_TASK_VALUES_SAMPLE, "title": "FLOW · Banner Tết",
+                              "teamId": "{{team_id_cms}}"},
                    "context": {"groupId": "{{group_id}}"}},
              auth=CMS_AUTH,
              desc="Chiều **FE → Chat → CMS**, gọi **đồng bộ** (chờ CMS trả lời) vì UI cần kết quả ngay.\n\n"
@@ -961,7 +1033,7 @@ Token di qua `?token=` vi browser khong set duoc header khi mo WebSocket. Thu tu
 
 Khong co token rieng cho WebSocket: **dung lai dung access token dang goi REST**.
 
-## 2. Frame gui len (client -> server) — 7 loai
+## 2. Frame gui len (client -> server)
 
 Moi frame la 1 JSON object. `id` do client tu dat, server tra lai trong `ref` cua `ack`/`error`
 de biet ack cua frame nao.
@@ -990,6 +1062,58 @@ lan snake_case (`conversationId` = `conversation_id`, `text` = `content`).
   }
 }
 ```
+
+### 2.2b message.send - nhac ten (@)
+
+```json
+{
+  "id": "c1m",
+  "type": "message.send",
+  "payload": {
+    "conversationId": "{{group_id}}",
+    "text": "Nho @Tran Designer xem giup",
+    "mentions": ["{{actor_id}}"],
+    "mentionAll": false,
+    "clientMsgId": "ws-m1"
+  }
+}
+```
+
+`mentions` = **actorId** (`u_<cmsUserId>`) cua nguoi duoc nhac, KHONG phai ho ten. Lay tu
+`bootstrap` -> `groups[].members[].actorId`. User chua co actorId (token dev) thi dung `userId` (UUID).
+Server chi giu thanh vien nhom, bo chinh minh, bo trung, toi da 100. Nguoi ngoai nhom bi bo qua
+(khong bao loi).
+
+Duong noi bo `/ws` dung snake_case: `"mentions": [...]`, `"mention_all": false`.
+
+Ket qua:
+- nguoi gui nhan `ack` (ref = `c1m`);
+- ca nhom nhan frame `message` co `mentions`, `mentionAll`, `mentionedMe` (tinh theo tung nguoi nhan);
+- MOI nguoi duoc nhac nhan them frame `notification` (muc 3.6).
+
+### 2.2c message.send - nhac ca nhom (@all)
+
+```json
+{
+  "id": "c1a",
+  "type": "message.send",
+  "payload": {
+    "conversationId": "{{group_id}}",
+    "text": "@all Chieu nay hop 15h nhe",
+    "mentionAll": true,
+    "clientMsgId": "ws-m2"
+  }
+}
+```
+
+Chi admin / tro ly cua nhom (`bootstrap` -> `groups[].canMentionAll = true`). `mentions` cua tin =
+moi thanh vien tru nguoi gui. Nguoi khac gui:
+
+```json
+{"type":"error","ref":"c1a","payload":{"code":"mention_all_forbidden",
+  "message":"Chỉ admin / trợ lý được nhắc @all"}}
+```
+Tin **khong** duoc tao.
 
 ### 2.3 message.send - tra loi trong thread
 
@@ -1125,8 +1249,11 @@ khi mang chap chon).
   "text":"...","createdAt":"...","clientMsgId":"...",
   "senderId":"...","sender":{"actorId":"u_6","name":"tester","cmsUserId":6,
                              "openId":"...","presence":"online","role":"designer"},
-  "card":{...},"cardVersion":2,"actions":["accept_task"]}}
+  "card":{...},"cardVersion":2,"actions":["accept_task"],
+  "mentions":["u_55"],"mentionAll":false,"mentionedMe":true}}
 ```
+`mentions` / `mentionAll` / `mentionedMe` chi co khi tin co nhac ten. `mentionedMe = true` ->
+to vien noi bat tin. Card cua CMS cung co the co `mentions` (nguoi lam, TL, Tro ly).
 FE **upsert theo `id`**: card doi cung den bang `type: "message"` chu khong co type rieng.
 `card` da loc nut theo `visibleTo` cua chinh nguoi nhan, `actions` la cac action nguoi do
 duoc bam.
@@ -1139,9 +1266,25 @@ duoc bam.
 | `read` | ai do danh dau da doc | `conversationId`, `userId`, `messageId`, `seenAt` |
 | `typing` | ai do dang nhap | `conversationId`, `userId`, `typing` |
 | `presence` | nguoi chung nhom doi trang thai | `actorId`, `userId`, `presence`, `online`, `reason` |
-| `notification` | CMS tao thong bao cho minh | `id`, `text`, `read`, `createdAt`, `messageId` |
-| `user` | ho so nguoi dung doi | ho so dang rut gon |
+| `notification` | CMS tao thong bao cho minh, HOAC minh bi nhac @ (muc 3.6) | `id`, `text`, `read`, `createdAt`, `messageId`, `conversationId`, `groupId`, `threadRootId`, `payload` |
+| `user` | ho so nguoi chung nhom doi tren CMS (ho ten, username, avatar, vai tro) | `userId`, `actorId`, `name`, `username`, `avatarUrl`, `role`, `status` — cap nhat ten tren chip @ |
 | `reload` | nhom doi -> tai lai danh sach | `reason` (`group.members_changed` khi them/bot thanh vien, `group.updated` khi doi ten/cms_info), `conversationId`, `chatId`. **Khong doi gi thi khong ban** — khong phai moi 60s mot lan |
+
+### 3.6 notification - bi nhac ten (@)
+
+Chi gui cho nguoi duoc nhac (khong gui cho nguoi gui):
+
+```json
+{"type":"notification","payload":{
+  "id":"...","text":"An nhắc đến bạn trong Nhóm Web: Nho @Tran Designer xem giup",
+  "read":false,"createdAt":"...",
+  "messageId":"<id tin>","conversationId":"...","groupId":"wg_...",
+  "threadRootId":"<chi khi tin nam trong thread>",
+  "payload":{"kind":"mention","mentionAll":false}}}
+```
+`payload.kind = "mention"` de phan biet voi thong bao cua CMS. Bam vao: mo `groupId`, co
+`threadRootId` thi mo thread do, roi cuon toi `messageId`. Nguoi dang offline van thay thong bao
+nay qua `bootstrap` / `GET /chat/notifications`.
 
 ### 3.5 error - frame bi tu choi
 
@@ -1163,6 +1306,8 @@ duoc bam.
 | `type` khong biet | `error` `unknown_frame_type` |
 | Gui lai cung `clientMsgId` | `ack` voi `duplicated: true`, khong tao tin moi |
 | `text` rong va khong co attachment | `error` `empty_message` |
+| `mentionAll: true` ma khong phai admin / tro ly | `error` `mention_all_forbidden`, tin khong duoc tao |
+| `mentions` chua nguoi ngoai nhom / chinh minh | bo qua nguoi do, tin van gui binh thuong |
 | Gui `typing` | khong co ack — dung cho la loi |
 | Khong hoat dong lau | server tu gui WebSocket **ping** moi `WS_PING_INTERVAL` (25s); client khong tra pong trong `WS_READ_TIMEOUT` (90s) thi bi dong |
 | Mat ket noi | Pub/Sub la at-most-once: **goi lai REST** `GET /groups/:id/messages?cursor=` de dong bo, dung trong cho event bu |
@@ -1197,7 +1342,7 @@ websocket = folder("10 · WebSocket & gRPC (mẫu frame)", WS_DOC, [
 collection = {
     "info": {
         "_postman_id": COLLECTION_ID,
-        "name": "Chat Service · ABC Workspace",
+        "name": "Chat Service · A Workspace [GRPC]",
         "description": DESCRIPTION,
         "schema": SCHEMA,
     },
@@ -1335,8 +1480,8 @@ flow_fe = folder(
                   "**đừng hardcode**.\n\n"
                   "Ngay sau bước này: mở WebSocket (xem mô tả folder).",
              tests=(OK, 'const el = pm.response.json().element;',
-                    'pm.test("co 6 khoa", () => pm.expect(el).to.have.keys('
-                    '["me","groups","chats","chatsPageInfo","notifications","unreadNotifications"]));',
+                    'pm.test("co du khoa", () => pm.expect(el).to.include.all.keys('
+                    '["me","groups","pinnedChats","chats","chatsPageInfo","notifications","unreadNotifications"]));',
                     'const g = (el.groups || [])[0];',
                     'if (g) {',
                     '  pm.collectionVariables.set("group_id", g.chatId || g.id);',
@@ -1390,8 +1535,7 @@ flow_fe = folder(
              tests=(OK,)),
         step("4.1", "Gửi form tạo đơn", "POST",
              "/api/client/v1/chat/forms/create_task/submit",
-             body={"values": {"kind": "task", "title": "Banner Tết 2027",
-                              "teamId": "{{team_id_cms}}", "useAI": False},
+             body={"values": {**CREATE_TASK_VALUES_SAMPLE, "teamId": "{{team_id_cms}}"},
                    "context": {"groupId": "{{group_id}}"}},
              auth=CMS_AUTH,
              desc="`values` do **CMS** định nghĩa (spec mục 6.2), Chat chuyển nguyên không đọc. "

@@ -346,6 +346,9 @@ nhưng **rỗng**.
 
 | Lùi từ → đến | File chạy | Mất gì |
 |---|---|---|
+| 9 → 8 | `000009.down` | cột `conversation_members.pinned_at` (nhóm mỗi người đã ghim) |
+| 8 → 7 | `000008.down` | cột `messages.mentions`, `messages.mention_all` (ai được nhắc @ trong mọi tin) |
+| 7 → 6 | `000007.down` | chỉ xoá index — **không mất dữ liệu** |
 | 6 → 5 | `000006.down` | cột `messages.pinned`, `pinned_at`, `pinned_by`, `users.presence_reason` |
 | 5 → 4 | `000005.down` | chỉ đổi index — **không mất dữ liệu** |
 | 4 → 3 | `000004.down` | **bảng** `notifications`, `webhook_outbox`, `idempotency_keys` + 13 cột CMS (`card`, `cms_profile`, `external_id`…) |

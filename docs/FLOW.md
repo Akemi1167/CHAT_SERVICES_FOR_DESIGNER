@@ -24,6 +24,7 @@ tham số, response thật, và **lệnh chạy thử dán là chạy**.
   - [G1. Link Google Drive của đơn](#g1-link-google-drive-của-đơn)
 - [Luồng H — Thành viên nhóm thay đổi](#luồng-h--thành-viên-nhóm-thay-đổi)
 - [Luồng I — Thông báo](#luồng-i--thông-báo)
+- [Luồng J — Chat riêng với bot & avatar nhóm](#luồng-j--chat-riêng-với-bot--avatar-nhóm)
 - [6. Chạy thử trọn vòng bằng một script](#6-chạy-thử-trọn-vòng-bằng-một-script)
 - [7. Bảng tra lỗi](#7-bảng-tra-lỗi)
 - [8. Giới hạn khi chạy ở local](#8-giới-hạn-khi-chạy-ở-local)
@@ -369,9 +370,26 @@ FE không tự đoán: mỗi tin nhắn có card đều kèm `actions[]` = đún
 | Nhóm / thành viên đổi | `PUT /bot/v1/groups/:chatId` | không bắt buộc — Chat tự đồng bộ mỗi 60s, gọi để **nhanh hơn** |
 | Cần `actorId` của người chưa vào Chat | `POST /bot/v1/users/resolve` | khi cần điền `visibleTo` |
 | Lịch OFF / hết ca | `PUT /bot/v1/presence` | tuỳ chọn |
+| Tag người làm / TL / Trợ lý trên card | `mentions: [actorId…]` trong `POST /bot/v1/messages` (hoặc `/thread`) | nên — để họ thấy dấu "@" |
 
 **Không cần gọi** khi: người dùng gửi tin nhắn, đánh dấu đã đọc, đang nhập — Chat tự xử lý và
 tự gửi `message.created` sang CMS.
+
+### Nhắc tên (@) — ai làm gì
+
+```
+Tạo đơn:  CMS ──POST /bot/v1/messages {card, mentions:[người làm, TL, Trợ lý]}──► Chat
+            Chat: lưu mentions → "@ bạn" (mentionCount) — KHÔNG gửi thông báo (CMS đã gửi)
+          CMS ──POST /bot/v1/notifications──► người làm, TL, Trợ lý
+
+Nhắn @:   FE ──POST /chat/groups/:id/messages {text, mentions:["u_55"], mentionAll}──► Chat
+            Chat: @all chỉ admin/trợ lý (403) · lọc thành viên · lưu · realtime `message`
+                  · mỗi người 1 `notification` "X nhắc đến bạn trong …"
+          Chat ──message.created {message:{…, mentions, mentionAll}}──► CMS (outbox)
+
+Đổi tên:  Chat ──GET /workspace/users?updatedSince=…──► CMS  (mỗi CMS_USER_SYNC_INTERVAL)
+            Chat: cập nhật actor → realtime `user` → chip @ hiện tên mới
+```
 
 Hai điều CMS **phải lưu**:
 
@@ -410,7 +428,8 @@ Trả về gì:
 |---|---|
 | `me` | `actorId`, `name`, `avatarUrl`, `role`, `profile.webTeams` |
 | `groups[]` | vẽ sidebar: `id`, `chatId`, `name`, `unreadCount`, `members[]`, `cms.teams[]` |
-| `chats[]` + `chatsPageInfo` | **vẽ thanh bên** kiểu Lark: nhóm + thread trộn chung, 20 dòng đầu. Cuộn xuống: `bootstrap?chatCursor=<nextCursor>` ([Luồng D](#thanh-bên-kiểu-lark--chats-trong-bootstrap)) |
+| `pinnedChats[]` | nhóm **mình đã ghim**, ghim gần nhất trên cùng — vẽ trên đầu thanh bên. Ghim / bỏ ghim: `POST /api/client/v1/chat/groups/:id/pin` `{"pinned": true\|false}` (riêng từng người) |
+| `chats[]` + `chatsPageInfo` | **vẽ thanh bên** kiểu Lark: nhóm + thread trộn chung, 20 dòng đầu (không gồm nhóm đã ghim). Cuộn xuống: `bootstrap?chatCursor=<nextCursor>` ([Luồng D](#thanh-bên-kiểu-lark--chats-trong-bootstrap)) |
 | `notifications[]` | 30 thông báo mới nhất |
 | `unreadNotifications` | số cho badge |
 
@@ -610,8 +629,9 @@ xem [G1](#g1-link-google-drive-của-đơn).
 FE  ──1──► CMS   GET /workspace/teams… (chọn tổ, gợi ý người nhận)      [API của CMS]
 
 FE  ──2──► CHAT  POST /api/client/v1/chat/forms/create_task/submit
-                   {values:{kind,title,brief,teamId,useAI,assigneeOpenId},
-                    context:{groupId}}
+                   {values:{kind,teamId,normItemId,title,brief,quantity,size,
+                            urgencyCode,useAI,assigneeOpenId},
+                    context:{groupId, threadRootId?}}
 
            CHAT kiểm: token hợp lệ? người gọi ∈ nhóm?  → không thì 403
            CHAT KHÔNG đọc values — chỉ đóng gói rồi ký HMAC
@@ -638,7 +658,9 @@ FE  ◄──8── CHAT  {statusCode:200, element:{ok, toast, closeForm}}
 ```bash
 curl -s -X POST "$BASE/api/client/v1/chat/forms/create_task/submit" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-  -d "{\"values\":{\"kind\":\"task\",\"title\":\"Banner Tết 2027\",\"teamId\":\"$TEAM\",\"useAI\":false},
+  -d "{\"values\":{\"kind\":\"task\",\"teamId\":\"$TEAM\",\"normItemId\":\"74\",
+                 \"title\":\"Banner Tết 2027\",\"brief\":\"Tông đỏ vàng, có logo\",
+                 \"quantity\":\"2\",\"size\":\"1200x628\",\"urgencyCode\":\"normal\",\"useAI\":false},
        \"context\":{\"groupId\":\"$GROUP\"}}" | python3 -m json.tool
 ```
 
@@ -902,7 +924,8 @@ curl -s -X PUT "$BASE/bot/v1/groups/wg_demo_flow_md" \
 | Thay đổi | `reason` | Gửi cho ai |
 |---|---|---|
 | thêm / bớt thành viên | `group.members_changed` | thành viên hiện tại **∪** người vừa bị gỡ |
-| đổi tên nhóm | `group.updated` | thành viên hiện tại |
+| đổi tên nhóm, `avatarUrl`, `type`, `cms_info` | `group.updated` | thành viên hiện tại |
+| người dùng ghim / bỏ ghim nhóm | `group.pinned` | **chỉ chính người đó** (các tab / thiết bị khác) |
 | không đổi gì | *(không bắn)* | — |
 
 Chạy lại lệnh trên lần nữa với payload y nguyên → **không ai nhận gì**. Trước đây Chat bắn vô
@@ -960,6 +983,41 @@ Thông báo FE nhận (REST lẫn realtime, cùng tên trường):
 cuộn trong timeline nhóm. `groupId` (chatId của CMS) vắng mặt với nhóm tạo trong Chat.
 
 `element.unread` là **tổng** số chưa đọc — dùng cho badge, **không đổi** theo filter `unread=true`.
+
+---
+
+## Luồng J — Chat riêng với bot & avatar nhóm
+
+**Ai gọi**: CMS tạo nhóm / đổi avatar, bot CMS gửi tin, FE chỉ đọc.
+
+```
+Tạo chat riêng:  CMS ──PUT /bot/v1/groups/<chatId> {type:"dm", name, avatarUrl?, botId, members:[1 người]}──► Chat
+                   (hoặc GET /workspace/groups trả nhóm có type:"dm" — Chat tự poll)
+Bot nhắc việc:   CMS ──POST /bot/v1/messages {groupId:<chatId dm>, bot, text|card}──► Chat ══► realtime `message`
+FE:              bootstrap.groups[].type = "dm" → ẩn ô nhập + "Tạo yêu cầu"; vẫn đọc / đánh dấu đọc / bấm nút card
+Người dùng gửi:  POST …/groups/<dm>/messages hoặc forms/:id/submit → 403 BOT_DM_READ_ONLY
+
+Đổi avatar nhóm: FE ──CMS /workspace/groups/:chatId/avatar/presign → S3 → /confirm──► CMS
+                 CMS ──PUT /bot/v1/groups/:chatId {avatarUrl}──► Chat   (hoặc lần poll kế tiếp)
+                 Chat ══► `reload` {reason:"group.updated"} cho thành viên → FE gọi lại bootstrap
+```
+
+`PUT` chỉ cần gửi field thay đổi: thiếu `type` / `avatarUrl` / `botId` / `teams` thì Chat **giữ
+nguyên** giá trị đang có. `avatarUrl: null` = gỡ avatar.
+
+```bash
+# CMS tạo chat riêng với bot cho tester (cmsUserId 6)
+curl -s -X PUT "$BASE/bot/v1/groups/dm_u6" \
+  -H "X-Chat-Service-Key: $KEY" -H "Idempotency-Key: $(uuidgen)" -H 'Content-Type: application/json' \
+  -d '{"type":"dm","name":"Designer Bot","avatarUrl":"/api/avatars/bot.png","botId":1,
+       "members":[{"openId":"local:c2749c5b-…","cmsUserId":6,"name":"tester"}]}'
+# → {"id":"dm_u6","type":"dm","memberCount":1}
+
+# Người dùng thử gửi tin vào đó
+curl -s -X POST "$BASE/api/client/v1/chat/groups/dm_u6/messages" -H "Authorization: Bearer $TOK" \
+  -H 'Content-Type: application/json' -d '{"text":"hi bot"}'
+# → 403 {"code":"BOT_DM_READ_ONLY","message":"Chat riêng với bot chỉ nhận thông báo, không gửi tin được"}
+```
 
 ---
 
@@ -1037,6 +1095,8 @@ báo hiện ra theo thời gian thực.
 | 401 | `unauthenticated` | token sai / hết hạn | gọi CMS `auth/refresh`, mở lại WebSocket |
 | 403 | `NOT_CONVERSATION_MEMBER` | không thuộc nhóm | kiểm `groupId`; `bootstrap` chỉ trả nhóm của mình |
 | 403 | `ACTION_NOT_ALLOWED` | action không có trong `visibleTo` | chỉ hiện nút trong `actions[]` |
+| 403 | `BOT_DM_READ_ONLY` | gửi tin / form vào chat riêng với bot (`type: "dm"`) | ẩn ô nhập khi `groups[].type = "dm"` |
+| 403 | `MENTION_ALL_FORBIDDEN` | `mentionAll` mà không phải admin / trợ lý | chỉ hiện `@all` khi `groups[].canMentionAll` |
 | 400 | `cms_disabled` | Chat chạy không có CMS | `CMS_ENABLED=true` |
 | 400 | `empty_message` | không có `text` và `attachments` | — |
 | 404 | `conversation_not_found` | sai id nhóm | — |

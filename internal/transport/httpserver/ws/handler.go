@@ -214,6 +214,8 @@ func (h *Handler) dispatch(ctx context.Context, client *realtime.Client, identit
 			Metadata:       p.Metadata,
 			Attachments:    toDomainAttachments(p.Attachments),
 			ClientMsgID:    p.ClientMsgID,
+			Mentions:       p.Mentions,
+			MentionAll:     p.MentionAll,
 		})
 		if err != nil {
 			h.fail(client, in.ID, err)

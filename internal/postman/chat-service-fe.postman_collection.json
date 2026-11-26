@@ -291,7 +291,7 @@
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
                   "const el = pm.response.json().element;",
-                  "pm.test(\"co 6 khoa\", () => pm.expect(el).to.have.keys([\"me\",\"groups\",\"chats\",\"chatsPageInfo\",\"notifications\",\"unreadNotifications\"]));",
+                  "pm.test(\"co du khoa\", () => pm.expect(el).to.include.all.keys([\"me\",\"groups\",\"pinnedChats\",\"chats\",\"chatsPageInfo\",\"notifications\",\"unreadNotifications\"]));",
                   "const g = (el.groups || [])[0];",
                   "if (g) {",
                   "  pm.collectionVariables.set(\"group_id\", g.chatId || g.id);",
@@ -594,7 +594,7 @@
             "description": "`values` do **CMS** định nghĩa (spec mục 6.2), Chat chuyển nguyên không đọc. `teamId` phải là tổ **thuộc nhóm này** — lấy từ `groups[].cms.teams[].id` ở bước 2.1.\n\n⚠️ **`statusCode: 200` và `ok: true` KHÔNG có nghĩa là tạo được đơn.** Kết quả nghiệp vụ nằm ở `toast.type` và `closeForm`:\n\n```js\nif (el.toast) toast(el.toast.text, el.toast.type);\nif (el.closeForm) closeForm();   // false = chưa xong, giữ form để sửa\n```\n\nGửi tổ không thuộc nhóm → `toast: {type:\"error\", text:\"Chọn tổ thực hiện thuộc nhóm này\"}`, `closeForm: false`.\n\n**Card đơn không đến từ response này.** Nó xuất hiện qua realtime khi CMS đẩy card vào nhóm — FE chỉ cần nghe event `message` và upsert theo `id`.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"values\": {\n    \"kind\": \"task\",\n    \"title\": \"Banner Tết 2027\",\n    \"teamId\": \"{{team_id_cms}}\",\n    \"useAI\": false\n  },\n  \"context\": {\n    \"groupId\": \"{{group_id}}\"\n  }\n}",
+              "raw": "{\n  \"values\": {\n    \"kind\": \"task\",\n    \"teamId\": \"{{team_id_cms}}\",\n    \"normItemId\": \"74\",\n    \"title\": \"Banner Tết 2027\",\n    \"brief\": \"Tông đỏ vàng, có logo\",\n    \"quantity\": \"2\",\n    \"size\": \"1200x628\",\n    \"urgencyCode\": \"normal\",\n    \"useAI\": false\n  },\n  \"context\": {\n    \"groupId\": \"{{group_id}}\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -887,7 +887,7 @@
                 "bootstrap"
               ]
             },
-            "description": "Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, kèm `members` + `sources`/`teamCodes`), `chats` (thanh bên kiểu Lark: nhóm + thread trộn chung, trang đầu) + `chatsPageInfo`, `notifications`, `unreadNotifications`.\n\nTrang sau: `?chatCursor=<chatsPageInfo.nextCursor>` (xem request lazy load).",
+            "description": "Tất cả thứ FE cần khi mở app: `me`, `groups` (chỉ nhóm mình là thành viên, kèm `members` + `sources`/`teamCodes`), `pinnedChats` (nhóm mình đã ghim, ghim gần nhất trước), `chats` (thanh bên kiểu Lark: nhóm + thread trộn chung, trang đầu, **không gồm nhóm đã ghim**) + `chatsPageInfo`, `notifications`, `unreadNotifications`.\n\nMỗi `groups[]` có thêm: `type` (`group` | `dm` = chat riêng với bot → ẩn ô nhập), `avatarUrl` (avatar nhóm từ CMS, rỗng = chưa có), `unreadCount`, `mentionCount` (tin chưa đọc nhắc tới mình → dấu \"@\"), `canMentionAll` (hiện dòng `@all`), `pinned` / `pinnedAt`. `members[]` có `actorId`, `name`, `username`, `avatarUrl` — dùng cho popup gợi ý khi gõ `@`.\n\nTrang sau: `?chatCursor=<chatsPageInfo.nextCursor>` (xem request lazy load).",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -908,7 +908,7 @@
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
                   "const el = pm.response.json().element;",
-                  "pm.test(\"co me + groups\", () => pm.expect(el).to.have.keys([\"me\",\"groups\",\"chats\",\"chatsPageInfo\",\"notifications\",\"unreadNotifications\"]));",
+                  "pm.test(\"co me + groups\", () => pm.expect(el).to.include.all.keys([\"me\",\"groups\",\"pinnedChats\",\"chats\",\"chatsPageInfo\",\"notifications\",\"unreadNotifications\"]));",
                   "if (el.groups && el.groups[0]) pm.collectionVariables.set(\"group_id\", el.groups[0].chatId || el.groups[0].id);",
                   "pm.collectionVariables.set(\"chat_cursor\", (el.chatsPageInfo || {}).nextCursor || \"\");"
                 ]
@@ -1125,6 +1125,183 @@
           ]
         },
         {
+          "name": "Ghim nhóm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/v1/chat/groups/{{group_id}}/pin",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                "v1",
+                "chat",
+                "groups",
+                "{{group_id}}",
+                "pin"
+              ]
+            },
+            "description": "Ghim nhóm lên đầu thanh bên — **riêng người gọi**, người khác không bị ảnh hưởng. `{\"pinned\": false}` = bỏ ghim; body rỗng = ghim. Ghim lại nhóm đã ghim = đưa lên trên cùng.\n\nSau đó `bootstrap` trả nhóm trong `pinnedChats` (ghim gần nhất trước) và **bỏ** nó khỏi `chats`; `groups[].pinned = true`. Các tab khác của chính người đó nhận `reload` `{reason: \"group.pinned\"}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pinned\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cms_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 (OK) / 403 (khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bỏ ghim nhóm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/v1/chat/groups/{{group_id}}/pin",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                "v1",
+                "chat",
+                "groups",
+                "{{group_id}}",
+                "pin"
+              ]
+            },
+            "description": "Bỏ ghim — nhóm quay về `chats`, xếp theo hoạt động gần nhất.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pinned\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cms_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 (OK) / 403 (khong thuoc nhom)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 403]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Gửi tin nhắc tên (@)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/client/v1/chat/groups/{{group_id}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                "v1",
+                "chat",
+                "groups",
+                "{{group_id}}",
+                "messages"
+              ]
+            },
+            "description": "`mentions` = actorId người được nhắc: Chat chỉ giữ thành viên nhóm, bỏ người gửi, bỏ trùng (tối đa 100), rồi gửi mỗi người 1 thông báo \"<Người gửi> nhắc đến bạn trong <nhóm>: …\".\n\n`mentionAll: true` = @all — chỉ admin / trợ lý của nhóm; người khác nhận `403 MENTION_ALL_FORBIDDEN`. Tin trả về có `mentions`, `mentionAll`, `mentionedMe`; `message.created` sang CMS cũng kèm `mentions`/`mentionAll`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Nhờ @Trần Designer xem giúp\",\n  \"mentions\": [\n    \"{{actor_id}}\"\n  ],\n  \"mentionAll\": false,\n  \"clientMsgId\": \"{{$guid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cms_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 (OK) / 403 (khong thuoc nhom / khong duoc @all)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 403]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Phản hồi của 1 tin nhắn",
           "request": {
             "method": "GET",
@@ -1207,7 +1384,7 @@
                 }
               ]
             },
-            "description": "Thanh bên kiểu Lark: `chats` = **nhóm và thread trộn chung**, hoạt động gần nhất trước. Trang đầu nằm sẵn trong `bootstrap`; cuộn xuống thì gọi lại với `chatCursor = chatsPageInfo.nextCursor`.\n\nCó `chatCursor` → **chỉ trả `chats` + `chatsPageInfo`**, không tải lại nhóm / thông báo.\n\nMỗi dòng: `type` (`group`|`thread`), `id`, `title`, `preview` (\"Người gửi: nội dung\"), `lastActivityAt`, `lastMessage`, `group`. Nhóm thêm `unreadCount`; thread thêm `root`, `threadCount`, `replyCount`.",
+            "description": "Thanh bên kiểu Lark: `chats` = **nhóm và thread trộn chung**, hoạt động gần nhất trước. Trang đầu nằm sẵn trong `bootstrap`; cuộn xuống thì gọi lại với `chatCursor = chatsPageInfo.nextCursor`.\n\nCó `chatCursor` → **chỉ trả `chats` + `chatsPageInfo`**, không tải lại nhóm / thông báo.\n\nMỗi dòng: `type` (`group`|`thread`), `id`, `title`, `preview` (\"Người gửi: nội dung\"), `lastActivityAt`, `lastMessage`, `group` (có `type`, `avatarUrl`). Nhóm thêm `unreadCount`, `mentionCount`, `pinned`, `pinnedAt`; thread thêm `root`, `threadCount`, `replyCount`.\n\nNhóm đã ghim không có trong `chats` — chúng nằm ở `pinnedChats` của `bootstrap` trang đầu.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1377,10 +1554,10 @@
                 "submit"
               ]
             },
-            "description": "FE gửi `teamId` trong `values`; Chat **không diễn giải**, chuyển nguyên sang CMS trong event `form.submit` rồi trả `toast`/`closeForm` cho UI.",
+            "description": "FE gửi `teamId`, `normItemId`, `quantity`, `size`, `urgencyCode`… trong `values`; Chat **không diễn giải**, chuyển nguyên sang CMS trong event `form.submit` rồi trả `toast`/`closeForm` cho UI. Gửi trong thread thì thêm `context.threadRootId`.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"values\": {\n    \"kind\": \"task\",\n    \"title\": \"Banner Tết 2027\",\n    \"teamId\": \"27\",\n    \"useAI\": false\n  },\n  \"context\": {\n    \"groupId\": \"{{group_id}}\"\n  }\n}",
+              "raw": "{\n  \"values\": {\n    \"kind\": \"task\",\n    \"teamId\": \"27\",\n    \"normItemId\": \"74\",\n    \"title\": \"Banner Tết 2027\",\n    \"brief\": \"Tông đỏ vàng, có logo\",\n    \"quantity\": \"2\",\n    \"size\": \"1200x628\",\n    \"urgencyCode\": \"normal\",\n    \"useAI\": false\n  },\n  \"context\": {\n    \"groupId\": \"{{group_id}}\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1578,7 +1755,7 @@
     },
     {
       "name": "10 · WebSocket & gRPC (mẫu frame)",
-      "description": "Postman khong import duoc WebSocket tu file v2.1, nen mo tay:\n**New -> WebSocket**, dan URL, **Connect**, roi dan tung khoi JSON ben duoi vao o Message.\n\n## 1. Hai URL\n\n```\nws://localhost:8080/api/client/v1/chat/ws?token={{cms_token}}    <- FE dung cai nay\nws://localhost:8080/ws?token={{token}}                           <- cong cu noi bo\n```\n\nCung mot hub, cung event. Khac o **ten field**: duong FE tra camelCase trung ten voi REST\n(`text`, `createdAt`, `threadRootId`), duong noi bo tra snake_case + nguyen struct domain.\n\nToken di qua `?token=` vi browser khong set duoc header khi mo WebSocket. Thu tu uu tien:\n`?token=` -> `Sec-WebSocket-Protocol` -> header `Authorization`.\n\nKhong co token rieng cho WebSocket: **dung lai dung access token dang goi REST**.\n\n## 2. Frame gui len (client -> server) — 7 loai\n\nMoi frame la 1 JSON object. `id` do client tu dat, server tra lai trong `ref` cua `ack`/`error`\nde biet ack cua frame nao.\n\n`conversationId` nhan **ca UUID lan chatId cua CMS** (`wg_...`). Khoa chap nhan ca camelCase\nlan snake_case (`conversationId` = `conversation_id`, `text` = `content`).\n\n### 2.1 ping - giu ket noi, do RTT\n\n```json\n{\"id\":\"p1\",\"type\":\"ping\"}\n```\n-> `{\"type\":\"pong\",\"ref\":\"p1\",\"payload\":{\"server_now\":\"...\"}}`\n\n### 2.2 message.send - gui tin nhan\n\n```json\n{\n  \"id\": \"c1\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"type\": \"text\",\n    \"text\": \"Tin nhan gui qua WebSocket\",\n    \"clientMsgId\": \"ws-1\"\n  }\n}\n```\n\n### 2.3 message.send - tra loi trong thread\n\n```json\n{\n  \"id\": \"c2\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"text\": \"Phan hoi trong thread\",\n    \"threadRootId\": \"{{message_id}}\",\n    \"clientMsgId\": \"ws-2\"\n  }\n}\n```\n\n### 2.4 message.send - kem anh/tep\n\n```json\n{\n  \"id\": \"c3\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"type\": \"image\",\n    \"text\": \"Anh mau\",\n    \"attachments\": [{\n      \"kind\": \"image\",\n      \"url\": \"https://cdn.example.com/a.png\",\n      \"name\": \"a.png\",\n      \"mime_type\": \"image/png\",\n      \"size_bytes\": 20480,\n      \"width\": 800,\n      \"height\": 600\n    }],\n    \"clientMsgId\": \"ws-3\"\n  }\n}\n```\n\n### 2.5 message.read - danh dau da doc\n\n```json\n{\n  \"id\": \"c4\",\n  \"type\": \"message.read\",\n  \"payload\": {\"conversationId\": \"{{group_id}}\", \"messageId\": \"{{message_id}}\"}\n}\n```\n\n### 2.6 presence.list - ai dang online\n\n```json\n{\"id\":\"p1\",\"type\":\"presence.list\"}\n```\n\nKhong truyen gi = moi nguoi dung chung it nhat 1 nhom voi minh. Gioi han trong 1 nhom:\n\n```json\n{\"id\":\"p2\",\"type\":\"presence.list\",\"payload\":{\"groupId\":\"{{group_id}}\"}}\n```\n\nTra ve `ack` voi `{count, items:[{userId, actorId, name, presence, online, reason?, lastSeenAt?}]}`.\n`presence`: `online` | `offline` | `off_duty`.\n\nEvent `presence` chi ban KHI DOI, nen frame nay dung luc moi mo tab de lay anh chup hien tai.\nDoc tu bang `users` nen chay nhieu pod van dung.\n\n### 2.7 typing - dang nhap\n\n```json\n{\n  \"id\": \"c5\",\n  \"type\": \"typing\",\n  \"payload\": {\"conversationId\": \"{{group_id}}\", \"typing\": true}\n}\n```\nKhong luu DB, **khong co ack**. Chi nhung nguoi khac trong nhom nhan event `typing`.\n\n### 2.8 message.delete - xoa mem\n\n```json\n{\"id\":\"c6\",\"type\":\"message.delete\",\"payload\":{\"messageId\":\"{{message_id}}\"}}\n```\n\n### 2.9 template.send - gui mau cho bot\n\n```json\n{\n  \"id\": \"c7\",\n  \"type\": \"template.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"bot_slug\": \"bot\",\n    \"template_code\": \"yeu_cau\",\n    \"payload\": {\"tieu_de\": \"Banner Tet\", \"to\": \"design\", \"so_luong\": 2, \"dinh_muc\": \"A4\"},\n    \"clientMsgId\": \"ws-4\"\n  }\n}\n```\n\n## 3. Frame nhan ve (server -> client)\n\n### 3.1 ready - ngay sau khi ket noi\n\nDuong FE:\n```json\n{\"type\":\"ready\",\"payload\":{\n  \"userId\":\"6a63be69-...\",\"actorId\":\"u_6\",\"name\":\"tester\",\n  \"role\":\"designer\",\"connId\":\"81f68ee6-...\",\"serverNow\":\"2026-11-20T10:00:00Z\"}}\n```\nDuong noi bo: `conn_id`, `display_name`, `external_id`, `server_now`.\n\n**Nhin frame nay truoc tien**: no cho biet tab dang dang nhap bang AI. Dan sai token\nhoac tool tu gan header `Authorization` cua nguoi khac la thay ngay o day.\n\n### 3.2 ack - rieng cho nguoi vua gui\n\n```json\n{\"type\":\"ack\",\"ref\":\"c1\",\"payload\":{\n  \"client_msg_id\":\"ws-1\",\n  \"message\":{\"id\":\"...\",\"conversationId\":\"...\",\"text\":\"...\",\"createdAt\":\"...\"},\n  \"bot_reply\":null,\"submission\":null,\"duplicated\":false}}\n```\n`duplicated: true` = `clientMsgId` da gui roi, server **khong** tao tin moi (chong gui trung\nkhi mang chap chon).\n\n### 3.3 message - tin moi hoac tin duoc cap nhat\n\n```json\n{\"type\":\"message\",\"eventId\":\"...\",\"conversationId\":\"...\",\"ts\":\"...\",\"payload\":{\n  \"id\":\"...\",\"conversationId\":\"...\",\"type\":\"text\",\"senderType\":\"user\",\n  \"text\":\"...\",\"createdAt\":\"...\",\"clientMsgId\":\"...\",\n  \"senderId\":\"...\",\"sender\":{\"actorId\":\"u_6\",\"name\":\"tester\",\"cmsUserId\":6,\n                             \"openId\":\"...\",\"presence\":\"online\",\"role\":\"designer\"},\n  \"card\":{...},\"cardVersion\":2,\"actions\":[\"accept_task\"]}}\n```\nFE **upsert theo `id`**: card doi cung den bang `type: \"message\"` chu khong co type rieng.\n`card` da loc nut theo `visibleTo` cua chinh nguoi nhan, `actions` la cac action nguoi do\nduoc bam.\n\n### 3.4 Cac event con lai\n\n| `type` | Khi nao | Payload chinh |\n|---|---|---|\n| `message.deleted` | ai do xoa tin | `conversationId`, `messageId` |\n| `read` | ai do danh dau da doc | `conversationId`, `userId`, `messageId`, `seenAt` |\n| `typing` | ai do dang nhap | `conversationId`, `userId`, `typing` |\n| `presence` | nguoi chung nhom doi trang thai | `actorId`, `userId`, `presence`, `online`, `reason` |\n| `notification` | CMS tao thong bao cho minh | `id`, `text`, `read`, `createdAt`, `messageId` |\n| `user` | ho so nguoi dung doi | ho so dang rut gon |\n| `reload` | nhom doi -> tai lai danh sach | `reason` (`group.members_changed` khi them/bot thanh vien, `group.updated` khi doi ten/cms_info), `conversationId`, `chatId`. **Khong doi gi thi khong ban** — khong phai moi 60s mot lan |\n\n### 3.5 error - frame bi tu choi\n\n```json\n{\"type\":\"error\",\"ref\":\"c1\",\"payload\":{\"code\":\"not_conversation_member\",\n  \"message\":\"Ban khong thuoc cuoc hoi thoai nay\"}}\n```\n\n## 4. Cac truong hop hay gap\n\n| Tinh huong | Ket qua |\n|---|---|\n| Thieu `token` | HTTP **401** luc handshake, khong len duoc WebSocket |\n| Token sai / het han | HTTP **401** luc handshake |\n| Khong phai thanh vien nhom | ket noi OK, nhung frame bi tra `error` `not_conversation_member` |\n| `conversationId` khong ton tai | `error` `conversation_not_found` |\n| `conversationId` de trong | `error` `invalid_request` |\n| JSON sai cu phap / payload sai kieu | `error` `invalid_payload` |\n| `type` khong biet | `error` `unknown_frame_type` |\n| Gui lai cung `clientMsgId` | `ack` voi `duplicated: true`, khong tao tin moi |\n| `text` rong va khong co attachment | `error` `empty_message` |\n| Gui `typing` | khong co ack — dung cho la loi |\n| Khong hoat dong lau | server tu gui WebSocket **ping** moi `WS_PING_INTERVAL` (25s); client khong tra pong trong `WS_READ_TIMEOUT` (90s) thi bi dong |\n| Mat ket noi | Pub/Sub la at-most-once: **goi lai REST** `GET /groups/:id/messages?cursor=` de dong bo, dung trong cho event bu |\n\n## 5. gRPC\n\nPostman: **New -> gRPC**, URL `{{grpc_url}}` (`localhost:9090`), metadata\n`authorization: Bearer {{token}}`. Reflection dang bat o local nen Postman tu tai duoc\ndanh sach method (`GRPC_REFLECTION=false` o prod).\n\n| Method | Message mau |\n|---|---|\n| `chat.v1.ChatService/ListConversations` | `{\"page\": {\"limit\": 10}}` |\n| `chat.v1.ChatService/ListMessages` | `{\"conversation_id\": \"{{group_id}}\", \"page\": {\"limit\": 20}}` |\n| `chat.v1.ChatService/SendMessage` | `{\"conversation_id\": \"{{group_id}}\", \"content\": \"Tin qua gRPC\", \"client_msg_id\": \"g-1\"}` |\n| `chat.v1.BotService/ListBotTemplates` | `{\"bot_slug\": \"bot\"}` |\n| `chat.v1.BotService/SubmitBotTemplate` | `{\"bot_slug\": \"bot\", \"template_code\": \"yeu_cau\", \"conversation_id\": \"{{group_id}}\", \"payload_json\": \"{\\\"tieu_de\\\":\\\"Yeu cau tu gRPC\\\",\\\"to\\\":\\\"design\\\",\\\"so_luong\\\":2,\\\"dinh_muc\\\":\\\"A4\\\"}\"}` |\n\n`grpcurl -plaintext localhost:9090 list` de xem toan bo service.\n",
+      "description": "Postman khong import duoc WebSocket tu file v2.1, nen mo tay:\n**New -> WebSocket**, dan URL, **Connect**, roi dan tung khoi JSON ben duoi vao o Message.\n\n## 1. Hai URL\n\n```\nws://localhost:8080/api/client/v1/chat/ws?token={{cms_token}}    <- FE dung cai nay\nws://localhost:8080/ws?token={{token}}                           <- cong cu noi bo\n```\n\nCung mot hub, cung event. Khac o **ten field**: duong FE tra camelCase trung ten voi REST\n(`text`, `createdAt`, `threadRootId`), duong noi bo tra snake_case + nguyen struct domain.\n\nToken di qua `?token=` vi browser khong set duoc header khi mo WebSocket. Thu tu uu tien:\n`?token=` -> `Sec-WebSocket-Protocol` -> header `Authorization`.\n\nKhong co token rieng cho WebSocket: **dung lai dung access token dang goi REST**.\n\n## 2. Frame gui len (client -> server)\n\nMoi frame la 1 JSON object. `id` do client tu dat, server tra lai trong `ref` cua `ack`/`error`\nde biet ack cua frame nao.\n\n`conversationId` nhan **ca UUID lan chatId cua CMS** (`wg_...`). Khoa chap nhan ca camelCase\nlan snake_case (`conversationId` = `conversation_id`, `text` = `content`).\n\n### 2.1 ping - giu ket noi, do RTT\n\n```json\n{\"id\":\"p1\",\"type\":\"ping\"}\n```\n-> `{\"type\":\"pong\",\"ref\":\"p1\",\"payload\":{\"server_now\":\"...\"}}`\n\n### 2.2 message.send - gui tin nhan\n\n```json\n{\n  \"id\": \"c1\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"type\": \"text\",\n    \"text\": \"Tin nhan gui qua WebSocket\",\n    \"clientMsgId\": \"ws-1\"\n  }\n}\n```\n\n### 2.2b message.send - nhac ten (@)\n\n```json\n{\n  \"id\": \"c1m\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"text\": \"Nho @Tran Designer xem giup\",\n    \"mentions\": [\"{{actor_id}}\"],\n    \"mentionAll\": false,\n    \"clientMsgId\": \"ws-m1\"\n  }\n}\n```\n\n`mentions` = **actorId** (`u_<cmsUserId>`) cua nguoi duoc nhac, KHONG phai ho ten. Lay tu\n`bootstrap` -> `groups[].members[].actorId`. User chua co actorId (token dev) thi dung `userId` (UUID).\nServer chi giu thanh vien nhom, bo chinh minh, bo trung, toi da 100. Nguoi ngoai nhom bi bo qua\n(khong bao loi).\n\nDuong noi bo `/ws` dung snake_case: `\"mentions\": [...]`, `\"mention_all\": false`.\n\nKet qua:\n- nguoi gui nhan `ack` (ref = `c1m`);\n- ca nhom nhan frame `message` co `mentions`, `mentionAll`, `mentionedMe` (tinh theo tung nguoi nhan);\n- MOI nguoi duoc nhac nhan them frame `notification` (muc 3.6).\n\n### 2.2c message.send - nhac ca nhom (@all)\n\n```json\n{\n  \"id\": \"c1a\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"text\": \"@all Chieu nay hop 15h nhe\",\n    \"mentionAll\": true,\n    \"clientMsgId\": \"ws-m2\"\n  }\n}\n```\n\nChi admin / tro ly cua nhom (`bootstrap` -> `groups[].canMentionAll = true`). `mentions` cua tin =\nmoi thanh vien tru nguoi gui. Nguoi khac gui:\n\n```json\n{\"type\":\"error\",\"ref\":\"c1a\",\"payload\":{\"code\":\"mention_all_forbidden\",\n  \"message\":\"Chỉ admin / trợ lý được nhắc @all\"}}\n```\nTin **khong** duoc tao.\n\n### 2.3 message.send - tra loi trong thread\n\n```json\n{\n  \"id\": \"c2\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"text\": \"Phan hoi trong thread\",\n    \"threadRootId\": \"{{message_id}}\",\n    \"clientMsgId\": \"ws-2\"\n  }\n}\n```\n\n### 2.4 message.send - kem anh/tep\n\n```json\n{\n  \"id\": \"c3\",\n  \"type\": \"message.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"type\": \"image\",\n    \"text\": \"Anh mau\",\n    \"attachments\": [{\n      \"kind\": \"image\",\n      \"url\": \"https://cdn.example.com/a.png\",\n      \"name\": \"a.png\",\n      \"mime_type\": \"image/png\",\n      \"size_bytes\": 20480,\n      \"width\": 800,\n      \"height\": 600\n    }],\n    \"clientMsgId\": \"ws-3\"\n  }\n}\n```\n\n### 2.5 message.read - danh dau da doc\n\n```json\n{\n  \"id\": \"c4\",\n  \"type\": \"message.read\",\n  \"payload\": {\"conversationId\": \"{{group_id}}\", \"messageId\": \"{{message_id}}\"}\n}\n```\n\n### 2.6 presence.list - ai dang online\n\n```json\n{\"id\":\"p1\",\"type\":\"presence.list\"}\n```\n\nKhong truyen gi = moi nguoi dung chung it nhat 1 nhom voi minh. Gioi han trong 1 nhom:\n\n```json\n{\"id\":\"p2\",\"type\":\"presence.list\",\"payload\":{\"groupId\":\"{{group_id}}\"}}\n```\n\nTra ve `ack` voi `{count, items:[{userId, actorId, name, presence, online, reason?, lastSeenAt?}]}`.\n`presence`: `online` | `offline` | `off_duty`.\n\nEvent `presence` chi ban KHI DOI, nen frame nay dung luc moi mo tab de lay anh chup hien tai.\nDoc tu bang `users` nen chay nhieu pod van dung.\n\n### 2.7 typing - dang nhap\n\n```json\n{\n  \"id\": \"c5\",\n  \"type\": \"typing\",\n  \"payload\": {\"conversationId\": \"{{group_id}}\", \"typing\": true}\n}\n```\nKhong luu DB, **khong co ack**. Chi nhung nguoi khac trong nhom nhan event `typing`.\n\n### 2.8 message.delete - xoa mem\n\n```json\n{\"id\":\"c6\",\"type\":\"message.delete\",\"payload\":{\"messageId\":\"{{message_id}}\"}}\n```\n\n### 2.9 template.send - gui mau cho bot\n\n```json\n{\n  \"id\": \"c7\",\n  \"type\": \"template.send\",\n  \"payload\": {\n    \"conversationId\": \"{{group_id}}\",\n    \"bot_slug\": \"bot\",\n    \"template_code\": \"yeu_cau\",\n    \"payload\": {\"tieu_de\": \"Banner Tet\", \"to\": \"design\", \"so_luong\": 2, \"dinh_muc\": \"A4\"},\n    \"clientMsgId\": \"ws-4\"\n  }\n}\n```\n\n## 3. Frame nhan ve (server -> client)\n\n### 3.1 ready - ngay sau khi ket noi\n\nDuong FE:\n```json\n{\"type\":\"ready\",\"payload\":{\n  \"userId\":\"6a63be69-...\",\"actorId\":\"u_6\",\"name\":\"tester\",\n  \"role\":\"designer\",\"connId\":\"81f68ee6-...\",\"serverNow\":\"2026-11-20T10:00:00Z\"}}\n```\nDuong noi bo: `conn_id`, `display_name`, `external_id`, `server_now`.\n\n**Nhin frame nay truoc tien**: no cho biet tab dang dang nhap bang AI. Dan sai token\nhoac tool tu gan header `Authorization` cua nguoi khac la thay ngay o day.\n\n### 3.2 ack - rieng cho nguoi vua gui\n\n```json\n{\"type\":\"ack\",\"ref\":\"c1\",\"payload\":{\n  \"client_msg_id\":\"ws-1\",\n  \"message\":{\"id\":\"...\",\"conversationId\":\"...\",\"text\":\"...\",\"createdAt\":\"...\"},\n  \"bot_reply\":null,\"submission\":null,\"duplicated\":false}}\n```\n`duplicated: true` = `clientMsgId` da gui roi, server **khong** tao tin moi (chong gui trung\nkhi mang chap chon).\n\n### 3.3 message - tin moi hoac tin duoc cap nhat\n\n```json\n{\"type\":\"message\",\"eventId\":\"...\",\"conversationId\":\"...\",\"ts\":\"...\",\"payload\":{\n  \"id\":\"...\",\"conversationId\":\"...\",\"type\":\"text\",\"senderType\":\"user\",\n  \"text\":\"...\",\"createdAt\":\"...\",\"clientMsgId\":\"...\",\n  \"senderId\":\"...\",\"sender\":{\"actorId\":\"u_6\",\"name\":\"tester\",\"cmsUserId\":6,\n                             \"openId\":\"...\",\"presence\":\"online\",\"role\":\"designer\"},\n  \"card\":{...},\"cardVersion\":2,\"actions\":[\"accept_task\"],\n  \"mentions\":[\"u_55\"],\"mentionAll\":false,\"mentionedMe\":true}}\n```\n`mentions` / `mentionAll` / `mentionedMe` chi co khi tin co nhac ten. `mentionedMe = true` ->\nto vien noi bat tin. Card cua CMS cung co the co `mentions` (nguoi lam, TL, Tro ly).\nFE **upsert theo `id`**: card doi cung den bang `type: \"message\"` chu khong co type rieng.\n`card` da loc nut theo `visibleTo` cua chinh nguoi nhan, `actions` la cac action nguoi do\nduoc bam.\n\n### 3.4 Cac event con lai\n\n| `type` | Khi nao | Payload chinh |\n|---|---|---|\n| `message.deleted` | ai do xoa tin | `conversationId`, `messageId` |\n| `read` | ai do danh dau da doc | `conversationId`, `userId`, `messageId`, `seenAt` |\n| `typing` | ai do dang nhap | `conversationId`, `userId`, `typing` |\n| `presence` | nguoi chung nhom doi trang thai | `actorId`, `userId`, `presence`, `online`, `reason` |\n| `notification` | CMS tao thong bao cho minh, HOAC minh bi nhac @ (muc 3.6) | `id`, `text`, `read`, `createdAt`, `messageId`, `conversationId`, `groupId`, `threadRootId`, `payload` |\n| `user` | ho so nguoi chung nhom doi tren CMS (ho ten, username, avatar, vai tro) | `userId`, `actorId`, `name`, `username`, `avatarUrl`, `role`, `status` — cap nhat ten tren chip @ |\n| `reload` | nhom doi -> tai lai danh sach | `reason` (`group.members_changed` khi them/bot thanh vien, `group.updated` khi doi ten/cms_info), `conversationId`, `chatId`. **Khong doi gi thi khong ban** — khong phai moi 60s mot lan |\n\n### 3.6 notification - bi nhac ten (@)\n\nChi gui cho nguoi duoc nhac (khong gui cho nguoi gui):\n\n```json\n{\"type\":\"notification\",\"payload\":{\n  \"id\":\"...\",\"text\":\"An nhắc đến bạn trong Nhóm Web: Nho @Tran Designer xem giup\",\n  \"read\":false,\"createdAt\":\"...\",\n  \"messageId\":\"<id tin>\",\"conversationId\":\"...\",\"groupId\":\"wg_...\",\n  \"threadRootId\":\"<chi khi tin nam trong thread>\",\n  \"payload\":{\"kind\":\"mention\",\"mentionAll\":false}}}\n```\n`payload.kind = \"mention\"` de phan biet voi thong bao cua CMS. Bam vao: mo `groupId`, co\n`threadRootId` thi mo thread do, roi cuon toi `messageId`. Nguoi dang offline van thay thong bao\nnay qua `bootstrap` / `GET /chat/notifications`.\n\n### 3.5 error - frame bi tu choi\n\n```json\n{\"type\":\"error\",\"ref\":\"c1\",\"payload\":{\"code\":\"not_conversation_member\",\n  \"message\":\"Ban khong thuoc cuoc hoi thoai nay\"}}\n```\n\n## 4. Cac truong hop hay gap\n\n| Tinh huong | Ket qua |\n|---|---|\n| Thieu `token` | HTTP **401** luc handshake, khong len duoc WebSocket |\n| Token sai / het han | HTTP **401** luc handshake |\n| Khong phai thanh vien nhom | ket noi OK, nhung frame bi tra `error` `not_conversation_member` |\n| `conversationId` khong ton tai | `error` `conversation_not_found` |\n| `conversationId` de trong | `error` `invalid_request` |\n| JSON sai cu phap / payload sai kieu | `error` `invalid_payload` |\n| `type` khong biet | `error` `unknown_frame_type` |\n| Gui lai cung `clientMsgId` | `ack` voi `duplicated: true`, khong tao tin moi |\n| `text` rong va khong co attachment | `error` `empty_message` |\n| `mentionAll: true` ma khong phai admin / tro ly | `error` `mention_all_forbidden`, tin khong duoc tao |\n| `mentions` chua nguoi ngoai nhom / chinh minh | bo qua nguoi do, tin van gui binh thuong |\n| Gui `typing` | khong co ack — dung cho la loi |\n| Khong hoat dong lau | server tu gui WebSocket **ping** moi `WS_PING_INTERVAL` (25s); client khong tra pong trong `WS_READ_TIMEOUT` (90s) thi bi dong |\n| Mat ket noi | Pub/Sub la at-most-once: **goi lai REST** `GET /groups/:id/messages?cursor=` de dong bo, dung trong cho event bu |\n\n## 5. gRPC\n\nPostman: **New -> gRPC**, URL `{{grpc_url}}` (`localhost:9090`), metadata\n`authorization: Bearer {{token}}`. Reflection dang bat o local nen Postman tu tai duoc\ndanh sach method (`GRPC_REFLECTION=false` o prod).\n\n| Method | Message mau |\n|---|---|\n| `chat.v1.ChatService/ListConversations` | `{\"page\": {\"limit\": 10}}` |\n| `chat.v1.ChatService/ListMessages` | `{\"conversation_id\": \"{{group_id}}\", \"page\": {\"limit\": 20}}` |\n| `chat.v1.ChatService/SendMessage` | `{\"conversation_id\": \"{{group_id}}\", \"content\": \"Tin qua gRPC\", \"client_msg_id\": \"g-1\"}` |\n| `chat.v1.BotService/ListBotTemplates` | `{\"bot_slug\": \"bot\"}` |\n| `chat.v1.BotService/SubmitBotTemplate` | `{\"bot_slug\": \"bot\", \"template_code\": \"yeu_cau\", \"conversation_id\": \"{{group_id}}\", \"payload_json\": \"{\\\"tieu_de\\\":\\\"Yeu cau tu gRPC\\\",\\\"to\\\":\\\"design\\\",\\\"so_luong\\\":2,\\\"dinh_muc\\\":\\\"A4\\\"}\"}` |\n\n`grpcurl -plaintext localhost:9090 list` de xem toan bo service.\n",
       "item": [
         {
           "name": "Mở trang demo để thử WebSocket thật",

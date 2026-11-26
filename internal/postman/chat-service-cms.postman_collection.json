@@ -884,10 +884,10 @@
                 "messages"
               ]
             },
-            "description": "`groupId` nhận cả `wg_…` của CMS lẫn UUID nội bộ. Trả `{messageId, cardVersion}`.",
+            "description": "`groupId` nhận cả `wg_…` của CMS lẫn UUID nội bộ. Trả `{messageId, cardVersion}`.\n\n`mentions` (tuỳ chọn) = actorId được tag trên card → Chat đánh dấu \"@ bạn\" (`mentionCount` của nhóm) cho tới khi họ đọc. Chat **không** gửi thông báo cho những người này (CMS đã gửi qua `/bot/v1/notifications`). Người ngoài nhóm bị bỏ qua. `POST /bot/v1/messages/:id/thread` nhận cùng field.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"groupId\": \"{{group_id}}\",\n  \"bot\": {\n    \"id\": 1,\n    \"name\": \"Demo Designer Bot\"\n  },\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261118-0006\",\n      \"kind\": \"DESIGN\",\n      \"title\": \"Banner Tết 2027\",\n      \"status\": {\n        \"text\": \"Chưa nhận\",\n        \"tone\": \"warning\"\n      }\n    },\n    \"visibleTo\": null,\n    \"elements\": [\n      {\n        \"type\": \"button\",\n        \"text\": \"Nhận task\",\n        \"action\": \"accept_task\",\n        \"visibleTo\": [\n          \"{{actor_id}}\"\n        ]\n      }\n    ]\n  }\n}",
+              "raw": "{\n  \"groupId\": \"{{group_id}}\",\n  \"bot\": {\n    \"id\": 1,\n    \"name\": \"Demo Designer Bot\"\n  },\n  \"card\": {\n    \"schema\": \"abc.card/v1\",\n    \"header\": {\n      \"code\": \"WEB-20261118-0006\",\n      \"kind\": \"DESIGN\",\n      \"title\": \"Banner Tết 2027\",\n      \"status\": {\n        \"text\": \"Chưa nhận\",\n        \"tone\": \"warning\"\n      }\n    },\n    \"visibleTo\": null,\n    \"elements\": [\n      {\n        \"type\": \"mentions\",\n        \"items\": [\n          {\n            \"role\": \"code\",\n            \"text\": \"WEB-20261118-0006\"\n          },\n          {\n            \"role\": \"assignee\",\n            \"actor\": \"{{actor_id}}\",\n            \"name\": \"Trần Designer\",\n            \"username\": \"des3\"\n          }\n        ]\n      },\n      {\n        \"type\": \"button\",\n        \"text\": \"Nhận task\",\n        \"action\": \"accept_task\",\n        \"visibleTo\": [\n          \"{{actor_id}}\"\n        ]\n      }\n    ]\n  },\n  \"mentions\": [\n    \"{{actor_id}}\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1192,10 +1192,10 @@
                 "{{cms_chat_id}}"
               ]
             },
-            "description": "**Thay thế toàn bộ** danh sách thành viên: ai không còn trong danh sách mất quyền xem nhóm ngay.",
+            "description": "**Thay thế toàn bộ** danh sách thành viên: ai không còn trong danh sách mất quyền xem nhóm ngay.\n\nField nhóm (`type`, `avatarUrl`, `botId`, `teams`…) đều tuỳ chọn — **không gửi = giữ nguyên**. `avatarUrl: null` = gỡ avatar nhóm.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Nhóm Thiết kế Web\",\n  \"members\": [\n    {\n      \"openId\": \"local:designer-1\",\n      \"cmsUserId\": 68,\n      \"name\": \"Trần Designer\",\n      \"sources\": [\n        \"team\"\n      ],\n      \"teamCodes\": [\n        \"DESIGN\"\n      ]\n    }\n  ]\n}",
+              "raw": "{\n  \"name\": \"Nhóm Thiết kế Web\",\n  \"avatarUrl\": \"/api/avatars/group-web.png\",\n  \"members\": [\n    {\n      \"openId\": \"local:designer-1\",\n      \"cmsUserId\": 68,\n      \"name\": \"Trần Designer\",\n      \"sources\": [\n        \"team\"\n      ],\n      \"teamCodes\": [\n        \"DESIGN\"\n      ]\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1215,6 +1215,56 @@
                 "exec": [
                   "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
                   "pm.test(\"co memberCount\", () => pm.expect(pm.response.json()).to.have.property(\"memberCount\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tạo chat riêng với bot (dm)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bot/v1/groups/dm_{{actor_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "v1",
+                "groups",
+                "dm_{{actor_id}}"
+              ]
+            },
+            "description": "`type: \"dm\"` = chat riêng giữa bot và **1 người** (nhắc nhận task, quá hạn, Drive…). Bot gửi tin vào đó bằng `POST /bot/v1/messages` với `groupId` = chatId này.\n\nNgười dùng **không** gửi tin / form vào nhóm dm được: `403 BOT_DM_READ_ONLY`. FE thấy `bootstrap.groups[].type = \"dm\"` để ẩn ô nhập.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"dm\",\n  \"name\": \"Designer Bot\",\n  \"avatarUrl\": \"/api/avatars/bot.png\",\n  \"botId\": 1,\n  \"members\": [\n    {\n      \"openId\": \"local:designer-1\",\n      \"cmsUserId\": 68,\n      \"name\": \"Trần Designer\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200/201 OK\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"type = dm\", () => pm.expect(pm.response.json().type).to.eql(\"dm\"));"
                 ]
               }
             }

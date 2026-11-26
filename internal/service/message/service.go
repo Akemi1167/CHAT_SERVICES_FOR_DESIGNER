@@ -26,6 +26,9 @@ type Service struct {
 	hub   *realtime.Hub
 	log   *slog.Logger
 
+	// notifier tao thong bao cho nguoi duoc nhac @ (nil = chi luu mentions).
+	notifier Notifier
+
 	// hooks chay sau khi tin nhan cua nguoi dung da luu (vd day event sang CMS).
 	hooks []func(ctx context.Context, msg *domain.Message)
 }
@@ -56,6 +59,11 @@ type SendInput struct {
 	// ClientMsgID: UUID do FE sinh. Gui lai cung ID => tra ve tin nhan cu (idempotent).
 	ClientMsgID string
 
+	// Mentions: actorId (hoac UUID user) cua nguoi duoc nhac @. Chat chi giu thanh vien
+	// nhom, bo nguoi gui, bo trung (toi da 100). MentionAll: @all — chi admin / tro ly.
+	Mentions   []string
+	MentionAll bool
+
 	// Duong "gui mau" tu form FE (thay vi go "@bot ..." trong noi dung).
 	BotSlug         string
 	TemplateCode    string
@@ -72,8 +80,17 @@ type SendResult struct {
 
 // Send la diem vao duy nhat de tao tin nhan (REST, WebSocket va gRPC dung chung).
 func (s *Service) Send(ctx context.Context, in SendInput) (*SendResult, error) {
-	if _, err := s.convs.EnsureMember(ctx, in.ConversationID, in.ActorID); err != nil {
+	member, err := s.convs.EnsureMember(ctx, in.ConversationID, in.ActorID)
+	if err != nil {
 		return nil, err
+	}
+	conv, err := s.store.Conversations().GetMeta(ctx, in.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	// Chat rieng voi bot: chi bot (CMS qua Bot API) gui; nguoi dung chi doc.
+	if conv.IsBotDM() {
+		return nil, apperr.ErrBotDMReadOnly
 	}
 
 	// 1) Idempotency: FE retry sau khi mat ket noi WS.
@@ -122,6 +139,12 @@ func (s *Service) Send(ctx context.Context, in SendInput) (*SendResult, error) {
 		return nil, err
 	}
 
+	// 3b) Nhac ten @: kiem quyen @all + loc thanh vien TRUOC khi ghi (403 thi khong tao tin).
+	mentions, err := s.planMentions(ctx, in, conv, member)
+	if err != nil {
+		return nil, err
+	}
+
 	now := time.Now().UTC()
 	msg := &domain.Message{
 		ID:             uuid.New(),
@@ -137,9 +160,13 @@ func (s *Service) Send(ctx context.Context, in SendInput) (*SendResult, error) {
 		Attachments:    in.Attachments,
 		CreatedAt:      now,
 	}
+	if mentions != nil {
+		msg.Mentions = mentions.keys
+		msg.MentionAll = mentions.all
+	}
 
 	// 4) Ghi DB trong transaction: message + con tro last_message cua hoi thoai.
-	err := s.store.Tx().Do(ctx, func(ctx context.Context) error {
+	err = s.store.Tx().Do(ctx, func(ctx context.Context) error {
 		if err := s.store.Messages().Create(ctx, msg); err != nil {
 			return err
 		}
@@ -169,6 +196,9 @@ func (s *Service) Send(ctx context.Context, in SendInput) (*SendResult, error) {
 	for _, hook := range s.hooks {
 		hook(ctx, saved)
 	}
+
+	// Thong bao cho nguoi duoc nhac — sau khi tin da luu va da phat realtime.
+	s.notifyMentions(ctx, mentions, saved)
 
 	result := &SendResult{Message: saved}
 
@@ -672,6 +702,9 @@ type BotMessageInput struct {
 	// BotSender = {"id":1,"name":"Demo Designer Bot"} de UI hien dung nguoi gui.
 	BotSender domain.JSONMap
 	Metadata  domain.JSONMap
+	// Mentions: actorId CMS tag tren card (nguoi lam, TL, tro ly) de danh dau "@ ban".
+	// Chat KHONG tao thong bao cho nhung nguoi nay — CMS da gui qua /bot/v1/notifications.
+	Mentions []string
 }
 
 // PostBot tao tin nhan cua bot. KHONG tu broadcast: card co visibleTo nen
@@ -686,11 +719,17 @@ func (s *Service) PostBot(ctx context.Context, in BotMessageInput) (*domain.Mess
 		cardVersion = 1
 	}
 
+	mentions, err := s.filterMemberKeys(ctx, in.ConversationID, in.Mentions)
+	if err != nil {
+		return nil, err
+	}
+
 	msg := &domain.Message{
 		ID:             uuid.New(),
 		ConversationID: in.ConversationID,
 		SenderID:       nil,
 		SenderType:     domain.SenderBot,
+		Mentions:       mentions,
 		Type:           msgType,
 		Content:        in.Content,
 		ThreadID:       in.ThreadID,

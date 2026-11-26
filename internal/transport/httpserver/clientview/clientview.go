@@ -78,6 +78,16 @@ func Message(m *domain.Message, actorID string) map[string]any {
 	if m.ReplyToID != nil {
 		view["replyToId"] = m.ReplyToID.String()
 	}
+	// Nhac ten @: FE ve chip @<Ho ten> theo actor, to noi bat tin nhac toi minh.
+	if len(m.Mentions) > 0 || m.MentionAll {
+		mentions := []string(m.Mentions)
+		if mentions == nil {
+			mentions = []string{}
+		}
+		view["mentions"] = mentions
+		view["mentionAll"] = m.MentionAll
+		view["mentionedMe"] = actorID != "" && m.Mentions.Has(actorID)
+	}
 	if m.ReplyCount > 0 {
 		view["replyCount"] = m.ReplyCount
 	}

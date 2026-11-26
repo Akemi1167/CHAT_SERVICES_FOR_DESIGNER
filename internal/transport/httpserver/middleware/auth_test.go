@@ -72,6 +72,7 @@ func (usersRepo) ListByOpenIDs(_ context.Context, _ []string) ([]domain.User, er
 func (usersRepo) ListByActorIDs(_ context.Context, _ []string) ([]domain.User, error) {
 	return nil, nil
 }
+func (usersRepo) ListCMSUserIDs(_ context.Context) ([]int64, error) { return nil, nil }
 
 func (usersRepo) UpdatePresenceWithReason(_ context.Context, _ uuid.UUID, _ domain.Presence, _ string, _ time.Time) error {
 	return nil
