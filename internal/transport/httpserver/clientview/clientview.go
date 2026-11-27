@@ -8,6 +8,8 @@ package clientview
 import (
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/abc-workspace/chat-service/internal/domain"
 	"github.com/abc-workspace/chat-service/internal/service/card"
 )
@@ -87,6 +89,7 @@ func Message(m *domain.Message, actorID string) map[string]any {
 		view["mentions"] = mentions
 		view["mentionAll"] = m.MentionAll
 		view["mentionedMe"] = actorID != "" && m.Mentions.Has(actorID)
+		view["mentionUsers"] = MentionUsers(m)
 	}
 	if m.ReplyCount > 0 {
 		view["replyCount"] = m.ReplyCount
@@ -100,6 +103,32 @@ func Message(m *domain.Message, actorID string) map[string]any {
 		view["actions"] = card.Actions(m.Card, actorID)
 	}
 	return view
+}
+
+// MentionUsers: ho so ngan cua nguoi duoc nhac, cung thu tu `mentions`, de FE ve chip
+// @Ho ten ma khong phai tu tra actorId. Repository chua dien (vd tin vua tao trong bo nho)
+// thi van tra du actorId, ten de trong.
+func MentionUsers(m *domain.Message) []map[string]any {
+	byKey := make(map[string]*domain.User, len(m.MentionUsers))
+	for i := range m.MentionUsers {
+		u := &m.MentionUsers[i]
+		byKey[u.MentionKey()] = u
+		if u.ActorID != "" {
+			byKey[u.ActorID] = u
+		}
+	}
+	out := make([]map[string]any, 0, len(m.Mentions))
+	for _, k := range m.Mentions {
+		item := map[string]any{"actorId": k, "name": "", "username": "", "role": "", "avatarUrl": ""}
+		if u, ok := byKey[k]; ok && u.ID != uuid.Nil {
+			item["name"] = u.DisplayName
+			item["username"] = u.Username
+			item["role"] = u.DisplayRole()
+			item["avatarUrl"] = u.AvatarURL
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 // ThreadTitle: ten hien tren sidebar cho 1 thread.

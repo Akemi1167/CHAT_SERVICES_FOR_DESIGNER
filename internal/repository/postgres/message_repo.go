@@ -40,7 +40,7 @@ func (r *MessageRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Messag
 	if err != nil {
 		return nil, mapErr(err, apperr.ErrMessageNotFound)
 	}
-	return &m, nil
+	return &m, r.attachMentionUsersOne(ctx, &m)
 }
 
 func (r *MessageRepo) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.Message, error) {
@@ -52,7 +52,7 @@ func (r *MessageRepo) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]domain.
 		Where("id IN ?", ids).Find(&out).Error; err != nil {
 		return nil, wrap(err, "message.listByIDs")
 	}
-	return out, nil
+	return out, r.attachMentionUsers(ctx, out)
 }
 
 // ListSidebar tron nhom va thread thanh 1 danh sach (1 query, khong N+1):
@@ -168,7 +168,7 @@ func (r *MessageRepo) LastRootMessages(ctx context.Context, convIDs []uuid.UUID)
 	for _, m := range rows {
 		out[m.ConversationID] = m
 	}
-	return out, nil
+	return out, r.attachMentionUsersMap(ctx, out)
 }
 
 func (r *MessageRepo) LastInThreads(ctx context.Context, rootIDs []uuid.UUID) (map[uuid.UUID]domain.Message, error) {
@@ -190,7 +190,7 @@ func (r *MessageRepo) LastInThreads(ctx context.Context, rootIDs []uuid.UUID) (m
 			out[*m.ThreadID] = m
 		}
 	}
-	return out, nil
+	return out, r.attachMentionUsersMap(ctx, out)
 }
 
 func (r *MessageRepo) GetCardByCode(ctx context.Context, code string) (*domain.Message, error) {
@@ -203,7 +203,7 @@ func (r *MessageRepo) GetCardByCode(ctx context.Context, code string) (*domain.M
 	if err != nil {
 		return nil, mapErr(err, apperr.ErrCardNotFound)
 	}
-	return &m, nil
+	return &m, r.attachMentionUsersOne(ctx, &m)
 }
 
 func (r *MessageRepo) Locations(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]repository.MessageLocation, error) {
@@ -249,7 +249,7 @@ func (r *MessageRepo) GetByClientMsgID(ctx context.Context, convID uuid.UUID, cl
 		}
 		return nil, wrap(err, "message.getByClientMsgID")
 	}
-	return &m, nil
+	return &m, r.attachMentionUsersOne(ctx, &m)
 }
 
 // List tra timeline moi-nhat-truoc theo cursor (created_at, id).
@@ -281,7 +281,7 @@ func (r *MessageRepo) List(ctx context.Context, f repository.MessageFilter, p pa
 	if err != nil {
 		return nil, wrap(err, "message.list")
 	}
-	return out, nil
+	return out, r.attachMentionUsers(ctx, out)
 }
 
 // Search: theo noi dung, ma task (metadata->>'task_code'), nguoi gui, khoang ngay.
@@ -319,7 +319,7 @@ func (r *MessageRepo) Search(ctx context.Context, f repository.SearchFilter, p p
 	if err != nil {
 		return nil, wrap(err, "message.search")
 	}
-	return out, nil
+	return out, r.attachMentionUsers(ctx, out)
 }
 
 func (r *MessageRepo) SoftDelete(ctx context.Context, id uuid.UUID) error {
@@ -375,7 +375,7 @@ func (r *MessageRepo) ListReplies(ctx context.Context, messageID uuid.UUID, mode
 	if err != nil {
 		return nil, wrap(err, "message.listReplies")
 	}
-	return out, nil
+	return out, r.attachMentionUsers(ctx, out)
 }
 
 type replyCountRow struct {
@@ -433,7 +433,7 @@ func (r *MessageRepo) ListPinned(ctx context.Context, conversationID uuid.UUID, 
 	if err != nil {
 		return nil, wrap(err, "message.listPinned")
 	}
-	return out, nil
+	return out, r.attachMentionUsers(ctx, out)
 }
 
 // GetAttachment tra tep + tin nhan chua no (de kiem quyen theo hoi thoai).

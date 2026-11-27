@@ -207,6 +207,9 @@ giữ trong bộ nhớ) thì tải lại theo `ids` của mọi actor đang có.
 - CMS gửi `mentions` kèm card (`POST /bot/v1/messages`, `/messages/:id/thread`) → chỉ lưu để đánh
   dấu "@ bạn", **không** tạo thông báo.
 - `mentionCount` (nhóm, sidebar) = tin chưa đọc có `mentions @> [me]` (index GIN `ix_messages_mentions`).
+- Mỗi tin có nhắc tên trả kèm `mentionUsers` (`actorId`, `name`, `username`, `role`, `avatarUrl`, cùng
+  thứ tự `mentions`). Không lưu DB: `postgres.MessageRepo.attachMentionUsers` điền sau mỗi lần đọc tin,
+  **1 query cho cả trang**, bỏ qua khi trang không có tin nào nhắc tên.
 - `message.created` sang CMS kèm `message.mentions`, `message.mentionAll`.
 
 ### 5. Đồng bộ nhóm & thành viên
@@ -686,7 +689,8 @@ Hệ quả: `GET /api/v1/conversations/<chuỗi-bất-kỳ>` không còn trả `
 | 6 · dọn dẹp | `6.1` xoá tin nhắn |
 
 Giai đoạn 4 là chỗ hay hiểu sai: `4.1` chỉ ghi **một tin system** "đã gửi yêu cầu" vào nhóm
-(`metadata.kind = "form_submitted"`, khi CMS trả `ok`) — **card đơn** chỉ xuất hiện ở `4.3` khi CMS
+(`metadata.kind = "form_submitted"`, khi CMS trả `ok`; realtime là frame `form.submitted`, không phải
+`message`) — **card đơn** chỉ xuất hiện ở `4.3` khi CMS
 gọi ngược vào `POST /bot/v1/messages`. Tương tự `4.4` (bấm nút) ghi một tin system vào thread
 của card (`metadata.kind = "card_action"`). Ở local CMS không gọi tới `localhost` được
 nên `4.3` **đóng vai CMS** bằng `service_key`.

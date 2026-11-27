@@ -26,6 +26,9 @@ type Message struct {
 	// MentionAll = nguoi gui dung @all (Mentions da gom moi thanh vien).
 	Mentions   JSONStrings `gorm:"type:jsonb" json:"mentions,omitempty"`
 	MentionAll bool        `gorm:"default:false" json:"mention_all,omitempty"`
+	// MentionUsers: ho so nguoi duoc nhac, cung thu tu Mentions — KHONG luu DB,
+	// repository dien moi lan doc tin (ten / username / vai tro luon moi nhat).
+	MentionUsers []User `gorm:"-" json:"mention_users,omitempty"`
 
 	// ---- card abc.card/v1 do CMS dung (Chat chi luu va loc nut theo visibleTo) ----
 	Card        JSONMap `gorm:"type:jsonb" json:"card,omitempty"`

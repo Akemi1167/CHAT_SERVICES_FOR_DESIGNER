@@ -653,6 +653,8 @@ type SystemMessageInput struct {
 	Metadata       domain.JSONMap
 	// ActorID != nil: hien ten nguoi thao tac nhung van la tin he thong.
 	ActorID *uuid.UUID
+	// Event: ten frame realtime; rong = `message` (vd card.Service dung `form.submitted`).
+	Event realtime.EventType
 }
 
 // PostSystem tao tin nhan he thong (sender_type = system) va broadcast realtime.
@@ -688,7 +690,11 @@ func (s *Service) PostSystem(ctx context.Context, in SystemMessageInput) (*domai
 	if err != nil {
 		return nil, err
 	}
-	s.hub.Publish(ctx, realtime.NewEvent(realtime.EventMessageNew, in.ConversationID.String(), recipients, msg))
+	event := in.Event
+	if event == "" {
+		event = realtime.EventMessageNew
+	}
+	s.hub.Publish(ctx, realtime.NewEvent(event, in.ConversationID.String(), recipients, msg))
 	return msg, nil
 }
 
@@ -744,6 +750,12 @@ func (s *Service) PostBot(ctx context.Context, in BotMessageInput) (*domain.Mess
 	}
 	if err := s.store.Conversations().UpdateLastMessage(ctx, in.ConversationID, msg.ID, msg.CreatedAt); err != nil {
 		s.log.Warn("cap nhat last_message that bai", "err", err)
+	}
+	// Doc lai de co MentionUsers (ho so nguoi duoc tag) trong frame realtime.
+	if len(msg.Mentions) > 0 {
+		if full, err := s.store.Messages().GetByID(ctx, msg.ID); err == nil {
+			return full, nil
+		}
 	}
 	return msg, nil
 }

@@ -604,7 +604,8 @@ cms_client = folder(
                  "bỏ trùng (tối đa 100), rồi gửi mỗi người 1 thông báo "
                  "\"<Người gửi> nhắc đến bạn trong <nhóm>: …\".\n\n"
                  "`mentionAll: true` = @all — chỉ admin / trợ lý của nhóm; người khác nhận "
-                 "`403 MENTION_ALL_FORBIDDEN`. Tin trả về có `mentions`, `mentionAll`, `mentionedMe`; "
+                 "`403 MENTION_ALL_FORBIDDEN`. Tin trả về có `mentions`, `mentionAll`, `mentionedMe`, "
+                 "`mentionUsers` (tên / username / vai trò từng người được nhắc); "
                  "`message.created` sang CMS cũng kèm `mentions`/`mentionAll`.",
             auth={"type": "bearer", "bearer": [{"key": "token", "value": "{{cms_token}}", "type": "string"}]},
             tests=('pm.test("200 (OK) / 403 (khong thuoc nhom / khong duoc @all)",'
@@ -902,7 +903,8 @@ flow = folder(
                   "Bước 2.1 đã lấy đúng tổ vào `team_id_cms`; nếu nhóm không có tổ nào thì biến rỗng "
                   "và bước này sẽ bị từ chối.\n\n"
                   "**Bước này chỉ ghi một tin system** (`metadata.kind = \"form_submitted\"`) vào nhóm khi CMS "
-                  "trả `ok`. Card đơn đến từ 4.3.",
+                  "trả `ok` — realtime là frame **`form.submitted`** (không phải `message`), FE có thể bỏ qua. "
+                  "Card đơn đến từ 4.3.",
              tests=('pm.test("200 / 400 (chua bat CMS) / 403 (khong thuoc nhom)",'
                     ' () => pm.expect(pm.response.code).to.be.oneOf([200, 400, 403]));',
                     'if (pm.response.code === 200) {',
@@ -1250,9 +1252,11 @@ khi mang chap chon).
   "senderId":"...","sender":{"actorId":"u_6","name":"tester","cmsUserId":6,
                              "openId":"...","presence":"online","role":"designer"},
   "card":{...},"cardVersion":2,"actions":["accept_task"],
-  "mentions":["u_55"],"mentionAll":false,"mentionedMe":true}}
+  "mentions":["u_55"],"mentionAll":false,"mentionedMe":true,
+  "mentionUsers":[{"actorId":"u_55","name":"Trần Designer","username":"des3","role":"designer","avatarUrl":""}]}}
 ```
-`mentions` / `mentionAll` / `mentionedMe` chi co khi tin co nhac ten. `mentionedMe = true` ->
+`mentions` / `mentionAll` / `mentionedMe` / `mentionUsers` chi co khi tin co nhac ten. `mentionUsers` =
+ho so tung nguoi trong `mentions` (cung thu tu) — dung thang de ve chip @Ho ten. `mentionedMe = true` ->
 to vien noi bat tin. Card cua CMS cung co the co `mentions` (nguoi lam, TL, Tro ly).
 FE **upsert theo `id`**: card doi cung den bang `type: "message"` chu khong co type rieng.
 `card` da loc nut theo `visibleTo` cua chinh nguoi nhan, `actions` la cac action nguoi do
@@ -1268,6 +1272,7 @@ duoc bam.
 | `presence` | nguoi chung nhom doi trang thai | `actorId`, `userId`, `presence`, `online`, `reason` |
 | `notification` | CMS tao thong bao cho minh, HOAC minh bi nhac @ (muc 3.6) | `id`, `text`, `read`, `createdAt`, `messageId`, `conversationId`, `groupId`, `threadRootId`, `payload` |
 | `user` | ho so nguoi chung nhom doi tren CMS (ho ten, username, avatar, vai tro) | `userId`, `actorId`, `name`, `username`, `avatarUrl`, `role`, `status` — cap nhat ten tren chip @ |
+| `form.submitted` | CMS vua nhan form tao yeu cau | tin he thong "SKY · Đã gửi yêu cầu WEB-..." (`type: "system"`, `metadata.kind: "form_submitted"`). Khong phai tin chat — co the bo qua; card don toi bang `message` |
 | `reload` | nhom doi -> tai lai danh sach | `reason` (`group.members_changed` khi them/bot thanh vien, `group.updated` khi doi ten/cms_info), `conversationId`, `chatId`. **Khong doi gi thi khong ban** — khong phai moi 60s mot lan |
 
 ### 3.6 notification - bi nhac ten (@)

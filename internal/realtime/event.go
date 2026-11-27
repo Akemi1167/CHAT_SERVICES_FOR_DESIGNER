@@ -31,6 +31,10 @@ const (
 	EventConversationCreated EventType = "reload"
 	EventConversationUpdated EventType = "reload"
 	EventBotSubmissionStored EventType = "bot.submission.stored"
+	// form.submitted: dong lich su "SKY · Da gui yeu cau WEB-..." sau khi CMS nhan form.
+	// Payload la tin he thong (nhu `message`) nhung tach ten de FE khong ve nhu tin chat moi
+	// — card don se toi ngay sau bang frame `message`.
+	EventFormSubmitted EventType = "form.submitted"
 
 	// Task: FE chi can 2 event nay la du de ve lai card.
 	EventTaskCreated EventType = "task.created"

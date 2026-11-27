@@ -105,6 +105,8 @@ func (s *Service) SubmitForm(ctx context.Context, in SubmitFormInput) (*Result, 
 			Content:        formHistoryText(actor.DisplayName, in.FormID, resp.Toast),
 			ActorID:        &in.ActorID,
 			Metadata:       meta,
+			// Frame rieng: FE khong ve nhu tin chat moi (card don toi ngay sau qua `message`).
+			Event: realtime.EventFormSubmitted,
 		})
 	}
 	return &Result{OK: resp.OK, Toast: resp.Toast, CloseForm: resp.CloseForm}, nil

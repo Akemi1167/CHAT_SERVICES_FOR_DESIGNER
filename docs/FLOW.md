@@ -648,7 +648,7 @@ FE  ──2──► CHAT  POST /api/client/v1/chat/forms/create_task/submit
 
            ok=true → CHAT ghi 1 tin system vào nhóm (thread nếu có threadRootId):
                "SKY · Đã gửi yêu cầu WEB-…"  metadata.kind="form_submitted" {form_id, values, toast}
-               ══► realtime "message"
+               ══► realtime "form.submitted"  (KHÔNG phải "message" — FE có thể bỏ qua)
 
 FE  ◄──8── CHAT  {statusCode:200, element:{ok, toast, closeForm}}
 ```

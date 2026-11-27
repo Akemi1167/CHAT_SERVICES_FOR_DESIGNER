@@ -421,8 +421,15 @@ sở hữu nhóm (`botAdminOf` chứa `cms.botId`), hoặc trợ lý nhóm (`ass
 **Tin trả về / realtime `message`** có thêm (chỉ khi tin có nhắc):
 
 ```json
-{ "mentions": ["u_55"], "mentionAll": false, "mentionedMe": true }
+{ "mentions": ["u_55"], "mentionAll": false, "mentionedMe": true,
+  "mentionUsers": [ { "actorId": "u_55", "name": "Trần Designer", "username": "des3",
+                      "role": "designer", "avatarUrl": "" } ] }
 ```
+
+`mentionUsers` = hồ sơ của từng người trong `mentions`, **cùng thứ tự** — dùng thẳng để vẽ chip
+`@Họ tên` (tooltip `@username`), không phải tự tra `actorId`. Server đọc mới mỗi lần trả tin nên tên
+luôn là bản mới nhất. `role`: `admin` | `assistant` | `designer` | `order`. Người không còn trong Chat
+thì vẫn có `actorId`, các field khác rỗng. Có cả ở card CMS gửi kèm `mentions` (người làm, TL, Trợ lý).
 
 `mentionedMe` tính theo người đang xem → tô viền nổi bật. Card của CMS cũng có `mentions` (người
 làm, TL, Trợ lý — xem phần tử `{"type":"mentions"}` đầu card); Chat không gửi thêm thông báo cho
@@ -513,6 +520,12 @@ CMS trả `ok: true` → server ghi 1 tin `type: "system"` vào nhóm (vào thre
 `context.threadRootId`): `text` = `"<tên> · <toast.text>"`, `metadata.kind = "form_submitted"`,
 kèm `form_id`, `values`, `toast`. Card đơn vẫn tới **sau**, khi CMS gọi `POST /bot/v1/messages`.
 
+Realtime: dòng này tới bằng frame **`form.submitted`** (không phải `message`) — payload cùng hình dạng
+một tin nhắn. FE có thể bỏ qua frame này (toast đã hiện từ response của submit, card đơn tới bằng
+`message`), hoặc vẽ thành dòng hệ thống nhỏ. Tin vẫn được **lưu** trong lịch sử nhóm: `GET
+/groups/:id/messages` trả nó với `type: "system"`, `metadata.kind: "form_submitted"` — lọc theo đó
+nếu không muốn hiện trong timeline.
+
 `teamId` **phải là tổ thuộc nhóm đang mở** — lấy từ `bootstrap` → `groups[].cms.teams[].id`,
 đừng hardcode. Gửi tổ không thuộc nhóm thì CMS từ chối:
 
@@ -600,6 +613,7 @@ Nhận `ready` là kết nối thành công — **frame này nói rõ tab đang 
 | `typing` | người khác đang nhập (không gửi lại cho chính mình) |
 | `presence` | `{user_id, actor_id, presence: "online"\|"offline"\|"off_duty", reason, online}` — `off_duty` là nghỉ theo lịch (hiện chữ OFF cạnh tên), kèm `reason` |
 | `notification` | thông báo riêng cho mình: `{id, text, read, createdAt, messageId, conversationId, groupId, threadRootId}` — có `threadRootId` thì mở thread đó rồi cuộn tới `messageId` (card của một phần khi chia task) |
+| `form.submitted` | dòng hệ thống "SKY · Đã gửi yêu cầu WEB-…" sau khi CMS nhận form (payload = tin `type: "system"`, `metadata.kind: "form_submitted"`). Không phải tin chat — có thể bỏ qua |
 | `reload` | cần gọi lại `bootstrap`/danh sách nhóm. `reason`: `group.members_changed` (được thêm/gỡ khỏi nhóm), `group.updated` (tên / avatar / loại nhóm đổi), `group.pinned` (mình ghim / bỏ ghim ở tab khác) |
 
 Luồng gửi lạc quan chuẩn:
@@ -795,6 +809,7 @@ Server → Client:
 | `message.read` | có người đọc tin | `{conversation_id, message_id, user_id, seen_at}` |
 | `typing` | người khác đang nhập (không gửi lại cho chính người đó) | `{conversation_id, user_id, typing}` |
 | `user` | hồ sơ người chung nhóm đổi trên CMS (họ tên, username, avatar, vai trò) | `{user_id, actor_id, name, username, avatar_url, role, status}` |
+| `form.submitted` | CMS vừa nhận form tạo yêu cầu (dòng "SKY · Đã gửi yêu cầu WEB-…") | object message (`type: "system"`, `metadata.kind: "form_submitted"`) — **không** đến bằng `message.new` |
 | `presence` | user đổi trạng thái (mở/đóng WebSocket, hoặc CMS báo lịch OFF) | `{user_id, actor_id, presence: "online"\|"offline"\|"off_duty", reason, online}` — chỉ gửi cho người **chung hội thoại** |
 | `conversation.created` / `conversation.updated` | được thêm vào nhóm, nhóm đổi thành viên | object conversation |
 | `bot.submission.stored` | bot đã lưu 1 mẫu | object submission |
