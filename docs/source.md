@@ -204,8 +204,8 @@ grep -rn "func (r \*MessageRepo) ListReplies" internal/repository/postgres
 ```
 
 Quy ước đặt tên giúp đoán nhanh: `h.msgs` → `internal/service/message`, `h.convs` →
-`internal/service/conversation`, `h.cards` → `internal/service/card`, `h.tasks` →
-`internal/service/task`, `h.bots` → `internal/service/bot`, `h.notifs` →
+`internal/service/conversation`, `h.cards` → `internal/service/card`,
+`h.bots` → `internal/service/bot`, `h.notifs` →
 `internal/service/notification`, `h.sync` → `internal/service/cmssync`, `h.store` →
 `internal/repository`.
 
@@ -310,16 +310,6 @@ Nghiệp vụ **luôn** đặt ở `internal/service/...` để cả 3 transport
 3. Interface repository + implement GORM.
 4. Service + transport theo nhu cầu.
 
-### E2. Thêm 1 trạng thái task mới (ví dụ `waiting_qc`)
-
-1. `internal/domain/task.go`: thêm hằng `AssignWaitingQC` + 1 dòng trong `AllowedAssignmentTransitions`
-   (từ trạng thái nào sang được) và nhánh trong `DeriveTaskStatus` nếu ảnh hưởng trạng thái tổng.
-2. Migration: nới `CHECK` constraint của `task_assignments.status` / `tasks.status`.
-3. `internal/service/task/render.go`: thêm nhãn tiếng Việt.
-4. `internal/service/task/lifecycle.go`: thêm 1 hàm ngắn gọi `applyTransition` (5-10 dòng).
-5. Transport: thêm route REST + 1 RPC dùng lại `TaskActionRequest`.
-6. `internal/domain/task_test.go`: thêm case vào bảng test.
-
 ### F. Hay quên
 
 - `POSTGRES_AUTO_MIGRATE=true` chỉ dùng ở local; prod luôn `make migrate-up`.
@@ -346,6 +336,8 @@ nhưng **rỗng**.
 
 | Lùi từ → đến | File chạy | Mất gì |
 |---|---|---|
+| 11 → 10 | `000011.down` | **bảng** `app_logs` (log debug, không ảnh hưởng dữ liệu nghiệp vụ) |
+| 10 → 9 | `000010.down` | không mất gì — **tạo lại** 6 bảng task rỗng (dữ liệu đã mất từ lúc chạy `000010.up`) |
 | 9 → 8 | `000009.down` | cột `conversation_members.pinned_at` (nhóm mỗi người đã ghim) |
 | 8 → 7 | `000008.down` | cột `messages.mentions`, `messages.mention_all` (ai được nhắc @ trong mọi tin) |
 | 7 → 6 | `000007.down` | chỉ xoá index — **không mất dữ liệu** |
@@ -386,14 +378,8 @@ làm tiếp, để không phải đổi kiến trúc.
 | Trạng thái đã xem / danh sách người đã đọc | **xong** (`last_read_at`, `message_receipts`) | — |
 | Trạng thái OFF cạnh tên | **một phần** (`users.presence`) | job đồng bộ lịch OFF → `presence='off_duty'` |
 | Tìm tin nhắn / tệp trong nhóm | **xong** cho tin nhắn | thêm endpoint `GET /conversations/:id/files` query bảng `attachments` |
-| Tạo yêu cầu trong chat, gợi ý người phụ trách | **xong** (`internal/service/task`, gợi ý theo tổ + tải việc + OFF) | — |
-| Nhận task / tạm dừng / treo / hoàn thành | **xong** (state machine ở `domain.AllowedAssignmentTransitions`) | — |
-| Phiếu sửa | **xong** (`task_revisions`, hoàn thành riêng từng phiếu) | — |
-| Gọi hỗ trợ khi OFF, phân công theo pool | **một phần**: `role=support` + gợi ý đã loại người OFF | worker tự gọi hỗ trợ khi phát hiện OFF |
-| Gọi Edit, chia task nhiều người | **xong** (`role=edit`, mỗi người 1 card) | tách task con qua `tasks.parent_task_id` nếu cần |
-| Chờ nhận, điều chỉnh phân công | **xong** (`?waiting_accept=true`, `/reassign`, `PATCH /tasks/:id`) | — |
-| Role Admin/Order/Designer hiển thị khác nhau | `users.role` + `conversation_members.role` + `requireManager` cho task | tinh chỉnh thêm theo từng màn hình FE |
-| Tính điểm theo định mức/số lượng | dữ liệu đã có ở `task_assignments.quota/quantity` khi `completed` | service tính điểm + đồng bộ Drive |
+| Tạo yêu cầu, nhận / tạm dừng / treo / hoàn thành, phiếu sửa, chia task, gọi hỗ trợ | **CMS** làm (đơn/task do CMS sở hữu); Chat lưu card + lọc nút `visibleTo` + chuyển `form.submit` / `card.action` | — (module task nội bộ của Chat đã gỡ, migration `000010`) |
+| Role Admin/Order/Designer hiển thị khác nhau | `users.role` + hồ sơ CMS (`DisplayRole`) | tinh chỉnh thêm theo từng màn hình FE |
 | Đơn hàng, Drive, tính điểm, Drive Assets | — | service ngoài, gọi vào chat qua **gRPC** (`ChatService.SendMessage`) để post tin nhắn hệ thống |
 | Tick dùng AI | — | bot riêng: `botSvc.Register("ai", ...)` — xem [Bot @bot và mẫu (template)](backend.md#bot-bot-và-mẫu-template) §5 |
 

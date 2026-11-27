@@ -69,6 +69,9 @@ func Setup(o Options) (*slog.Logger, io.Closer) {
 		h = slog.NewJSONHandler(out, opts)
 	}
 
+	// Boc tee: sau khi co DB, AttachSink gui them ban sao moi dong log vao app_logs.
+	h = newTee(h, global)
+
 	l := slog.New(h).With("service", o.Service, "env", o.Env)
 	slog.SetDefault(l)
 

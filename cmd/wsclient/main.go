@@ -149,11 +149,10 @@ func read(conn *websocket.Conn) {
 			Sender     *struct {
 				DisplayName string `json:"display_name"`
 			} `json:"sender"`
-			UserID  string                         `json:"user_id"`
-			Typing  *bool                          `json:"typing"`
-			Code    string                         `json:"code"`
-			Message string                         `json:"message"`
-			Task    *struct{ Code, Status string } `json:"task"`
+			UserID  string `json:"user_id"`
+			Typing  *bool  `json:"typing"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(f.Payload, &p)
 
@@ -170,12 +169,6 @@ func read(conn *websocket.Conn) {
 			fmt.Printf("← %.8s da doc\n", p.UserID)
 		case "error":
 			fmt.Printf("← LOI %s: %s\n", p.Code, p.Message)
-		case "task.created", "task.updated":
-			if p.Task != nil {
-				fmt.Printf("← %s: %s -> %s\n", f.Type, p.Task.Code, p.Task.Status)
-				continue
-			}
-			fmt.Printf("← %s\n", f.Type)
 		case "ack", "pong", "ready":
 			fmt.Printf("← %s\n", f.Type)
 		default:

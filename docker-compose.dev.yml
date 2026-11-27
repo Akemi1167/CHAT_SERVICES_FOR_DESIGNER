@@ -87,7 +87,7 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-debug}"
       LOG_FORMAT: "${LOG_FORMAT:-text}"
       # LOG_FILE / LOG_STDOUT lay tu .env (xem docs/deploy.md#docker muc 3).
-      # TASK_ENGINE_ENABLED / CMS_* lay tu .env (xem docs/deploy.md#cutover-bật-tích-hợp-cms).
+      # CMS_* lay tu .env (xem docs/deploy.md#cutover-bật-tích-hợp-cms).
     tty: true                       # cap TTY => SQL pretty log co mau trong `make dev-logs`
     ports:
       - "8080:8080"

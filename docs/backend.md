@@ -12,7 +12,7 @@ Spec gốc do CMS đưa → [CHAT_SERVICE_INTEGRATION.md](CHAT_SERVICE_INTEGRATI
 - [Danh sách API](#danh-sách-api)
 - [Tích hợp CMS (Designer Bot)](#tích-hợp-cms-designer-bot)
 - [Bot @bot và mẫu (template)](#bot-bot-và-mẫu-template)
-- [Module task nội bộ](#module-task-nội-bộ)
+- [Log trong database (debug)](#log-trong-database-debug)
 - [Postman](#postman)
 - [Hướng dẫn test](#hướng-dẫn-test)
 
@@ -58,41 +58,6 @@ Response có dạng `{"data": ..., "meta": {...}}` hoặc `{"error":{"code","mes
 | POST | `/api/v1/bots/:slug/submissions` | gửi mẫu từ form |
 | GET | `/api/v1/bots/:slug/submissions?conversation_id=&status=` | các mẫu đã lưu |
 
-#### Task (xem [Module task nội bộ](#module-task-nội-bộ))
-
-| Method | Path | Mô tả |
-|---|---|---|
-| POST | `/api/v1/tasks` | tạo yêu cầu (bỏ trống `assignee_ids` → tự gợi ý người trong tổ) |
-| GET | `/api/v1/tasks?conversation_id=&thread_id=&team_id=&assignee_id=&created_by=&status=&waiting_accept=&mine=&q=` | danh sách task; `waiting_accept=true` = **chờ nhận** |
-| GET | `/api/v1/tasks/:id` | chi tiết (kèm card + phiếu sửa + tổ) |
-| GET | `/api/v1/tasks/code/:code` | tra cứu theo mã `T-000001` |
-| PATCH | `/api/v1/tasks/:id` | điều chỉnh tiêu đề/mô tả/tổ/số lượng/định mức/deadline/ưu tiên (admin hoặc người tạo) |
-| POST | `/api/v1/tasks/:id/accept` | **nhận task** — body `{"quota":"A4","quantity":3}` (bắt buộc) |
-| POST | `/api/v1/tasks/:id/pause` | tạm dừng |
-| POST | `/api/v1/tasks/:id/resume` | tiếp tục |
-| POST | `/api/v1/tasks/:id/hold` | treo — bắt buộc `{"note":"lý do"}` |
-| POST | `/api/v1/tasks/:id/complete` | hoàn thành (bị chặn nếu còn phiếu sửa mở) |
-| POST | `/api/v1/tasks/:id/assignees` | chia task / gọi hỗ trợ / gọi Edit — `{"user_ids":[...],"role":"primary|support|edit"}` |
-| POST | `/api/v1/tasks/:id/reassign` | đổi người phụ trách — `{"to_user_id":"...","assignment_id":"..."}` |
-| POST | `/api/v1/tasks/:id/cancel` | huỷ task |
-| GET | `/api/v1/tasks/:id/events` | lịch sử task |
-| GET | `/api/v1/tasks/:id/revisions` | danh sách phiếu sửa |
-| POST | `/api/v1/tasks/:id/revisions` | tạo **phiếu sửa** — `{"reason","revision_type","quantity","assignment_id"}` |
-| POST | `/api/v1/revisions/:revision_id/complete` | hoàn thành riêng 1 phiếu sửa |
-
-Các thao tác trên card nhận thêm `assignment_id` (admin tác động card người khác) và `note`.
-
-#### Tổ / bộ phận
-
-| Method | Path | Mô tả |
-|---|---|---|
-| GET | `/api/v1/teams` | danh sách tổ (seed: `design`, `edit`, `order`) |
-| POST | `/api/v1/teams` | tạo tổ — `{"code","name","kind"}` |
-| GET | `/api/v1/teams/:id/members` | thành viên tổ |
-| POST | `/api/v1/teams/:id/members` | thêm thành viên — `{"user_ids":[...],"role":"leader|assistant|member"}` |
-| DELETE | `/api/v1/teams/:id/members/:user_id` | bỏ thành viên khỏi tổ |
-| GET | `/api/v1/teams/:id/suggest` | **gợi ý người phụ trách** (không OFF + ít việc nhất trước) |
-
 WebSocket: `GET /ws?token=<JWT>` — xem [Giao thức WebSocket](frontend.md#giao-thức-websocket).
 
 ### gRPC (`api/proto/chat/v1`)
@@ -108,33 +73,7 @@ Bot API (CMS gọi): thêm `POST /bot/v1/messages/:id/pin`, `PUT /bot/v1/presenc
 
 `BotService`: `ListBots`, `ListBotTemplates`, `SubmitBotTemplate`, `ListBotSubmissions`.
 
-`TaskService`: `CreateTask`, `GetTask`, `ListTasks`, `UpdateTask`, `CancelTask`,
-`AcceptTask`, `PauseTask`, `ResumeTask`, `HoldTask`, `CompleteTask` (5 RPC này dùng chung
-`TaskActionRequest`), `AddAssignees`, `ReassignTask`, `CreateRevision`, `CompleteRevision`,
-`ListRevisions`, `ListTaskEvents`, `ListTeams`, `CreateTeam`, `AddTeamMembers`,
-`RemoveTeamMember`, `ListTeamMembers`, `SuggestAssignees`.
-
-Lưu ý: các trường trạng thái/role của task dùng **string** (không dùng enum protobuf) để REST/WS/gRPC
-dùng chung một bộ giá trị và thêm trạng thái mới không phá hợp đồng — giá trị hợp lệ ghi trong
-`api/proto/chat/v1/task.proto`.
-
-Thử nhanh:
-
-```bash
-grpcurl -plaintext localhost:9090 list
-grpcurl -plaintext -H "authorization: Bearer $TOKEN" \
-  -d '{"page":{"limit":10}}' localhost:9090 chat.v1.ChatService/ListConversations
-```
-
----
-
-## Tích hợp CMS (Designer Bot)
-
-> Đội **CMS** cần biết gọi API nào của Chat khi có thay đổi (tạo đơn, đổi trạng thái, sửa
-> card, đổi thành viên nhóm) thì đọc [cms-goi-chat.md](cms-goi-chat.md) — tài liệu riêng cho
-> chiều CMS → Chat, có body/response thật của từng endpoint.
-
-Bản này map tài liệu *"Tích hợp Chat Service (Go) ↔ CMS"* vào code thật trong repo.
+`TaskService` (module task nội bộ) **đã gỡ** — CMS sở hữu đơn/task (migration `000010`).
 
 ### 1. Phân vai
 
@@ -173,7 +112,6 @@ CMS_USER_SYNC_INTERVAL=30s                        # poll GET /workspace/users?up
 CMS_WEBHOOK_TIMEOUT=5s                            # form.submit / card.action (đồng bộ)
 CMS_OUTBOX_INTERVAL=10s                           # gửi lại message.created
 AUTH_ALLOW_DEV_TOKEN=true                         # vẫn nhận token HS256 của `make token` (tắt ở prod)
-TASK_ENGINE_ENABLED=false                         # module task nội bộ của Chat (mặc định TẮT)
 ```
 
 Bật `CMS_ENABLED=true` thì `JWT_SECRET` không còn bắt buộc (trừ khi vẫn cho token dev).
@@ -328,11 +266,12 @@ FE gửi `teamId`, `normItemId`, `title`, `brief`, `quantity`, `size`, `urgencyC
 
 Bộ API `/api/v1/*` (envelope `{data, meta}`) vẫn giữ cho Postman/CLI/dịch vụ nội bộ.
 
-### 10. Module task nội bộ
+### 10. Module task nội bộ — đã gỡ
 
-`TASK_ENGINE_ENABLED=false` (mặc định): route `/api/v1/tasks`, `/teams`, `/revisions` **không** được
-đăng ký, vì CMS là nguồn sự thật của đơn. Code + migration vẫn còn trong repo
-(`internal/service/task`, `migrations/000003_task.*`) để dùng khi chạy độc lập, bật lại bằng env.
+Bảng `tasks`, `task_assignments`, `task_events`, `task_revisions`, `teams`, `team_members` bị xoá ở
+migration `000010_drop_task_module` cùng code (`internal/service/task`, REST `/api/v1/tasks|teams|revisions`,
+gRPC `TaskService`, cờ `TASK_ENGINE_ENABLED`). Đơn/task do **CMS** sở hữu; Chat chỉ lưu card
+(`messages.card`). `@bot` giờ chỉ lưu mẫu (`bot_submissions`).
 
 ### 11. Đã kiểm chứng (CMS giả lập theo đúng tài liệu)
 
@@ -474,137 +413,56 @@ vào `thread_id` của submission.
 
 ---
 
-## Module task nội bộ
+## Log trong database (debug)
 
-### 1. Mô hình dữ liệu
+Ngoài stdout / `LOG_FILE`, mỗi dòng log (slog) được ghi thêm **một bản sao** vào bảng `app_logs`
+(migration `000011`) để tra lỗi bằng SQL hoặc API, không cần vào máy chủ đọc log docker.
 
+```env
+LOG_DB_ENABLED=true        # mặc định bật
+LOG_DB_LEVEL=info          # mức thấp nhất ghi vào DB: debug | info | warn | error
+LOG_DB_RETENTION=168h      # tự xoá log cũ hơn (mặc định 7 ngày); 0 = giữ mãi
+DEBUG_API_KEY=             # có giá trị thì mở GET /debug/logs (header X-Debug-Key)
 ```
-tasks                 1 yêu cầu/công việc (có mã T-000001, nằm trong 1 conversation + 1 thread)
-  └─ task_assignments mỗi người được giao = 1 dòng ("card của ai hiện của người đó")
-  └─ task_revisions   phiếu sửa (mã R-000001), hoàn thành riêng từng phiếu
-  └─ task_events      lịch sử: ai làm gì, lúc nào, từ trạng thái nào sang trạng thái nào
-teams / team_members  tổ (bộ phận) + thành viên, dùng để "chọn tổ" và gợi ý người phụ trách
+
+**Cách ghi** (`internal/logger/sink.go` + `internal/dblog`): handler slog "tee" — log ra stdout/file
+như cũ, đồng thời đẩy bản sao vào hàng đợi (4096); worker ghi **theo lô** (200 dòng hoặc mỗi giây).
+Hàng đợi đầy thì **bỏ dòng mới** (in số dòng bỏ ra stderr) — không bao giờ làm chậm request. Câu
+INSERT dùng session GORM tắt log SQL nên không sinh log vòng lặp. Lúc shutdown, worker ghi nốt rồi
+mới đóng DB. Bỏ qua `GET /healthz|/readyz|/metrics` thành công (rác của healthcheck).
+
+Cột tách riêng để lọc nhanh: `level`, `msg`, `component`, `request_id`, `method`, `path`, `status`,
+`took_ms`; mọi field còn lại của dòng log nằm trong `attrs` (jsonb, cắt ở 16 KB).
+
+**Xem log**
+
+```bash
+make dblog                          # 50 dòng mới nhất (info trở lên)
+make dblog LEVEL=warn               # chỉ warn + error
+make dblog Q=cms_unreachable        # tìm trong msg + attrs
+make dblog RID=<X-Request-ID>       # mọi dòng log của 1 request
 ```
 
-Quy tắc quan trọng: **trạng thái tổng của task không được set tay**, nó được suy ra từ các card
-(`domain.DeriveTaskStatus`). Nhờ vậy chia task cho nhiều người vẫn không bị lệch trạng thái.
+```bash
+curl -s "$BASE/debug/logs?level=error&since=2h&limit=50" -H "X-Debug-Key: $DEBUG_API_KEY" | jq
+```
 
-| Trạng thái card (`task_assignments.status`) | Nghĩa |
+| Query | Ý nghĩa |
 |---|---|
-| `pending` | đã giao, chưa nhận → hiện ở danh sách **Chờ nhận** |
-| `in_progress` | đã nhận và đang làm |
-| `paused` | tạm dừng |
-| `on_hold` | treo (chờ đầu vào từ người khác) |
-| `completed` | hoàn thành |
-| `revoked` | bị thu hồi (do admin đổi người phụ trách / huỷ task) |
+| `level` | mức thấp nhất: `debug` \| `info` \| `warn` \| `error` |
+| `component` | vd `service.message`, `service.cmssync`, `ws`, `service.outbox` |
+| `request_id` | mọi dòng log của 1 request (lấy từ header response `X-Request-ID`) |
+| `path` | path chứa chuỗi này, vd `/bot/v1` |
+| `q` | tìm trong `msg` + `attrs` (không phân biệt hoa thường) |
+| `status_min` | vd `400` = chỉ request lỗi |
+| `since`, `until` | RFC3339 hoặc khoảng lùi: `15m`, `2h`, `7d` |
+| `limit`, `before` | tối đa 500; trang sau: `before = meta.next_before` |
 
-Luật suy trạng thái task: tất cả card `completed` → `completed`; còn ai `in_progress` → `in_progress`;
-không ai đang làm mà có người `paused` → `paused`; có người `on_hold` → `on_hold`;
-tất cả `pending` → `waiting_accept`; trộn (có người xong, người chưa nhận) → `in_progress`.
+Response: `{data: [AppLog…], meta: {count, next_before}}`. Không có `DEBUG_API_KEY` thì route không
+tồn tại (404). Truy vấn thẳng: `SELECT … FROM app_logs WHERE level IN ('WARN','ERROR') ORDER BY id DESC`.
 
-### 2. State machine của card
-
-```
-pending ──nhận──▶ in_progress ──tạm dừng──▶ paused ──tiếp tục──▶ in_progress
-   │                  │  ▲                    │
-   │                  │  └───────tiếp tục─────┘
-   │                  ├──treo──▶ on_hold ──tiếp tục──▶ in_progress
-   │                  └──hoàn thành──▶ completed ──(có phiếu sửa)──▶ in_progress
-   └──admin đổi người──▶ revoked
-```
-
-Khai báo tại `internal/domain/task.go` (`AllowedAssignmentTransitions`). **Thêm trạng thái mới =
-thêm 1 dòng ở map đó**, service không phải sửa. Chuyển sai trạng thái → lỗi `invalid_task_transition`
-kèm `details.allowed` để FE biết nút nào được phép.
-
-### 3. Luồng nghiệp vụ
-
-#### Tạo yêu cầu (có gợi ý người phụ trách)
-
-Hai cách, cùng đi vào `task.Service.Create`:
-
-1. Gõ trong chat: `@bot yeu_cau tieu_de="Banner Tet" to=design so_luong=3 dinh_muc=A4 deadline=2026-12-01`
-2. REST `POST /api/v1/tasks` / gRPC `TaskService.CreateTask` (FE render form từ schema của mẫu).
-
-Khi tạo:
-- Nếu **không chọn người phụ trách** và có `team_code`/`team_id` → hệ thống gợi ý: ưu tiên người
-  **không OFF**, rồi người **ít việc đang mở nhất** (`CountOpenAssignments`), rồi theo tên cho ổn định.
-  Task vẫn ghi `metadata.assignee_suggested = true` để FE hiển thị "gợi ý — có thể đổi người".
-- Người được giao mà chưa ở trong nhóm chat sẽ **tự được thêm vào nhóm** (để thấy thread).
-- Service đăng 1 **card** (tin nhắn hệ thống, `metadata.kind = "task_card"`) vào hội thoại. Nếu yêu cầu
-  chưa có thread thì **card này chính là thread gốc** (`tasks.thread_id`), khớp spec "mỗi yêu cầu có
-  thread riêng; phản hồi hiện cả trong nhóm và trong thread".
-
-#### Nhận task
-
-`POST /api/v1/tasks/:id/accept` với `{"quota":"A4-cao-cap","quantity":3}`.
-Bắt buộc có **định mức + số lượng** trước khi nhận (đúng spec "Design chọn định mức và số lượng
-trước khi nhận"); số lượng nhận không được vượt số lượng yêu cầu.
-
-#### Xử lý task
-
-`/pause`, `/resume`, `/hold` (bắt buộc ghi lý do), `/complete`. Mỗi thao tác chỉ tác động lên **card
-của chính mình**; admin/tổ trưởng hoặc người tạo task có thể tác động card người khác bằng cách truyền
-`assignment_id` (tin nhắn hệ thống sẽ ghi "Admin (thay Designer 1) ...").
-
-Không hoàn thành được card khi **còn phiếu sửa đang mở** → lỗi `task_has_open_revision`.
-
-#### Chia task / gọi hỗ trợ / gọi Edit
-
-`POST /api/v1/tasks/:id/assignees` với `role`:
-- `primary` — chia việc cho nhiều người, mỗi người 1 card riêng
-- `support` — gọi hỗ trợ (khi người phụ trách OFF)
-- `edit` — chuyển phần đã xong sang làm video, vẫn trong cùng thread
-
-#### Điều chỉnh phân công
-
-`POST /api/v1/tasks/:id/reassign` → thu hồi card cũ (`revoked`) + tạo card mới `pending` cho người mới.
-`PATCH /api/v1/tasks/:id` → đổi tiêu đề/mô tả/tổ/số lượng/định mức/deadline/ưu tiên.
-Chỉ **owner/admin của nhóm hoặc người tạo task** được làm (lỗi `require_task_manager`).
-
-#### Phiếu sửa
-
-- Tạo: `POST /api/v1/tasks/:id/revisions` hoặc `@bot phieu_sua ma_task=T-000001 nguyen_nhan="Sai mau" loai_sua=mau so_luong=2`.
-  Bắt buộc có **nguyên nhân + loại sửa**; số lượng mặc định 1.
-- Nếu card liên quan đã `completed` → tự **mở lại** thành `in_progress` để người phụ trách sửa.
-- Hoàn thành **riêng từng phiếu**: `POST /api/v1/revisions/:revision_id/complete`. Người sửa (chủ card)
-  hoặc admin được đóng phiếu; tin nhắn hệ thống ghi rõ còn bao nhiêu phiếu đang mở.
-
-#### Chờ nhận
-
-`GET /api/v1/tasks?waiting_accept=true` (thêm `mine=true` cho view của designer) — trả các task đã giao
-nhưng chưa ai nhận card.
-
-### 4. Mọi thay đổi đều để lại 3 dấu vết
-
-1. **`task_events`** — lịch sử truy vết (`GET /api/v1/tasks/:id/events`).
-2. **Tin nhắn hệ thống trong thread** — người trong nhóm đọc được diễn biến ngay trong chat.
-3. **Realtime** — `task.created` và `task.updated` (payload `{task, event_type, ...}`) đẩy xuống mọi
-   thành viên hội thoại qua WebSocket. FE chỉ cần vẽ lại card từ payload, không phải gọi lại API.
-
-### 5. Bot: mẫu → nghiệp vụ
-
-`internal/service/task/bot_handler.go` bọc `bot.TemplateHandler`:
-
-```
-@bot <mẫu> ... → TemplateHandler lưu bot_submissions (audit, status=stored)
-               → yeu_cau   → task.Create     → submission = done, bot im lặng (card task là câu trả lời)
-               → phieu_sua → task.CreateRevision
-               → lỗi       → submission = failed + bot trả lời lý do trong chat
-```
-
-Thêm mẫu **có hành động**: thêm 1 `case` trong `BotHandler.Handle` + 1 migration `INSERT bot_templates`.
-Mẫu chỉ cần lưu thì không phải sửa code (xem [Bot @bot và mẫu (template)](#bot-bot-và-mẫu-template)).
-
-### 6. Giới hạn hiện tại (và chỗ làm tiếp)
-
-- **Gọi hỗ trợ tự động khi người phụ trách OFF** chưa có job tự chạy: hiện admin gọi
-  `/assignees` với `role=support`, còn `SuggestAssignees` đã loại người OFF. Khi làm tự động, đặt
-  worker gọi đúng 2 hàm này.
-- **Tính điểm / Drive** chưa làm: khi làm, đọc `task_assignments.quota + quantity` lúc `completed`
-  (dữ liệu đã đủ, không cần đổi schema).
-- `tasks.parent_task_id` đã có sẵn cho "gọi Edit tạo task con" nếu sau này muốn tách thành task riêng
-  thay vì thêm card `role=edit`.
+> `attrs` có thể chứa dữ liệu người dùng (tên, nội dung lỗi CMS…). Giữ `DEBUG_API_KEY` bí mật, đặt
+> `LOG_DB_RETENTION` vừa đủ; `LOG_DB_LEVEL=debug` ở prod sẽ làm bảng phình rất nhanh.
 
 ---
 
@@ -616,7 +474,7 @@ Thư mục `internal/postman/` có **4 file**:
 |---|---|
 | `chat-service-fe.postman_collection.json` · **Chat Service · A Workspace [FE]** | **đội FE** — `FLOW · Luồng của FE` + `/api/client/v1/chat/*` + mẫu WebSocket |
 | `chat-service-cms.postman_collection.json` · **Chat Service · A Workspace [CMS]** | **đội CMS** — `FLOW · Luồng của CMS` + `/bot/v1/*` |
-| `chat-service.postman_collection.json` · **Chat Service · A Workspace [GRPC]** | nội bộ — bản đầy đủ (89 request, 10 folder) |
+| `chat-service.postman_collection.json` · **Chat Service · A Workspace [GRPC]** | nội bộ — bản đầy đủ (90 request, 10 folder) |
 | `chat-service.local.postman_environment.json` | environment dùng chung cho cả 3 |
 
 Hai bản tách **dùng lại đúng các request của bản đầy đủ** (`gen_postman.py --check` đối chiếu, báo
@@ -645,7 +503,7 @@ make token SUB=user-001 NAME="Nguyen Van A" ROLE=designer
 thống (xem mục 3). Muốn tra cứu từng endpoint thì dùng các folder `00` → `10`.
 
 Mỗi request tự lưu id cần thiết vào collection variable (`user_id`, `group_id`, `message_id`,
-`thread_id`, `team_id`, `task_id`, `task_code`, `assignment_id`, `revision_id`) nên bước sau
+`thread_id`) nên bước sau
 dùng được ngay, không phải copy id bằng tay.
 
 Muốn thử phân công 2 người (chia task, đổi người phụ trách, chat riêng): tạo token thứ 2
@@ -661,15 +519,13 @@ nhóm chat**, chỉ khác dạng id — đã gộp thành **`group_id`**:
 |---|---|---|---|
 | `group_id` | **nhóm chat** | UUID nội bộ **hoặc** `wg_<hex>` | cả 3 bề mặt: `/api/v1`, `/bot/v1`, `/api/client/v1` |
 | `cms_chat_id` | chatId mà **CMS** muốn tạo | bắt buộc `wg_<hex>` | chỉ `PUT /bot/v1/groups/:id` |
-| `team_id` | **tổ** của module task nội bộ | UUID | `/api/v1/teams/*` |
 
 - `group_id` dùng được ở mọi nơi vì route hội thoại của `/api/v1` nhận **cả hai dạng id**
   (`convIDParam` trong `internal/transport/httpserver/handler/conversation.go`): là UUID thì
   dùng luôn, không phải UUID thì tra `conversations.external_id`.
 - `cms_chat_id` phải tách riêng vì tham số URL của `PUT /bot/v1/groups/:id` **chính là** chatId
   cần tạo — truyền UUID vào sẽ đẻ ra một nhóm có `external_id` là chuỗi UUID đó.
-- `team_id` là **thực thể khác hẳn** (bảng `teams`), không gộp được. Cũng đừng nhầm với `teamId`
-  trong body `POST /forms/create_task/submit` — đó là **tổ của CMS**, dạng số (vd `"9"` — lấy từ `groups[].cms.teams[].id`), Chat
+- Đừng nhầm `teamId` trong body `POST /forms/create_task/submit` — đó là **tổ của CMS**, dạng số (vd `"9"` — lấy từ `groups[].cms.teams[].id`), Chat
   chuyển nguyên sang CMS chứ không diễn giải.
 
 Hệ quả: `GET /api/v1/conversations/<chuỗi-bất-kỳ>` không còn trả `400 invalid_uuid` mà trả
@@ -707,12 +563,12 @@ make postman-flow TOKEN=$(make -s token SUB=demo-an) KEY=$CHAT_SERVICE_KEY STOP=
 Để trống `STOP` thì chạy hết 16 bước. Bước `2.2` cố ý **không** đổi `group_id`: nhóm CMS đẩy
 sang chỉ có thành viên do CMS khai, token của bạn không ở trong đó nên các bước `3.x` sẽ 403.
 
-### 4. Nội dung collection (89 request / 10 folder)
+### 4. Nội dung collection (90 request / 10 folder)
 
 | Folder | Nội dung |
 |---|---|
 | `FLOW` | 17 bước đánh số, chạy tuần tự (gồm vòng đời một đơn) — xem mục 3 |
-| `00 · Bắt đầu` | healthz, readyz, `/docs/flow` (biến `docs_key`), `/me` (lưu `user_id`) |
+| `00 · Bắt đầu` | healthz, readyz, `/docs/flow` (biến `docs_key`), `/debug/logs` (biến `debug_key`), `/me` (lưu `user_id`) |
 | `01 · Hội thoại` | tạo nhóm / chat riêng, danh sách, chi tiết, thêm thành viên |
 | `02 · Tin nhắn` | gửi text / ảnh / trong thread, lịch sử, tìm kiếm, đã đọc, ai đã xem, xoá |
 | `04 · Bot @bot & gửi mẫu` | schema mẫu, `@bot` help, `@bot yeu_cau`, submit mẫu từ form, mẫu đã lưu |
@@ -738,12 +594,10 @@ make postman-run-cms TOKEN=<access token CMS> KEY=<CHAT_SERVICE_KEY> CHAT_ID=wg_
 
 27 request của `03 · Tổ`, `05 · Task`, `06 · Phiếu sửa` đã **xoá khỏi collection và khỏi
 `scripts/gen_postman.py`**. Lý do: các route `/api/v1/tasks/*`, `/api/v1/teams/*`,
-`/api/v1/revisions/*` chỉ được đăng ký khi `TASK_ENGINE_ENABLED=true` (`router.go`
-`registerTaskRoutes`), còn khi tích hợp CMS thì đơn/task do CMS sở hữu — `.env` để `false`
-nên chúng luôn trả `404 route_not_found`.
+`/api/v1/revisions/*` chỉ chạy khi bật module task nội bộ, còn khi tích hợp CMS thì đơn/task do
+CMS sở hữu.
 
-Code Go của module task **vẫn còn** (xem [Module task nội bộ](#module-task-nội-bộ)); chỉ phần Postman bị bỏ.
-Nếu bật lại `TASK_ENGINE_ENABLED=true` thì phải viết lại các request đó.
+Module task nội bộ giờ đã **gỡ hẳn** (code + bảng, migration `000010`), nên không viết lại các request đó.
 
 Các biến chỉ dùng cho module này cũng đã bỏ: `team_id`, `task_id`, `task_code`,
 `assignment_id`, `revision_id`.

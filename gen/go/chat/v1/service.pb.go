@@ -24,7 +24,7 @@ var File_chat_v1_service_proto protoreflect.FileDescriptor
 
 const file_chat_v1_service_proto_rawDesc = "" +
 	"\n" +
-	"\x15chat/v1/service.proto\x12\achat.v1\x1a\x11chat/v1/bot.proto\x1a\x1achat/v1/conversation.proto\x1a\x15chat/v1/message.proto\x1a\x12chat/v1/task.proto2\xdd\x05\n" +
+	"\x15chat/v1/service.proto\x12\achat.v1\x1a\x11chat/v1/bot.proto\x1a\x1achat/v1/conversation.proto\x1a\x15chat/v1/message.proto2\xdd\x05\n" +
 	"\vChatService\x12]\n" +
 	"\x12CreateConversation\x12\".chat.v1.CreateConversationRequest\x1a#.chat.v1.CreateConversationResponse\x12T\n" +
 	"\x0fGetConversation\x12\x1f.chat.v1.GetConversationRequest\x1a .chat.v1.GetConversationResponse\x12Z\n" +
@@ -41,36 +41,7 @@ const file_chat_v1_service_proto_rawDesc = "" +
 	"\bListBots\x12\x18.chat.v1.ListBotsRequest\x1a\x19.chat.v1.ListBotsResponse\x12W\n" +
 	"\x10ListBotTemplates\x12 .chat.v1.ListBotTemplatesRequest\x1a!.chat.v1.ListBotTemplatesResponse\x12Z\n" +
 	"\x11SubmitBotTemplate\x12!.chat.v1.SubmitBotTemplateRequest\x1a\".chat.v1.SubmitBotTemplateResponse\x12]\n" +
-	"\x12ListBotSubmissions\x12\".chat.v1.ListBotSubmissionsRequest\x1a#.chat.v1.ListBotSubmissionsResponse2\xbf\f\n" +
-	"\vTaskService\x12?\n" +
-	"\n" +
-	"CreateTask\x12\x1a.chat.v1.CreateTaskRequest\x1a\x15.chat.v1.TaskResponse\x129\n" +
-	"\aGetTask\x12\x17.chat.v1.GetTaskRequest\x1a\x15.chat.v1.TaskResponse\x12B\n" +
-	"\tListTasks\x12\x19.chat.v1.ListTasksRequest\x1a\x1a.chat.v1.ListTasksResponse\x12?\n" +
-	"\n" +
-	"UpdateTask\x12\x1a.chat.v1.UpdateTaskRequest\x1a\x15.chat.v1.TaskResponse\x12?\n" +
-	"\n" +
-	"CancelTask\x12\x1a.chat.v1.CancelTaskRequest\x1a\x15.chat.v1.TaskResponse\x12?\n" +
-	"\n" +
-	"AcceptTask\x12\x1a.chat.v1.TaskActionRequest\x1a\x15.chat.v1.TaskResponse\x12>\n" +
-	"\tPauseTask\x12\x1a.chat.v1.TaskActionRequest\x1a\x15.chat.v1.TaskResponse\x12?\n" +
-	"\n" +
-	"ResumeTask\x12\x1a.chat.v1.TaskActionRequest\x1a\x15.chat.v1.TaskResponse\x12=\n" +
-	"\bHoldTask\x12\x1a.chat.v1.TaskActionRequest\x1a\x15.chat.v1.TaskResponse\x12A\n" +
-	"\fCompleteTask\x12\x1a.chat.v1.TaskActionRequest\x1a\x15.chat.v1.TaskResponse\x12C\n" +
-	"\fAddAssignees\x12\x1c.chat.v1.AddAssigneesRequest\x1a\x15.chat.v1.TaskResponse\x12C\n" +
-	"\fReassignTask\x12\x1c.chat.v1.ReassignTaskRequest\x1a\x15.chat.v1.TaskResponse\x12K\n" +
-	"\x0eCreateRevision\x12\x1e.chat.v1.CreateRevisionRequest\x1a\x19.chat.v1.RevisionResponse\x12O\n" +
-	"\x10CompleteRevision\x12 .chat.v1.CompleteRevisionRequest\x1a\x19.chat.v1.RevisionResponse\x12N\n" +
-	"\rListRevisions\x12\x1d.chat.v1.ListRevisionsRequest\x1a\x1e.chat.v1.ListRevisionsResponse\x12Q\n" +
-	"\x0eListTaskEvents\x12\x1e.chat.v1.ListTaskEventsRequest\x1a\x1f.chat.v1.ListTaskEventsResponse\x12B\n" +
-	"\tListTeams\x12\x19.chat.v1.ListTeamsRequest\x1a\x1a.chat.v1.ListTeamsResponse\x12?\n" +
-	"\n" +
-	"CreateTeam\x12\x1a.chat.v1.CreateTeamRequest\x1a\x15.chat.v1.TeamResponse\x12R\n" +
-	"\x0eAddTeamMembers\x12\x1e.chat.v1.AddTeamMembersRequest\x1a .chat.v1.ListTeamMembersResponse\x12W\n" +
-	"\x10RemoveTeamMember\x12 .chat.v1.RemoveTeamMemberRequest\x1a!.chat.v1.RemoveTeamMemberResponse\x12T\n" +
-	"\x0fListTeamMembers\x12\x1f.chat.v1.ListTeamMembersRequest\x1a .chat.v1.ListTeamMembersResponse\x12W\n" +
-	"\x10SuggestAssignees\x12 .chat.v1.SuggestAssigneesRequest\x1a!.chat.v1.SuggestAssigneesResponseB=Z;github.com/abc-workspace/chat-service/gen/go/chat/v1;chatv1b\x06proto3"
+	"\x12ListBotSubmissions\x12\".chat.v1.ListBotSubmissionsRequest\x1a#.chat.v1.ListBotSubmissionsResponseB=Z;github.com/abc-workspace/chat-service/gen/go/chat/v1;chatv1b\x06proto3"
 
 var file_chat_v1_service_proto_goTypes = []any{
 	(*CreateConversationRequest)(nil),  // 0: chat.v1.CreateConversationRequest
@@ -86,47 +57,19 @@ var file_chat_v1_service_proto_goTypes = []any{
 	(*ListBotTemplatesRequest)(nil),    // 10: chat.v1.ListBotTemplatesRequest
 	(*SubmitBotTemplateRequest)(nil),   // 11: chat.v1.SubmitBotTemplateRequest
 	(*ListBotSubmissionsRequest)(nil),  // 12: chat.v1.ListBotSubmissionsRequest
-	(*CreateTaskRequest)(nil),          // 13: chat.v1.CreateTaskRequest
-	(*GetTaskRequest)(nil),             // 14: chat.v1.GetTaskRequest
-	(*ListTasksRequest)(nil),           // 15: chat.v1.ListTasksRequest
-	(*UpdateTaskRequest)(nil),          // 16: chat.v1.UpdateTaskRequest
-	(*CancelTaskRequest)(nil),          // 17: chat.v1.CancelTaskRequest
-	(*TaskActionRequest)(nil),          // 18: chat.v1.TaskActionRequest
-	(*AddAssigneesRequest)(nil),        // 19: chat.v1.AddAssigneesRequest
-	(*ReassignTaskRequest)(nil),        // 20: chat.v1.ReassignTaskRequest
-	(*CreateRevisionRequest)(nil),      // 21: chat.v1.CreateRevisionRequest
-	(*CompleteRevisionRequest)(nil),    // 22: chat.v1.CompleteRevisionRequest
-	(*ListRevisionsRequest)(nil),       // 23: chat.v1.ListRevisionsRequest
-	(*ListTaskEventsRequest)(nil),      // 24: chat.v1.ListTaskEventsRequest
-	(*ListTeamsRequest)(nil),           // 25: chat.v1.ListTeamsRequest
-	(*CreateTeamRequest)(nil),          // 26: chat.v1.CreateTeamRequest
-	(*AddTeamMembersRequest)(nil),      // 27: chat.v1.AddTeamMembersRequest
-	(*RemoveTeamMemberRequest)(nil),    // 28: chat.v1.RemoveTeamMemberRequest
-	(*ListTeamMembersRequest)(nil),     // 29: chat.v1.ListTeamMembersRequest
-	(*SuggestAssigneesRequest)(nil),    // 30: chat.v1.SuggestAssigneesRequest
-	(*CreateConversationResponse)(nil), // 31: chat.v1.CreateConversationResponse
-	(*GetConversationResponse)(nil),    // 32: chat.v1.GetConversationResponse
-	(*ListConversationsResponse)(nil),  // 33: chat.v1.ListConversationsResponse
-	(*AddMembersResponse)(nil),         // 34: chat.v1.AddMembersResponse
-	(*RemoveMemberResponse)(nil),       // 35: chat.v1.RemoveMemberResponse
-	(*SendMessageResponse)(nil),        // 36: chat.v1.SendMessageResponse
-	(*ListMessagesResponse)(nil),       // 37: chat.v1.ListMessagesResponse
-	(*SearchMessagesResponse)(nil),     // 38: chat.v1.SearchMessagesResponse
-	(*MarkReadResponse)(nil),           // 39: chat.v1.MarkReadResponse
-	(*ListBotsResponse)(nil),           // 40: chat.v1.ListBotsResponse
-	(*ListBotTemplatesResponse)(nil),   // 41: chat.v1.ListBotTemplatesResponse
-	(*SubmitBotTemplateResponse)(nil),  // 42: chat.v1.SubmitBotTemplateResponse
-	(*ListBotSubmissionsResponse)(nil), // 43: chat.v1.ListBotSubmissionsResponse
-	(*TaskResponse)(nil),               // 44: chat.v1.TaskResponse
-	(*ListTasksResponse)(nil),          // 45: chat.v1.ListTasksResponse
-	(*RevisionResponse)(nil),           // 46: chat.v1.RevisionResponse
-	(*ListRevisionsResponse)(nil),      // 47: chat.v1.ListRevisionsResponse
-	(*ListTaskEventsResponse)(nil),     // 48: chat.v1.ListTaskEventsResponse
-	(*ListTeamsResponse)(nil),          // 49: chat.v1.ListTeamsResponse
-	(*TeamResponse)(nil),               // 50: chat.v1.TeamResponse
-	(*ListTeamMembersResponse)(nil),    // 51: chat.v1.ListTeamMembersResponse
-	(*RemoveTeamMemberResponse)(nil),   // 52: chat.v1.RemoveTeamMemberResponse
-	(*SuggestAssigneesResponse)(nil),   // 53: chat.v1.SuggestAssigneesResponse
+	(*CreateConversationResponse)(nil), // 13: chat.v1.CreateConversationResponse
+	(*GetConversationResponse)(nil),    // 14: chat.v1.GetConversationResponse
+	(*ListConversationsResponse)(nil),  // 15: chat.v1.ListConversationsResponse
+	(*AddMembersResponse)(nil),         // 16: chat.v1.AddMembersResponse
+	(*RemoveMemberResponse)(nil),       // 17: chat.v1.RemoveMemberResponse
+	(*SendMessageResponse)(nil),        // 18: chat.v1.SendMessageResponse
+	(*ListMessagesResponse)(nil),       // 19: chat.v1.ListMessagesResponse
+	(*SearchMessagesResponse)(nil),     // 20: chat.v1.SearchMessagesResponse
+	(*MarkReadResponse)(nil),           // 21: chat.v1.MarkReadResponse
+	(*ListBotsResponse)(nil),           // 22: chat.v1.ListBotsResponse
+	(*ListBotTemplatesResponse)(nil),   // 23: chat.v1.ListBotTemplatesResponse
+	(*SubmitBotTemplateResponse)(nil),  // 24: chat.v1.SubmitBotTemplateResponse
+	(*ListBotSubmissionsResponse)(nil), // 25: chat.v1.ListBotSubmissionsResponse
 }
 var file_chat_v1_service_proto_depIdxs = []int32{
 	0,  // 0: chat.v1.ChatService.CreateConversation:input_type -> chat.v1.CreateConversationRequest
@@ -142,65 +85,21 @@ var file_chat_v1_service_proto_depIdxs = []int32{
 	10, // 10: chat.v1.BotService.ListBotTemplates:input_type -> chat.v1.ListBotTemplatesRequest
 	11, // 11: chat.v1.BotService.SubmitBotTemplate:input_type -> chat.v1.SubmitBotTemplateRequest
 	12, // 12: chat.v1.BotService.ListBotSubmissions:input_type -> chat.v1.ListBotSubmissionsRequest
-	13, // 13: chat.v1.TaskService.CreateTask:input_type -> chat.v1.CreateTaskRequest
-	14, // 14: chat.v1.TaskService.GetTask:input_type -> chat.v1.GetTaskRequest
-	15, // 15: chat.v1.TaskService.ListTasks:input_type -> chat.v1.ListTasksRequest
-	16, // 16: chat.v1.TaskService.UpdateTask:input_type -> chat.v1.UpdateTaskRequest
-	17, // 17: chat.v1.TaskService.CancelTask:input_type -> chat.v1.CancelTaskRequest
-	18, // 18: chat.v1.TaskService.AcceptTask:input_type -> chat.v1.TaskActionRequest
-	18, // 19: chat.v1.TaskService.PauseTask:input_type -> chat.v1.TaskActionRequest
-	18, // 20: chat.v1.TaskService.ResumeTask:input_type -> chat.v1.TaskActionRequest
-	18, // 21: chat.v1.TaskService.HoldTask:input_type -> chat.v1.TaskActionRequest
-	18, // 22: chat.v1.TaskService.CompleteTask:input_type -> chat.v1.TaskActionRequest
-	19, // 23: chat.v1.TaskService.AddAssignees:input_type -> chat.v1.AddAssigneesRequest
-	20, // 24: chat.v1.TaskService.ReassignTask:input_type -> chat.v1.ReassignTaskRequest
-	21, // 25: chat.v1.TaskService.CreateRevision:input_type -> chat.v1.CreateRevisionRequest
-	22, // 26: chat.v1.TaskService.CompleteRevision:input_type -> chat.v1.CompleteRevisionRequest
-	23, // 27: chat.v1.TaskService.ListRevisions:input_type -> chat.v1.ListRevisionsRequest
-	24, // 28: chat.v1.TaskService.ListTaskEvents:input_type -> chat.v1.ListTaskEventsRequest
-	25, // 29: chat.v1.TaskService.ListTeams:input_type -> chat.v1.ListTeamsRequest
-	26, // 30: chat.v1.TaskService.CreateTeam:input_type -> chat.v1.CreateTeamRequest
-	27, // 31: chat.v1.TaskService.AddTeamMembers:input_type -> chat.v1.AddTeamMembersRequest
-	28, // 32: chat.v1.TaskService.RemoveTeamMember:input_type -> chat.v1.RemoveTeamMemberRequest
-	29, // 33: chat.v1.TaskService.ListTeamMembers:input_type -> chat.v1.ListTeamMembersRequest
-	30, // 34: chat.v1.TaskService.SuggestAssignees:input_type -> chat.v1.SuggestAssigneesRequest
-	31, // 35: chat.v1.ChatService.CreateConversation:output_type -> chat.v1.CreateConversationResponse
-	32, // 36: chat.v1.ChatService.GetConversation:output_type -> chat.v1.GetConversationResponse
-	33, // 37: chat.v1.ChatService.ListConversations:output_type -> chat.v1.ListConversationsResponse
-	34, // 38: chat.v1.ChatService.AddMembers:output_type -> chat.v1.AddMembersResponse
-	35, // 39: chat.v1.ChatService.RemoveMember:output_type -> chat.v1.RemoveMemberResponse
-	36, // 40: chat.v1.ChatService.SendMessage:output_type -> chat.v1.SendMessageResponse
-	37, // 41: chat.v1.ChatService.ListMessages:output_type -> chat.v1.ListMessagesResponse
-	38, // 42: chat.v1.ChatService.SearchMessages:output_type -> chat.v1.SearchMessagesResponse
-	39, // 43: chat.v1.ChatService.MarkRead:output_type -> chat.v1.MarkReadResponse
-	40, // 44: chat.v1.BotService.ListBots:output_type -> chat.v1.ListBotsResponse
-	41, // 45: chat.v1.BotService.ListBotTemplates:output_type -> chat.v1.ListBotTemplatesResponse
-	42, // 46: chat.v1.BotService.SubmitBotTemplate:output_type -> chat.v1.SubmitBotTemplateResponse
-	43, // 47: chat.v1.BotService.ListBotSubmissions:output_type -> chat.v1.ListBotSubmissionsResponse
-	44, // 48: chat.v1.TaskService.CreateTask:output_type -> chat.v1.TaskResponse
-	44, // 49: chat.v1.TaskService.GetTask:output_type -> chat.v1.TaskResponse
-	45, // 50: chat.v1.TaskService.ListTasks:output_type -> chat.v1.ListTasksResponse
-	44, // 51: chat.v1.TaskService.UpdateTask:output_type -> chat.v1.TaskResponse
-	44, // 52: chat.v1.TaskService.CancelTask:output_type -> chat.v1.TaskResponse
-	44, // 53: chat.v1.TaskService.AcceptTask:output_type -> chat.v1.TaskResponse
-	44, // 54: chat.v1.TaskService.PauseTask:output_type -> chat.v1.TaskResponse
-	44, // 55: chat.v1.TaskService.ResumeTask:output_type -> chat.v1.TaskResponse
-	44, // 56: chat.v1.TaskService.HoldTask:output_type -> chat.v1.TaskResponse
-	44, // 57: chat.v1.TaskService.CompleteTask:output_type -> chat.v1.TaskResponse
-	44, // 58: chat.v1.TaskService.AddAssignees:output_type -> chat.v1.TaskResponse
-	44, // 59: chat.v1.TaskService.ReassignTask:output_type -> chat.v1.TaskResponse
-	46, // 60: chat.v1.TaskService.CreateRevision:output_type -> chat.v1.RevisionResponse
-	46, // 61: chat.v1.TaskService.CompleteRevision:output_type -> chat.v1.RevisionResponse
-	47, // 62: chat.v1.TaskService.ListRevisions:output_type -> chat.v1.ListRevisionsResponse
-	48, // 63: chat.v1.TaskService.ListTaskEvents:output_type -> chat.v1.ListTaskEventsResponse
-	49, // 64: chat.v1.TaskService.ListTeams:output_type -> chat.v1.ListTeamsResponse
-	50, // 65: chat.v1.TaskService.CreateTeam:output_type -> chat.v1.TeamResponse
-	51, // 66: chat.v1.TaskService.AddTeamMembers:output_type -> chat.v1.ListTeamMembersResponse
-	52, // 67: chat.v1.TaskService.RemoveTeamMember:output_type -> chat.v1.RemoveTeamMemberResponse
-	51, // 68: chat.v1.TaskService.ListTeamMembers:output_type -> chat.v1.ListTeamMembersResponse
-	53, // 69: chat.v1.TaskService.SuggestAssignees:output_type -> chat.v1.SuggestAssigneesResponse
-	35, // [35:70] is the sub-list for method output_type
-	0,  // [0:35] is the sub-list for method input_type
+	13, // 13: chat.v1.ChatService.CreateConversation:output_type -> chat.v1.CreateConversationResponse
+	14, // 14: chat.v1.ChatService.GetConversation:output_type -> chat.v1.GetConversationResponse
+	15, // 15: chat.v1.ChatService.ListConversations:output_type -> chat.v1.ListConversationsResponse
+	16, // 16: chat.v1.ChatService.AddMembers:output_type -> chat.v1.AddMembersResponse
+	17, // 17: chat.v1.ChatService.RemoveMember:output_type -> chat.v1.RemoveMemberResponse
+	18, // 18: chat.v1.ChatService.SendMessage:output_type -> chat.v1.SendMessageResponse
+	19, // 19: chat.v1.ChatService.ListMessages:output_type -> chat.v1.ListMessagesResponse
+	20, // 20: chat.v1.ChatService.SearchMessages:output_type -> chat.v1.SearchMessagesResponse
+	21, // 21: chat.v1.ChatService.MarkRead:output_type -> chat.v1.MarkReadResponse
+	22, // 22: chat.v1.BotService.ListBots:output_type -> chat.v1.ListBotsResponse
+	23, // 23: chat.v1.BotService.ListBotTemplates:output_type -> chat.v1.ListBotTemplatesResponse
+	24, // 24: chat.v1.BotService.SubmitBotTemplate:output_type -> chat.v1.SubmitBotTemplateResponse
+	25, // 25: chat.v1.BotService.ListBotSubmissions:output_type -> chat.v1.ListBotSubmissionsResponse
+	13, // [13:26] is the sub-list for method output_type
+	0,  // [0:13] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -214,7 +113,6 @@ func file_chat_v1_service_proto_init() {
 	file_chat_v1_bot_proto_init()
 	file_chat_v1_conversation_proto_init()
 	file_chat_v1_message_proto_init()
-	file_chat_v1_task_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
@@ -223,7 +121,7 @@ func file_chat_v1_service_proto_init() {
 			NumEnums:      0,
 			NumMessages:   0,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   2,
 		},
 		GoTypes:           file_chat_v1_service_proto_goTypes,
 		DependencyIndexes: file_chat_v1_service_proto_depIdxs,

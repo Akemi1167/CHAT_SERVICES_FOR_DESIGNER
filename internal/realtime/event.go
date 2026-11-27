@@ -35,10 +35,6 @@ const (
 	// Payload la tin he thong (nhu `message`) nhung tach ten de FE khong ve nhu tin chat moi
 	// — card don se toi ngay sau bang frame `message`.
 	EventFormSubmitted EventType = "form.submitted"
-
-	// Task: FE chi can 2 event nay la du de ve lai card.
-	EventTaskCreated EventType = "task.created"
-	EventTaskUpdated EventType = "task.updated"
 )
 
 // Event la don vi duoc broadcast. Recipients = danh sach user can nhan.

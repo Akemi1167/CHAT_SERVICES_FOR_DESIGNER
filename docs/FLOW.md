@@ -294,8 +294,7 @@ Tám event phát theo nhóm/người (envelope `{type, eventId, conversationId, 
 
 Card đổi **không** có type riêng — nó đến bằng `message` với `cardVersion` mới.
 
-Ba event nữa chỉ có khi bật module task nội bộ (`TASK_ENGINE_ENABLED=true`, mặc định tắt):
-`bot.submission.stored`, `task.created`, `task.updated`.
+Thêm 1 event mở rộng: `bot.submission.stored` (khi `@bot` lưu một mẫu).
 
 ### 4.3 Event Chat **gửi sang CMS** (webhook, ký HMAC) — 4 loại
 

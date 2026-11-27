@@ -75,6 +75,11 @@
       "type": "string"
     },
     {
+      "key": "debug_key",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "cms_token",
       "value": "",
       "type": "string"
@@ -1882,6 +1887,88 @@
               ]
             },
             "description": "Trả nguyên văn `docs/FLOW.md` (`text/markdown`) để dựng trang tài liệu. Auth: header `X-Docs-Key` = `DOCS_API_KEY` trong `.env` (biến `docs_key`), không dùng JWT.\n\n- sai/thiếu khoá → `401 invalid_docs_key`\n- chưa đặt `DOCS_API_KEY` → route không tồn tại (`404`)\n\nNội dung được nhúng vào binary lúc build: sửa `FLOW.md` xong phải build/deploy lại.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 (dung khoa) / 401 (sai khoa) / 404 (chua bat)\", () => pm.expect(pm.response.code).to.be.oneOf([200, 401, 404]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Log trong DB (debug)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Debug-Key",
+                "value": "{{debug_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/debug/logs?level=warn&since=2h&limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "debug",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "level",
+                  "value": "warn"
+                },
+                {
+                  "key": "since",
+                  "value": "2h"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "request_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "path",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "component",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status_min",
+                  "value": "400",
+                  "disabled": true
+                },
+                {
+                  "key": "before",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Đọc bảng `app_logs` — bản sao mọi dòng log của service (mới nhất trước). Auth: header `X-Debug-Key` = `DEBUG_API_KEY` trong `.env` (biến `debug_key`).\n\nFilter (bật trong tab Params): `level` (mức thấp nhất: debug|info|warn|error), `component`, `request_id` (mọi log của 1 request — lấy từ header response `X-Request-ID`), `path`, `q` (tìm trong msg + attrs), `status_min` (vd 400), `since` / `until` (RFC3339 hoặc `15m`, `2h`, `7d`), `limit` (≤ 500), `before` (trang sau = `meta.next_before`).\n\n- sai/thiếu khoá → `401 invalid_debug_key`\n- chưa đặt `DEBUG_API_KEY` → route không tồn tại (`404`)\n\nỞ terminal: `make dblog LEVEL=warn Q=...`.",
             "auth": {
               "type": "noauth"
             }

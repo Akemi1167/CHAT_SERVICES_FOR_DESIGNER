@@ -68,25 +68,12 @@ curl -s -X POST localhost:8080/api/v1/conversations/$CONV/messages \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"content":"@bot yeu_cau tieu_de=\"Banner Tet\" to=design so_luong=3"}' | jq
 
-# 3) tạo yêu cầu bằng bot -> task tự sinh mã T-000001, tự gợi ý người phụ trách
+# 3) gửi mẫu cho bot (Chat chỉ lưu mẫu; đơn/task do CMS sở hữu)
 curl -s -X POST localhost:8080/api/v1/conversations/$CONV/messages \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"content":"@bot yeu_cau tieu_de=\"Banner Tet\" to=design so_luong=3 dinh_muc=A4"}' | jq
-
-# 4) xem task + nhận task (chọn định mức + số lượng)
-curl -s "localhost:8080/api/v1/tasks?conversation_id=$CONV" -H "Authorization: Bearer $TOKEN" | jq
-curl -s -X POST localhost:8080/api/v1/tasks/<task_id>/accept \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"quota":"A4","quantity":3}' | jq
-
-# 5) phiếu sửa
-curl -s -X POST localhost:8080/api/v1/tasks/<task_id>/revisions \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"reason":"Sai mau nen","revision_type":"mau","quantity":2}' | jq
 ```
 
-> Tổ design chưa có thành viên thì bot không gợi ý được người phụ trách. Thêm bằng:
-> `POST /api/v1/teams/<team_id>/members` với `{"user_ids":["..."]}` (lấy `team_id` từ `GET /api/v1/teams`).
 
 Test WebSocket bằng `websocat`:
 
@@ -106,7 +93,7 @@ websocat "ws://localhost:8080/ws?token=$TOKEN"
 | Bật bằng | giữ `CMS_ENABLED=false` | `CMS_ENABLED=true` + `CHAT_SERVICE_KEY` |
 | Token | `make token SUB=an NAME=An ROLE=order` (HS256) | access token do CMS phát (RS256, verify bằng JWKS) |
 | Nhóm & thành viên | tự tạo bằng `POST /api/v1/conversations` | CMS là nguồn sự thật (poll + `PUT /bot/v1/groups/:id`) |
-| Task / card | `@bot yeu_cau …` tạo task nội bộ khi `TASK_ENGINE_ENABLED=true` | CMS tạo đơn và dựng card, Chat chỉ lưu + lọc `visibleTo` |
+| Task / card | `@bot yeu_cau …` chỉ lưu mẫu (không có module task nội bộ) | CMS tạo đơn và dựng card, Chat chỉ lưu + lọc `visibleTo` |
 | Tệp trong nhóm | lưu `attachments` trong tin nhắn (API liệt kê tệp do BE/CMS cung cấp) | như trái |
 
 FE làm giao diện trước thì dùng chế độ fake: chat, reply, thread, đã đọc, tìm kiếm, realtime đều chạy

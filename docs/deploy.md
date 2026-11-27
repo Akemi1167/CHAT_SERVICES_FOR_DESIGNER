@@ -388,7 +388,10 @@ CMS_JWT_AUDIENCE=abc-workspace
 CMS_JWKS_URL=                      # để trống = <workspace>/.well-known/jwks.json
 CMS_SYNC_INTERVAL=60s
 
-TASK_ENGINE_ENABLED=false          # CMS sở hữu đơn/task
+LOG_DB_ENABLED=true                # log vào bảng app_logs (debug), tự xoá sau LOG_DB_RETENTION
+LOG_DB_LEVEL=info
+LOG_DB_RETENTION=168h
+DEBUG_API_KEY=<chuỗi ngẫu nhiên>   # mở GET /debug/logs (header X-Debug-Key); để trống = tắt
 AUTH_ALLOW_DEV_TOKEN=false         # chỉ nhận token CMS (prod bắt buộc false)
 ```
 
@@ -481,7 +484,6 @@ là `designer`, deployment này khác). Hoặc hỏi đội CMS: *"webhookPath c
 
 ```bash
 CMS_ENABLED=false
-TASK_ENGINE_ENABLED=true
 AUTH_ALLOW_DEV_TOKEN=true    # chỉ ở dev/staging
 ```
 

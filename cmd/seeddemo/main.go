@@ -88,7 +88,7 @@ func main() {
 		}},
 	})
 
-	// 3) Mot yeu cau qua @bot (neu bat TASK_ENGINE_ENABLED thi tao task that)
+	// 3) Mot yeu cau qua @bot (Chat chi luu mau; don/task do CMS so huu)
 	send(*base, an, convID, map[string]any{
 		"content": `@bot yeu_cau tieu_de="Bo hinh su kien thang 11" to=design so_luong=2 dinh_muc=A4`,
 	})

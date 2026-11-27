@@ -135,6 +135,10 @@ migrate-up: ## Chay migration len moi nhat
 migrate-down: ## Rollback 1 buoc
 	migrate -path $(MIGRATE_DIR) -database "$(POSTGRES_DSN)" down 1
 
+.PHONY: dblog
+dblog: ## Xem log trong DB (app_logs): make dblog [LEVEL=warn] [Q=chuoi] [RID=request-id] [LIMIT=50]
+	@psql "$(POSTGRES_DSN)" -P pager=off -c "SELECT to_char(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','MM-DD HH24:MI:SS') AS luc, level, component, left(msg,60) AS msg, method, left(path,40) AS path, NULLIF(status,0) AS status, request_id, left(attrs::text,120) AS attrs FROM app_logs WHERE level IN ($(if $(filter error,$(LEVEL)),'ERROR',$(if $(filter warn,$(LEVEL)),'WARN','ERROR',$(if $(filter debug,$(LEVEL)),'DEBUG','INFO','WARN','ERROR','INFO','WARN','ERROR')))) $(if $(Q),AND (msg ILIKE '%$(Q)%' OR attrs::text ILIKE '%$(Q)%')) $(if $(RID),AND request_id = '$(RID)') ORDER BY id DESC LIMIT $(or $(LIMIT),50);"
+
 .PHONY: migrate-status
 migrate-status: ## Xem version migration hien tai
 	migrate -path $(MIGRATE_DIR) -database "$(POSTGRES_DSN)" version

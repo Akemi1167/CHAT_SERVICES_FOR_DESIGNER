@@ -17,7 +17,6 @@ import (
 	"github.com/abc-workspace/chat-service/internal/service/bot"
 	"github.com/abc-workspace/chat-service/internal/service/conversation"
 	"github.com/abc-workspace/chat-service/internal/service/message"
-	"github.com/abc-workspace/chat-service/internal/service/task"
 )
 
 type Server struct {
@@ -31,7 +30,6 @@ type Deps struct {
 	Conversations *conversation.Service
 	Messages      *message.Service
 	Bots          *bot.Service
-	Tasks         *task.Service
 }
 
 func New(cfg config.GRPC, d Deps) *Server {
@@ -48,7 +46,6 @@ func New(cfg config.GRPC, d Deps) *Server {
 
 	chatv1.RegisterChatServiceServer(srv, NewChatHandler(d.Conversations, d.Messages))
 	chatv1.RegisterBotServiceServer(srv, NewBotHandler(d.Bots, d.Messages))
-	chatv1.RegisterTaskServiceServer(srv, NewTaskHandler(d.Tasks))
 
 	hs := health.NewServer()
 	healthpb.RegisterHealthServer(srv, hs)

@@ -30,9 +30,6 @@ type App struct {
 	Name        string
 	Env         string // local | dev | staging | prod
 	ShutdownTTL time.Duration
-	// TaskEngine: bat module task noi bo cua Chat (tasks/assignments/revisions).
-	// Mac dinh TAT vi khi tich hop CMS thi CMS la nguon su that cua don/task.
-	TaskEngine bool
 }
 
 type HTTP struct {
@@ -50,6 +47,9 @@ type HTTP struct {
 	WSSendBuffer    int
 	// WebDemoDir: thu muc trang thu tay (web/). Rong = khong phuc vu (dung o prod).
 	WebDemoDir string
+	// DebugKey = DEBUG_API_KEY: khoa cho GET /debug/logs (header X-Debug-Key).
+	// Rong = khong mo route.
+	DebugKey string
 	// DocsKey = DOCS_API_KEY: khoa cho GET /docs/flow (header X-Docs-Key).
 	// Rong = khong mo route.
 	DocsKey string
@@ -143,6 +143,11 @@ type Log struct {
 	// Stdout=false (can co File): khong in log ra console nua. Dung o local khi
 	// muon console docker sach, chi con thu minh chu dong in (vd SQL pretty log).
 	Stdout bool
+
+	// Ghi them ban sao log vao bang app_logs (xem internal/dblog) de debug.
+	DBEnabled   bool
+	DBLevel     string        // muc thap nhat ghi vao DB: debug | info | warn | error
+	DBRetention time.Duration // tu xoa log cu hon; 0 = giu mai
 }
 
 // Load doc .env (neu co) roi doc env var. Tra loi neu thieu config bat buoc.
@@ -157,13 +162,13 @@ func Load() (*Config, error) {
 			Name:        str("APP_NAME", "chat-service"),
 			Env:         env,
 			ShutdownTTL: dur("APP_SHUTDOWN_TIMEOUT", 15*time.Second),
-			TaskEngine:  boolean("TASK_ENGINE_ENABLED", false),
 		},
 		HTTP: HTTP{
 			Addr:            str("HTTP_ADDR", ":8080"),
 			AllowOrigins:    str("HTTP_ALLOW_ORIGINS", "*"),
 			WebDemoDir:      str("WEB_DEMO_DIR", "./web"),
 			DocsKey:         str("DOCS_API_KEY", ""),
+			DebugKey:        str("DEBUG_API_KEY", ""),
 			BodyLimitMB:     num("HTTP_BODY_LIMIT_MB", 25),
 			ReadTimeout:     dur("HTTP_READ_TIMEOUT", 30*time.Second),
 			WriteTimeout:    dur("HTTP_WRITE_TIMEOUT", 30*time.Second),
@@ -228,6 +233,10 @@ func Load() (*Config, error) {
 			Format: str("LOG_FORMAT", "json"),
 			File:   str("LOG_FILE", ""),
 			Stdout: boolean("LOG_STDOUT", true),
+
+			DBEnabled:   boolean("LOG_DB_ENABLED", true),
+			DBLevel:     str("LOG_DB_LEVEL", "info"),
+			DBRetention: dur("LOG_DB_RETENTION", 7*24*time.Hour),
 		},
 	}
 
@@ -322,6 +331,12 @@ func (c *Config) WarnProd() []string {
 	}
 	if c.Postgres.LogSQL {
 		warns = append(warns, "POSTGRES_LOG_SQL=true : khong nen bat o prod")
+	}
+	if c.Log.DBEnabled && strings.EqualFold(c.Log.DBLevel, "debug") {
+		warns = append(warns, "LOG_DB_LEVEL=debug : bang app_logs se phinh rat nhanh, nen de info hoac warn")
+	}
+	if c.Log.DBEnabled && c.Log.DBRetention <= 0 {
+		warns = append(warns, "LOG_DB_RETENTION=0 : app_logs khong bao gio tu xoa, se phinh mai")
 	}
 	if c.Postgres.LogPretty {
 		warns = append(warns, "POSTGRES_LOG_PRETTY=true : chi dung o dev, SQL log se chua gia tri tham so that")

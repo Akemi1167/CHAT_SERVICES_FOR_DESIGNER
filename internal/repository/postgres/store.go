@@ -37,8 +37,6 @@ type Store struct {
 	conversations *ConversationRepo
 	messages      *MessageRepo
 	bots          *BotRepo
-	tasks         *TaskRepo
-	teams         *TeamRepo
 	notifications *NotificationRepo
 	idempotency   *IdempotencyRepo
 	outbox        *OutboxRepo
@@ -55,8 +53,6 @@ func NewStore(db *gorm.DB) *Store {
 		conversations: &ConversationRepo{base: b},
 		messages:      &MessageRepo{base: b},
 		bots:          &BotRepo{base: b},
-		tasks:         &TaskRepo{base: b},
-		teams:         &TeamRepo{base: b},
 		notifications: &NotificationRepo{base: b},
 		idempotency:   &IdempotencyRepo{base: b},
 		outbox:        &OutboxRepo{base: b},
@@ -68,8 +64,6 @@ func (s *Store) Users() repository.UserRepository                 { return s.use
 func (s *Store) Conversations() repository.ConversationRepository { return s.conversations }
 func (s *Store) Messages() repository.MessageRepository           { return s.messages }
 func (s *Store) Bots() repository.BotRepository                   { return s.bots }
-func (s *Store) Tasks() repository.TaskRepository                 { return s.tasks }
-func (s *Store) Teams() repository.TeamRepository                 { return s.teams }
 func (s *Store) Notifications() repository.NotificationRepository { return s.notifications }
 func (s *Store) Idempotency() repository.IdempotencyRepository    { return s.idempotency }
 func (s *Store) Outbox() repository.OutboxRepository              { return s.outbox }

@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
 	"github.com/abc-workspace/chat-service/internal/config"
+	"github.com/abc-workspace/chat-service/internal/dblog"
 	"github.com/abc-workspace/chat-service/internal/pkg/httpresp"
 	"github.com/abc-workspace/chat-service/internal/realtime"
 	"github.com/abc-workspace/chat-service/internal/repository"
@@ -22,7 +23,6 @@ import (
 	"github.com/abc-workspace/chat-service/internal/service/message"
 	"github.com/abc-workspace/chat-service/internal/service/notification"
 	"github.com/abc-workspace/chat-service/internal/service/presence"
-	"github.com/abc-workspace/chat-service/internal/service/task"
 )
 
 type Deps struct {
@@ -30,13 +30,13 @@ type Deps struct {
 	Conversations *conversation.Service
 	Messages      *message.Service
 	Bots          *bot.Service
-	Tasks         *task.Service
 	Hub           *realtime.Hub
 	Store         repository.Store
 	Cards         *card.Service
 	Notifications *notification.Service
 	Presence      *presence.Service
 	CMSSync       *cmssync.Service
+	DBLogs        *dblog.Reader // doc app_logs cho GET /debug/logs
 	Ready         func(ctx context.Context) error
 }
 

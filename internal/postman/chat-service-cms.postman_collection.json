@@ -75,6 +75,11 @@
       "type": "string"
     },
     {
+      "key": "debug_key",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "cms_token",
       "value": "",
       "type": "string"

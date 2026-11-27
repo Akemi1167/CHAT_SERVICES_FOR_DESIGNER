@@ -74,20 +74,6 @@ type SearchFilter struct {
 	ToDate   *time.Time
 }
 
-// TaskFilter: moi field nil/rong = khong filter.
-// MemberUserID luon duoc service set = nguoi goi, de chi thay task trong hoi thoai minh tham gia.
-type TaskFilter struct {
-	MemberUserID       uuid.UUID
-	ConversationID     *uuid.UUID
-	ThreadID           *uuid.UUID
-	TeamID             *uuid.UUID
-	CreatedBy          *uuid.UUID
-	AssigneeID         *uuid.UUID
-	Statuses           []domain.TaskStatus
-	AssignmentStatuses []domain.AssignmentStatus
-	Query              string
-}
-
 // ConversationFilter: moi field rong = khong filter.
 type ConversationFilter struct {
 	Type   domain.ConversationType // group | direct
@@ -236,46 +222,6 @@ type BotRepository interface {
 	ListSubmissions(ctx context.Context, f SubmissionFilter, p paging.Page) ([]domain.BotSubmission, error)
 }
 
-// TaskRepository.
-//
-// Quy uoc: cac ham Update* nhan map[string]any de co the set NULL va chi ghi
-// dung cot can ghi (GORM Updates voi struct se bo qua gia tri zero).
-type TaskRepository interface {
-	NextTaskCode(ctx context.Context) (string, error)
-	NextRevisionCode(ctx context.Context) (string, error)
-
-	Create(ctx context.Context, t *domain.Task) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Task, error)
-	GetByCode(ctx context.Context, code string) (*domain.Task, error)
-	List(ctx context.Context, f TaskFilter, p paging.Page) ([]domain.Task, error)
-	UpdateTask(ctx context.Context, id uuid.UUID, fields map[string]any) error
-
-	CreateAssignments(ctx context.Context, items []domain.TaskAssignment) error
-	GetAssignment(ctx context.Context, id uuid.UUID) (*domain.TaskAssignment, error)
-	ListAssignments(ctx context.Context, taskID uuid.UUID) ([]domain.TaskAssignment, error)
-	UpdateAssignment(ctx context.Context, id uuid.UUID, fields map[string]any) error
-	// CountOpenAssignments dem viec dang mo cua tung user (de goi y nguoi phu trach).
-	CountOpenAssignments(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]int64, error)
-
-	CreateRevision(ctx context.Context, r *domain.TaskRevision) error
-	GetRevision(ctx context.Context, id uuid.UUID) (*domain.TaskRevision, error)
-	ListRevisions(ctx context.Context, taskID uuid.UUID) ([]domain.TaskRevision, error)
-	UpdateRevision(ctx context.Context, id uuid.UUID, fields map[string]any) error
-
-	CreateEvent(ctx context.Context, e *domain.TaskEvent) error
-	ListEvents(ctx context.Context, taskID uuid.UUID, p paging.Page) ([]domain.TaskEvent, error)
-}
-
-type TeamRepository interface {
-	Create(ctx context.Context, t *domain.Team) error
-	List(ctx context.Context) ([]domain.Team, error)
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Team, error)
-	GetByCode(ctx context.Context, code string) (*domain.Team, error)
-	AddMembers(ctx context.Context, members []domain.TeamMember) error
-	RemoveMember(ctx context.Context, teamID, userID uuid.UUID) error
-	ListMembers(ctx context.Context, teamID uuid.UUID) ([]domain.TeamMember, error)
-}
-
 // NotificationRepository: thong bao do CMS day sang.
 type NotificationRepository interface {
 	Create(ctx context.Context, n *domain.Notification) error
@@ -310,8 +256,6 @@ type Store interface {
 	Conversations() ConversationRepository
 	Messages() MessageRepository
 	Bots() BotRepository
-	Tasks() TaskRepository
-	Teams() TeamRepository
 	Notifications() NotificationRepository
 	Idempotency() IdempotencyRepository
 	Outbox() OutboxRepository

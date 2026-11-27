@@ -5,7 +5,6 @@ package chat.v1;
 import "chat/v1/bot.proto";
 import "chat/v1/conversation.proto";
 import "chat/v1/message.proto";
-import "chat/v1/task.proto";
 
 option go_package = "github.com/abc-workspace/chat-service/gen/go/chat/v1;chatv1";
 
@@ -31,38 +30,4 @@ service BotService {
   rpc ListBotSubmissions(ListBotSubmissionsRequest) returns (ListBotSubmissionsResponse);
 }
 
-// TaskService: yeu cau/cong viec trong chat.
-// Auth: metadata "authorization: Bearer <jwt>".
-service TaskService {
-  rpc CreateTask(CreateTaskRequest) returns (TaskResponse);
-  rpc GetTask(GetTaskRequest) returns (TaskResponse);
-  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
-  rpc UpdateTask(UpdateTaskRequest) returns (TaskResponse);
-  rpc CancelTask(CancelTaskRequest) returns (TaskResponse);
-
-  // Vong doi card cua tung nguoi.
-  rpc AcceptTask(TaskActionRequest) returns (TaskResponse);
-  rpc PauseTask(TaskActionRequest) returns (TaskResponse);
-  rpc ResumeTask(TaskActionRequest) returns (TaskResponse);
-  rpc HoldTask(TaskActionRequest) returns (TaskResponse);
-  rpc CompleteTask(TaskActionRequest) returns (TaskResponse);
-
-  // Chia task / goi ho tro / doi nguoi phu trach.
-  rpc AddAssignees(AddAssigneesRequest) returns (TaskResponse);
-  rpc ReassignTask(ReassignTaskRequest) returns (TaskResponse);
-
-  // Phieu sua.
-  rpc CreateRevision(CreateRevisionRequest) returns (RevisionResponse);
-  rpc CompleteRevision(CompleteRevisionRequest) returns (RevisionResponse);
-  rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse);
-
-  rpc ListTaskEvents(ListTaskEventsRequest) returns (ListTaskEventsResponse);
-
-  // To / bo phan + goi y nguoi phu trach.
-  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse);
-  rpc CreateTeam(CreateTeamRequest) returns (TeamResponse);
-  rpc AddTeamMembers(AddTeamMembersRequest) returns (ListTeamMembersResponse);
-  rpc RemoveTeamMember(RemoveTeamMemberRequest) returns (RemoveTeamMemberResponse);
-  rpc ListTeamMembers(ListTeamMembersRequest) returns (ListTeamMembersResponse);
-  rpc SuggestAssignees(SuggestAssigneesRequest) returns (SuggestAssigneesResponse);
-}
+// TaskService (module task noi bo) da go: CMS so huu don/task (migration 000010).

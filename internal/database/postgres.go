@@ -28,15 +28,10 @@ func AllModels() []any {
 		&domain.Bot{},
 		&domain.BotTemplate{},
 		&domain.BotSubmission{},
-		&domain.Team{},
-		&domain.TeamMember{},
-		&domain.Task{},
-		&domain.TaskAssignment{},
-		&domain.TaskRevision{},
-		&domain.TaskEvent{},
 		&domain.Notification{},
 		&domain.IdempotencyRecord{},
 		&domain.OutboxEvent{},
+		&domain.AppLog{},
 	}
 }
 

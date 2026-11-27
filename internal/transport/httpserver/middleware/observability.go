@@ -27,7 +27,14 @@ func RequestID() fiber.Handler {
 func AccessLog() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
-		err := c.Next()
+		// Loi tra ve qua chain (vd route khong ton tai, handler tra error) chi duoc
+		// doi thanh status that khi ErrorHandler chay — goi no o day de log dung status,
+		// truoc day dong log ghi 200 cho request thuc te tra 404.
+		if err := c.Next(); err != nil {
+			if herr := c.App().ErrorHandler(c, err); herr != nil {
+				_ = c.SendStatus(fiber.StatusInternalServerError)
+			}
+		}
 		slog.Info("http request",
 			"method", c.Method(),
 			"path", c.Path(),
@@ -36,6 +43,6 @@ func AccessLog() fiber.Handler {
 			"request_id", c.GetRespHeader("X-Request-ID"),
 			"ip", c.IP(),
 		)
-		return err
+		return nil
 	}
 }

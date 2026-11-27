@@ -19,6 +19,7 @@ import (
 	"github.com/abc-workspace/chat-service/internal/cms"
 	"github.com/abc-workspace/chat-service/internal/config"
 	"github.com/abc-workspace/chat-service/internal/database"
+	"github.com/abc-workspace/chat-service/internal/dblog"
 	"github.com/abc-workspace/chat-service/internal/domain"
 	"github.com/abc-workspace/chat-service/internal/logger"
 	"github.com/abc-workspace/chat-service/internal/pkg/jwtauth"
@@ -33,7 +34,6 @@ import (
 	"github.com/abc-workspace/chat-service/internal/service/notification"
 	"github.com/abc-workspace/chat-service/internal/service/outbox"
 	"github.com/abc-workspace/chat-service/internal/service/presence"
-	"github.com/abc-workspace/chat-service/internal/service/task"
 	"github.com/abc-workspace/chat-service/internal/transport/grpcserver"
 	"github.com/abc-workspace/chat-service/internal/transport/httpserver"
 	"github.com/google/uuid"
@@ -49,6 +49,7 @@ type App struct {
 
 	cmsSync *cmssync.Service
 	outbox  *outbox.Service
+	dbLog   *dblog.Writer // nil = LOG_DB_ENABLED=false
 
 	logFile  io.Closer // file LOG_FILE (noop khi khong ghi file)
 	presence *presence.Service
@@ -94,6 +95,14 @@ func New(cfg *config.Config) (*App, error) {
 		slog.Info("realtime broker: memory (chi dung cho 1 instance)")
 	}
 
+	// Ghi them ban sao log vao app_logs (debug). Log truoc dong nay chi co o stdout/file.
+	var dbLog *dblog.Writer
+	if cfg.Log.DBEnabled {
+		dbLog = dblog.NewWriter(db, cfg.Log.DBRetention)
+		logger.AttachSink(dbLog, logger.ParseLevel(cfg.Log.DBLevel))
+		slog.Info("ghi log vao DB (app_logs)", "level", cfg.Log.DBLevel, "retention", cfg.Log.DBRetention.String())
+	}
+
 	// 2) Repository
 	store := postgres.NewStore(db)
 
@@ -137,14 +146,6 @@ func New(cfg *config.Config) (*App, error) {
 	convSvc := conversation.New(store, hub)
 	botSvc := bot.New(store)
 	msgSvc := message.New(store, convSvc, botSvc, hub)
-	taskSvc := task.New(store, convSvc, msgSvc, hub)
-
-	// Bot "@bot": mac dinh chi LUU mau (TemplateHandler).
-	// Chi khi bat task engine noi bo thi mau moi bien thanh task/phieu sua cua Chat —
-	// khi tich hop CMS, don/task do CMS tao tu event form.submit.
-	if cfg.App.TaskEngine {
-		botSvc.Register("bot", task.NewBotHandler(bot.NewTemplateHandler(store), taskSvc))
-	}
 
 	// 3b) Tich hop CMS: dong bo nhom/user, card, thong bao, outbox.
 	notifSvc := notification.New(store, hub)
@@ -177,13 +178,13 @@ func New(cfg *config.Config) (*App, error) {
 		Conversations: convSvc,
 		Messages:      msgSvc,
 		Bots:          botSvc,
-		Tasks:         taskSvc,
 		Hub:           hub,
 		Store:         store,
 		Cards:         cardSvc,
 		Notifications: notifSvc,
 		Presence:      presenceSvc,
 		CMSSync:       syncSvc,
+		DBLogs:        dblog.NewReader(db),
 		Ready: func(ctx context.Context) error {
 			sqlDB, err := db.DB()
 			if err != nil {
@@ -197,13 +198,12 @@ func New(cfg *config.Config) (*App, error) {
 		Conversations: convSvc,
 		Messages:      msgSvc,
 		Bots:          botSvc,
-		Tasks:         taskSvc,
 	})
 
 	return &App{
 		cfg: cfg, db: db, rdb: rdb, hub: hub,
 		http: httpSrv, grpc: grpcSrv,
-		cmsSync: syncSvc, outbox: outboxSvc,
+		cmsSync: syncSvc, outbox: outboxSvc, dbLog: dbLog,
 		presence: presenceSvc,
 		logFile:  logFile,
 	}, nil
@@ -218,6 +218,19 @@ func (a *App) Run() error {
 
 	g.Go(func() error { return a.hub.Run(gctx) })
 	g.Go(func() error { return a.presence.Run(gctx) })
+	// Ghi log vao DB chay ngoai errgroup (ctx rieng): phai dung SAU cung, de ghi not
+	// log cua qua trinh shutdown, nhung TRUOC khi dong DB (a.close).
+	stopDBLog := func() {}
+	if a.dbLog != nil {
+		logCtx, cancel := context.WithCancel(context.Background())
+		logDone := make(chan struct{})
+		go func() { _ = a.dbLog.Run(logCtx); close(logDone) }()
+		stopDBLog = func() {
+			logger.AttachSink(nil, 0)
+			cancel()
+			<-logDone
+		}
+	}
 
 	// Dong bo nhom tu CMS + gui event bat dong bo (chi khi bat tich hop).
 	if a.cfg.CMS.Enabled {
@@ -242,6 +255,7 @@ func (a *App) Run() error {
 	})
 
 	err := g.Wait()
+	stopDBLog()
 	a.close()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return err

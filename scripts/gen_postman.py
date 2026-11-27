@@ -126,6 +126,24 @@ start = folder(
                  "Nội dung được nhúng vào binary lúc build: sửa `FLOW.md` xong phải build/deploy lại.",
             tests=('pm.test("200 (dung khoa) / 401 (sai khoa) / 404 (chua bat)",'
                    ' () => pm.expect(pm.response.code).to.be.oneOf([200, 401, 404]));',)),
+        req("Log trong DB (debug)", "GET", "/debug/logs",
+            query=[("level", "warn"), ("since", "2h"), ("limit", "50"),
+                   ("q", "", True), ("request_id", "", True), ("path", "", True),
+                   ("component", "", True), ("status_min", "400", True), ("before", "", True)],
+            headers={"X-Debug-Key": "{{debug_key}}"},
+            auth={"type": "noauth"},
+            desc="Đọc bảng `app_logs` — bản sao mọi dòng log của service (mới nhất trước). "
+                 "Auth: header `X-Debug-Key` = `DEBUG_API_KEY` trong `.env` (biến `debug_key`).\n\n"
+                 "Filter (bật trong tab Params): `level` (mức thấp nhất: debug|info|warn|error), "
+                 "`component`, `request_id` (mọi log của 1 request — lấy từ header response "
+                 "`X-Request-ID`), `path`, `q` (tìm trong msg + attrs), `status_min` (vd 400), "
+                 "`since` / `until` (RFC3339 hoặc `15m`, `2h`, `7d`), `limit` (≤ 500), `before` "
+                 "(trang sau = `meta.next_before`).\n\n"
+                 "- sai/thiếu khoá → `401 invalid_debug_key`\n"
+                 "- chưa đặt `DEBUG_API_KEY` → route không tồn tại (`404`)\n\n"
+                 "Ở terminal: `make dblog LEVEL=warn Q=...`.",
+            tests=('pm.test("200 (dung khoa) / 401 (sai khoa) / 404 (chua bat)",'
+                   ' () => pm.expect(pm.response.code).to.be.oneOf([200, 401, 404]));',)),
         req("Ai đang mở WebSocket (debug realtime)", "GET", "/api/v1/ws/online",
             desc="Trả về các kết nối WebSocket đang mở **trên instance này**. Dùng khi test: mở "
                  "các tab WS xong thì bấm request này để chắc chắn tab của người nhận còn sống "
@@ -315,9 +333,8 @@ bots = folder(
                               "loai_sua": "màu", "so_luong": 2},
                   "client_msg_id": "{{$guid}}"},
             desc="Dùng khi FE có form riêng thay vì gõ `@bot`.\n\n"
-                 "`ma_task` ở đây chỉ là giá trị mẫu. Khi `TASK_ENGINE_ENABLED=false` (cấu hình "
-                 "chuẩn lúc tích hợp CMS) Chat **chỉ lưu** mẫu với `status=stored`, không tạo phiếu "
-                 "sửa — đơn/task do CMS sở hữu.",
+                 "`ma_task` ở đây chỉ là giá trị mẫu: Chat **chỉ lưu** mẫu với `status=stored`, không "
+                 "tạo phiếu sửa — đơn/task do CMS sở hữu (module task nội bộ đã gỡ).",
             tests=('pm.test("200/201", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));',)),
         req("Các mẫu đã lưu", "GET", "/api/v1/bots/{{bot_slug}}/submissions",
             query=[("conversation_id", "{{group_id}}"), ("limit", "20")],
@@ -1391,6 +1408,7 @@ collection = {
         {"key": "bot_slug", "value": "bot", "type": "string"},
         {"key": "service_key", "value": "", "type": "string"},
         {"key": "docs_key", "value": "", "type": "string"},
+        {"key": "debug_key", "value": "", "type": "string"},
         {"key": "cms_token", "value": "", "type": "string"},
         {"key": "group_id", "value": "", "type": "string"},
         {"key": "cms_chat_id", "value": "wg_postman_demo", "type": "string"},
@@ -1432,6 +1450,7 @@ environment = {
         {"key": "cms_token", "value": "", "type": "secret", "enabled": True},
         {"key": "service_key", "value": "", "type": "secret", "enabled": True},
         {"key": "docs_key", "value": "", "type": "secret", "enabled": True},
+        {"key": "debug_key", "value": "", "type": "secret", "enabled": True},
         {"key": "user_id_2", "value": "", "type": "default", "enabled": True},
         # CO Y khong khai group_id o environment: bien environment LAN AT bien
         # collection, nen mot `group_id` rong o day se vo hieu hoa gia tri ma
